@@ -1001,7 +1001,7 @@ function AdminDashboard() {
 
         // Identify currently excused students
         students.forEach((student: any) => {
-          if (student.excusedDates && student.excusedDates.length > 0) {
+          if (student.exemptReason && student.exemptReason.length > 0) {
             excusedList.push({
               id: student.id,
               name: student.name || student.phone,
@@ -1104,7 +1104,6 @@ function AdminDashboard() {
       
       await api.saveUser({
         ...student,
-        excusedDates: "",
         exemptReason: ""
       });
       
@@ -2095,7 +2094,7 @@ function StudentSimulatorWrapper() {
               <option value="">-- Default Admin UID --</option>
               {batchStudents.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.excusedDates && s.excusedDates.length > 0 ? '❌ ' : ''}
+                  {s.exemptReason && s.exemptReason.length > 0 ? '❌ ' : ''}
                   {s.name || s.fullName || s.email}
                 </option>
               ))}

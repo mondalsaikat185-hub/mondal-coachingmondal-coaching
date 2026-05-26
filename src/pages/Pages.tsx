@@ -577,7 +577,7 @@ export function AdminStudents() {
                         return (
                           <tr key={student.uid} className={i % 2 === 0 ? "bg-white dark:bg-zinc-900" : "bg-zinc-50 dark:bg-zinc-800"}>
                             <td className="border-r-2 border-b border-zinc-200 dark:border-zinc-700 border-l border-zinc-200 px-3 py-2 font-bold whitespace-nowrap overflow-hidden text-ellipsis w-48 max-w-[192px]">
-                              {student.excusedDates && student.excusedDates.length > 0 ? '❌ ' : ''}
+                              {student.exemptReason && student.exemptReason.length > 0 ? '❌ ' : ''}
                               {student.fullName || student.email}
                             </td>
                             {filteredRecords.map((r) => {
@@ -690,7 +690,7 @@ export function AdminStudents() {
                       </td>
                       <td className="p-2">
                         <div className="font-bold cursor-pointer hover:underline text-blue-600 dark:text-blue-400 flex items-center gap-2" onClick={() => setSelectedStudentForModal(student)}>
-                          {student.excusedDates && student.excusedDates.length > 0 ? '❌ ' : ''}
+                          {student.exemptReason && student.exemptReason.length > 0 ? '❌ ' : ''}
                           {student.fullName || student.displayName || 'Unknown'}
                           {Number(student.pendingMonths) > 0 && (
                             <span className={`text-[9px] px-1.5 py-0.5 font-black uppercase rounded ${
