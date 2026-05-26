@@ -934,5 +934,34 @@ export const api = {
         }, 1500);
       });
     }
+  },
+
+  verifyGatewayPayment: async (paymentId: string, month: string, amount: number, studentId: string): Promise<{ success: boolean; error?: string }> => {
+    if (USE_REAL_API) {
+      return runGasMethod<{ success: boolean; error?: string }>("apiVerifyGatewayPayment", paymentId, month, amount, studentId);
+    } else {
+      // Mock gateway verification for local testing
+      const db = getMockDB();
+      const user = db.users.find(u => u.id === studentId);
+      const newPay = {
+        id: "pay_" + Math.random().toString(36).substr(2, 9),
+        studentId: studentId,
+        month: month,
+        amount: amount,
+        status: "approved" as any,
+        transactionId: paymentId,
+        paidDate: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      };
+      db.payments.push(newPay);
+      
+      // Update student's pendingMonths in local storage
+      if (user) {
+        const count = month.split(',').length;
+        (user as any).pendingMonths = Math.max(0, ((user as any).pendingMonths || 0) - count);
+      }
+      saveMockDB(db);
+      return { success: true };
+    }
   }
 };

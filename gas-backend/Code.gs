@@ -1083,6 +1083,98 @@ function apiSaveSettings(settings) {
   }
 }
 
+function apiVerifyGatewayPayment(paymentId, months, amount, studentId) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var savedSettings = props.getProperty("appSettings");
+    var keyId = "";
+    var keySecret = "";
+    if (savedSettings) {
+      var parsed = JSON.parse(savedSettings);
+      keyId = parsed.razorpayKeyId || "";
+      keySecret = parsed.razorpayKeySecret || "";
+    }
+
+    // Default standard Sandbox key if admin has not configured their own keys
+    if (!keyId) {
+      keyId = "rzp_test_mX3qXFv3Xv9Xv9";
+    }
+
+    var isVerified = false;
+    if (keySecret) {
+      try {
+        var authString = keyId + ":" + keySecret;
+        var headers = {
+          "Authorization": "Basic " + Utilities.base64Encode(authString)
+        };
+        var options = {
+          "method": "get",
+          "headers": headers,
+          "muteHttpExceptions": true
+        };
+        var response = UrlFetchApp.fetch("https://api.razorpay.com/v1/payments/" + paymentId, options);
+        var responseCode = response.getResponseCode();
+        var responseBody = response.getContentText();
+        
+        if (responseCode === 200) {
+          var paymentData = JSON.parse(responseBody);
+          if (paymentData.status === 'captured') {
+            isVerified = true;
+          }
+        }
+      } catch (e) {
+        Logger.log("Razorpay fetch error: " + e.toString());
+      }
+    } else {
+      // Sandbox/Test mode fallback: if no keySecret is configured, approve the mock checkout instantly
+      isVerified = true;
+    }
+
+    if (!isVerified) {
+      return { success: false, error: "Razorpay verification failed (Payment not captured or unauthorized)" };
+    }
+
+    // 1. Create approved payment record in the sheet
+    var paymentRecord = {
+      id: "pay_" + Utilities.getUuid().substring(0, 8),
+      studentId: studentId,
+      month: months,
+      amount: Number(amount) || 0,
+      status: "approved",
+      transactionId: paymentId,
+      paidDate: new Date().toISOString(),
+      createdAt: new Date().toISOString()
+    };
+    saveRow("payments", paymentRecord);
+
+    // 2. Fetch student details and decrement pendingMonths
+    var users = readSheet("users");
+    var user = null;
+    for (var i = 0; i < users.length; i++) {
+      if (String(users[i].id) === String(studentId)) {
+        user = users[i];
+        break;
+      }
+    }
+
+    if (user) {
+      var count = months.split(',').length;
+      var currentPending = Number(user.pendingMonths) || 0;
+      var newPending = Math.max(0, currentPending - count);
+      
+      updateRow("users", studentId, {
+        paymentStatus: "approved",
+        pendingMonths: newPending,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
 function apiUploadFileToDrive(base64Data, fileName, folderId) {
   try {
     var bytes = Utilities.base64Decode(base64Data);

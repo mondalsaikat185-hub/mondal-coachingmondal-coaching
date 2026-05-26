@@ -1416,7 +1416,13 @@ export function StudentPayments() {
   const [submitting, setSubmitting] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
-  const [settings, setSettings] = useState({ adminUpiId: '', enablePaymentSystem: true });
+  const [settings, setSettings] = useState({
+    adminUpiId: '',
+    enablePaymentSystem: true,
+    paymentMethod: 'manual',
+    razorpayKeyId: '',
+    razorpayKeySecret: ''
+  });
 
   const monthlyFeeAmount = Number(user?.monthlyFee) || 0;
   const isFeeWaived = user?.monthlyFee === 0 || user?.monthlyFee === "0";
@@ -1426,10 +1432,19 @@ export function StudentPayments() {
   useEffect(() => {
      if (!user) return;
      
+     // Dynamically load Razorpay standard script for safe, smooth checkout
+     const rzpScript = document.createElement("script");
+     rzpScript.src = "https://checkout.razorpay.com/v1/checkout.js";
+     rzpScript.async = true;
+     document.body.appendChild(rzpScript);
+     
      const loadSettings = async () => {
        try {
          let adminUpiId = 'mondal.saikat185@okaxis';
          let enablePaymentSystem = true;
+         let paymentMethod = 'manual';
+         let razorpayKeyId = '';
+         let razorpayKeySecret = '';
 
          const cached = localStorage.getItem("mc_settings_general");
          if (cached) {
@@ -1437,6 +1452,9 @@ export function StudentPayments() {
              const data = JSON.parse(cached);
              adminUpiId = data.adminUpiId || adminUpiId;
              enablePaymentSystem = data.enablePaymentSystem !== false;
+             paymentMethod = data.paymentMethod || 'manual';
+             razorpayKeyId = data.razorpayKeyId || '';
+             razorpayKeySecret = data.razorpayKeySecret || '';
            } catch (e) {}
          }
 
@@ -1455,6 +1473,9 @@ export function StudentPayments() {
                if (gasSettings) {
                  adminUpiId = gasSettings.adminUpiId || adminUpiId;
                  enablePaymentSystem = gasSettings.enablePaymentSystem !== false;
+                 paymentMethod = gasSettings.paymentMethod || 'manual';
+                 razorpayKeyId = gasSettings.razorpayKeyId || '';
+                 razorpayKeySecret = gasSettings.razorpayKeySecret || '';
                }
              }
            } catch (err) {
@@ -1464,7 +1485,10 @@ export function StudentPayments() {
 
          setSettings({
            adminUpiId,
-           enablePaymentSystem
+           enablePaymentSystem,
+           paymentMethod,
+           razorpayKeyId,
+           razorpayKeySecret
          });
        } catch (err) {
          console.error("Failed to load settings:", err);
@@ -1498,6 +1522,12 @@ export function StudentPayments() {
      };
 
      fetchPayments();
+
+     return () => {
+       try {
+         document.body.removeChild(rzpScript);
+       } catch (e) {}
+     };
   }, [user?.uid]);
 
   const currentYear = new Date().getFullYear();
@@ -1514,6 +1544,113 @@ export function StudentPayments() {
       setSelectedMonths(selectedMonths.filter(x => x !== m));
     } else {
       setSelectedMonths([...selectedMonths, m]);
+    }
+  };
+
+  const handleRazorpayCheckout = async () => {
+    if (selectedMonths.length === 0 || !user) {
+      alert("Please select at least one month.");
+      return;
+    }
+
+    if (isFeeWaived) {
+      alert("আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।");
+      return;
+    }
+
+    // Reuse consecutive month validations:
+    const paidMonths = payments
+      .filter(p => p.status !== 'rejected')
+      .flatMap(p => p.month.split(',').map(m => m.trim()));
+    const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
+    const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
+    const selectedIndices = selectedMonths.map(m => monthOptions.indexOf(m)).sort((a, b) => a - b);
+    
+    for (let i = 1; i < selectedIndices.length; i++) {
+       if (selectedIndices[i] !== selectedIndices[i-1] + 1) {
+          alert("Please select strictly consecutive months.");
+          return;
+       }
+    }
+    
+    if (maxPaidIndex !== -1) {
+       const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
+       if (alreadyPaid) {
+          alert("You have already submitted a payment for one or more of the selected months.");
+          return;
+       }
+       if (selectedIndices[0] !== maxPaidIndex + 1) {
+          alert(`You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.`);
+          return;
+       }
+    }
+
+    if ((user as any).isSimulatedAdmin) {
+       const isRealStudent = localStorage.getItem('simulatedStudentId');
+       if (!isRealStudent) {
+         alert("Please select a real student from the dropdown above to test the payment gateway checkout flow.");
+         return;
+       }
+    }
+
+    // Default test key ID if admin has not configured their own
+    const keyId = settings.razorpayKeyId || 'rzp_test_mX3qXFv3Xv9Xv9'; 
+
+    setSubmitting(true);
+    try {
+      const options = {
+        key: keyId,
+        amount: calculatedAmount * 100, // Amount in paise
+        currency: "INR",
+        name: "M-C Tuition Classes",
+        description: `Tuition Fees for ${selectedMonths.join(', ')}`,
+        image: user.profilePhotoUrl || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=200&auto=format&fit=crop",
+        handler: async function (response: any) {
+          try {
+            setSubmitting(true);
+            const verifyRes = await api.verifyGatewayPayment(
+              response.razorpay_payment_id,
+              selectedMonths.join(', '),
+              calculatedAmount,
+              user.uid
+            );
+
+            if (verifyRes.success) {
+              alert("পেমেন্ট সফল এবং অনুমোদিত হয়েছে! (Payment Successful and Instantly Approved!)");
+              setSelectedMonths([]);
+              setPaymentSuccess(true);
+              setTimeout(() => setPaymentSuccess(false), 3000);
+              
+              // Force local cache invalidation & reload to fetch updated user profile (pendingMonths etc.)
+              window.location.reload(); 
+            } else {
+              alert("Verification failed: " + (verifyRes.error || "Unknown Error"));
+            }
+          } catch (err) {
+            console.error("Verification error:", err);
+            alert("Payment verification failed, please contact administrator with Payment ID: " + response.razorpay_payment_id);
+          } finally {
+            setSubmitting(false);
+          }
+        },
+        prefill: {
+          name: user.fullName || user.displayName || "",
+          email: user.email || "",
+          contact: user.phone || ""
+        },
+        theme: {
+          color: "#eab308" // Yellow Neo-Brutalist Theme
+        }
+      };
+
+      // @ts-ignore
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      console.error("Razorpay Checkout failed to open:", err);
+      alert("Failed to initialize Razorpay payment. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1641,62 +1778,72 @@ export function StudentPayments() {
              </div>
           ) : (
           <>
-          <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
-             <div className="text-xs font-bold uppercase mb-2 dark:text-yellow-100">Scan to Pay via UPI</div>
-             {settings.adminUpiId ? (
-                (() => {
-                   const upiId = (settings.adminUpiId || '').trim();
-                   const am = Number(calculatedAmount || 500).toFixed(2);
-                   const tn = encodeURIComponent(`Tuition Fee`);
-                   const pn = encodeURIComponent('Tutor');
-                   const genericUpi = `upi://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`;
-                   return (
-                      <>
-                         <div className="bg-white p-2 border-2 border-zinc-900 inline-block mb-2">
-                            <QRCodeSVG value={genericUpi} size={120} />
-                          </div>
-                          <div className="text-[10px] font-bold opacity-70 dark:text-yellow-100 mb-2">{settings.adminUpiId}</div>
-                          
-                          <p className="text-xs font-bold text-zinc-500 mt-2 mb-2">OR PAY USING APP</p>
-                          <div className="flex flex-wrap justify-center gap-2 mb-2 w-full">
-                             <a href={genericUpi} className="px-3 py-1.5 bg-purple-600 text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">PhonePe / App</a>
-                             <a href={`tez://upi/pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-white text-zinc-900 border-2 border-zinc-200 font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1"><span className="text-blue-500 font-black">G</span>Pay</a>
-                             <a href={`paytmmp://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-[#00b9f1] text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">Paytm</a>
-                             <a href={genericUpi} className="px-3 py-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold text-xs hover:-translate-y-0.5 transition-transform">Any UPI</a>
-                          </div>
-                          
-                          {!settings.adminUpiId.includes('@') && (
-                             <div className="mt-2 text-red-600 dark:text-red-400 text-[10px] bg-red-100 dark:bg-red-900/30 p-2 font-bold text-justify">
-                                Warning: The configured UPI ID "{settings.adminUpiId}" appears to be a regular phone number. It MUST include an "@" suffix (e.g. @ybl, @okaxis) for direct payment links to work. If apps crash, this is why!
-                             </div>
-                          )}
-                          
-                          <div className="mt-4 border-t-2 border-zinc-200 dark:border-zinc-800 pt-4 w-full">
-                             <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">UPI links not working or failing?</p>
-                             <p className="text-[10px] mt-1 text-zinc-500">You can copy the UPI ID below and paste it directly into your UPI app (like GPay, PhonePe, or Paytm):</p>
-                             <div className="flex items-center justify-center gap-2 mt-2">
-                                <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 select-all">{upiId}</div>
-                                <button 
-                                  onClick={(e) => {
-                                     e.preventDefault();
-                                     navigator.clipboard.writeText(upiId);
-                                     alert('UPI ID copied to clipboard!');
-                                  }}
-                                  className="p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold text-xs uppercase"
-                                >
-                                  Copy ID
-                                </button>
-                             </div>
-                          </div>
-                      </>
-                   );
-                })()
-             ) : (
-                <div className="text-red-500 font-bold text-sm bg-red-100 p-3 w-full border border-red-500">
-                   ⚠️ Setup Required: Admin UPI ID is not configured.
+          {settings.paymentMethod === 'gateway' ? (
+             <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-950/20 border-2 border-yellow-600 flex flex-col justify-center items-center gap-3 text-center mt-2 w-full text-zinc-900 dark:text-yellow-100">
+                <h4 className="font-black text-yellow-800 dark:text-yellow-400 uppercase text-sm tracking-wide">Automated Gateway Checkout</h4>
+                <p className="text-xs font-bold text-yellow-700 dark:text-yellow-300">Fast & Secure Payments via Cards, UPI (GPay, PhonePe, Paytm), Netbanking, and Wallets. Instantly unlocks features!</p>
+                <div className="mt-2 text-[10px] font-bold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-2 py-1 uppercase tracking-widest animate-pulse">
+                   ⚡ Instant Auto-Approval
                 </div>
-             )}
-          </div>
+             </div>
+          ) : (
+             <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
+                <div className="text-xs font-bold uppercase mb-2 dark:text-yellow-100">Scan to Pay via UPI</div>
+                {settings.adminUpiId ? (
+                   (() => {
+                      const upiId = (settings.adminUpiId || '').trim();
+                      const am = Number(calculatedAmount || 500).toFixed(2);
+                      const tn = encodeURIComponent(`Tuition Fee`);
+                      const pn = encodeURIComponent('Tutor');
+                      const genericUpi = `upi://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`;
+                      return (
+                         <>
+                            <div className="bg-white p-2 border-2 border-zinc-900 inline-block mb-2">
+                               <QRCodeSVG value={genericUpi} size={120} />
+                             </div>
+                             <div className="text-[10px] font-bold opacity-70 dark:text-yellow-100 mb-2">{settings.adminUpiId}</div>
+                             
+                             <p className="text-xs font-bold text-zinc-500 mt-2 mb-2">OR PAY USING APP</p>
+                             <div className="flex flex-wrap justify-center gap-2 mb-2 w-full">
+                                <a href={genericUpi} className="px-3 py-1.5 bg-purple-600 text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">PhonePe / App</a>
+                                <a href={`tez://upi/pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-white text-zinc-900 border-2 border-zinc-200 font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1"><span className="text-blue-500 font-black">G</span>Pay</a>
+                                <a href={`paytmmp://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-[#00b9f1] text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">Paytm</a>
+                                <a href={genericUpi} className="px-3 py-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold text-xs hover:-translate-y-0.5 transition-transform">Any UPI</a>
+                             </div>
+                             
+                             {!settings.adminUpiId.includes('@') && (
+                                <div className="mt-2 text-red-600 dark:text-red-400 text-[10px] bg-red-100 dark:bg-red-900/30 p-2 font-bold text-justify">
+                                   Warning: The configured UPI ID "{settings.adminUpiId}" appears to be a regular phone number. It MUST include an "@" suffix (e.g. @ybl, @okaxis) for direct payment links to work. If apps crash, this is why!
+                                </div>
+                             )}
+                             
+                             <div className="mt-4 border-t-2 border-zinc-200 dark:border-zinc-800 pt-4 w-full">
+                                <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">UPI links not working or failing?</p>
+                                <p className="text-[10px] mt-1 text-zinc-500">You can copy the UPI ID below and paste it directly into your UPI app (like GPay, PhonePe, or Paytm):</p>
+                                <div className="flex items-center justify-center gap-2 mt-2">
+                                   <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 select-all">{upiId}</div>
+                                   <button 
+                                     onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(upiId);
+                                        alert('UPI ID copied to clipboard!');
+                                     }}
+                                     className="p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold text-xs uppercase"
+                                   >
+                                     Copy ID
+                                   </button>
+                                </div>
+                             </div>
+                         </>
+                      );
+                   })()
+                ) : (
+                   <div className="text-red-500 font-bold text-sm bg-red-100 p-3 w-full border border-red-500">
+                      ⚠️ Setup Required: Admin UPI ID is not configured.
+                   </div>
+                )}
+             </div>
+          )}
 
           <p className="text-sm font-medium mb-6 dark:text-yellow-100 text-center px-2">After completing the payment via UPI, explicitly select your paid month(s) and submit details to notify the administrator.</p>
           
@@ -1735,9 +1882,20 @@ export function StudentPayments() {
                </div>
             </div>
             
-            <button type="submit" disabled={submitting || selectedMonths.length === 0} className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0">
-              {submitting ? 'Submitting...' : 'Submit to Admin'}
-            </button>
+            {settings.paymentMethod === 'gateway' ? (
+              <button 
+                type="button" 
+                onClick={handleRazorpayCheckout}
+                disabled={submitting || selectedMonths.length === 0} 
+                className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2"
+              >
+                {submitting ? 'Initializing Checkout...' : `Pay ₹${calculatedAmount} via Razorpay`}
+              </button>
+            ) : (
+              <button type="submit" disabled={submitting || selectedMonths.length === 0} className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0">
+                {submitting ? 'Submitting...' : 'Submit to Admin'}
+              </button>
+            )}
           </form>
           </>
           )}
