@@ -1,4 +1,4 @@
-Set-Location "C:\Users\monda\Desktop\Tution Application"
+Set-Location "C:\Users\monda\Desktop\Mondal Coaching"
 
 Write-Host "=== BUILDING ===" -ForegroundColor Cyan
 npm run build
