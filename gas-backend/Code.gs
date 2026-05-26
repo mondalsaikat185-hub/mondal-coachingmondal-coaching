@@ -168,10 +168,43 @@ function seedAdminIfNeeded() {
   }
 }
 
+// শিটের হেডার কলামগুলো নিশ্চিত করার জন্য হেল্পার
+function ensureSheetHeaders(sheetName, requiredHeaders) {
+  try {
+    var sheet = getSheet(sheetName);
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    
+    if (lastCol === 0) {
+      sheet.appendRow(requiredHeaders);
+      return;
+    }
+    
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h).trim(); });
+    var missingHeaders = [];
+    for (var i = 0; i < requiredHeaders.length; i++) {
+      if (headers.indexOf(requiredHeaders[i]) === -1) {
+        missingHeaders.push(requiredHeaders[i]);
+      }
+    }
+    
+    if (missingHeaders.length > 0) {
+      for (var j = 0; j < missingHeaders.length; j++) {
+        sheet.getRange(1, lastCol + 1 + j).setValue(missingHeaders[j]);
+      }
+      SpreadsheetApp.flush();
+    }
+  } catch (e) {
+    Logger.log("Failed to ensure headers for " + sheetName + ": " + e.toString());
+  }
+}
+
 // শিট থেকে অবজেক্ট অ্যারে রিড করার জন্য জেনেরিক রিডার
 function readSheet(sheetName) {
   if (sheetName === "users") {
     seedAdminIfNeeded();
+  } else if (sheetName === "payments") {
+    ensureSheetHeaders("payments", ["id", "studentId", "month", "amount", "status", "transactionId", "paidDate", "proofImage", "paymentMode", "remarks", "createdAt"]);
   }
   var sheet = getSheet(sheetName);
   var lastRow = sheet.getLastRow();

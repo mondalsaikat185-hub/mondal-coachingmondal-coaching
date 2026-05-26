@@ -33,6 +33,8 @@ import {
   StudentPayments,
   AdminBatches,
   PageHeader,
+  getDueMonths,
+  formatDateTimeSafe,
 } from "./pages/Pages";
 import { AdminLibrary } from "./pages/AdminLibrary";
 import { AdminResults } from "./pages/AdminResults";
@@ -1295,10 +1297,12 @@ function StudentDashboard() {
   const [exams, setExams] = useState<Exam[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [absentCount, setAbsentCount] = useState<number>(0);
+  const [payments, setPayments] = useState<any[]>([]);
   const [paymentStatus, setPaymentStatus] = useState<{
     status: string;
     label: string;
     color: string;
+    remarks?: string;
   }>({
     status: "paid",
     label: "All Paid Up",
@@ -1311,8 +1315,7 @@ function StudentDashboard() {
   const today = new Date();
   const dayOfWeek = today.getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-  const isOverdue = user && Number((user as any).pendingMonths) > 0;
-  const [showWeekendNudge, setShowWeekendNudge] = useState(isWeekend && isOverdue);
+  const [showWeekendNudge, setShowWeekendNudge] = useState(false);
 
   useEffect(() => {
     // Check nudge popup
@@ -1328,11 +1331,20 @@ function StudentDashboard() {
         sessionStorage.setItem(sessionKey, "true");
       }
     }
-
-    if (user && (user as any).pendingMonths > 0) {
-        // Pending months check moved to second useEffect to prevent flashing
-    }
   }, [user?.uid, (user as any)?.showPaymentNudge, (user as any)?.monthlyFee, (user as any)?.pendingMonths]);
+
+  useEffect(() => {
+    if (user && isWeekend) {
+      const overdue = Number((user as any).pendingMonths) > 0;
+      if (overdue) {
+        const sessionKey = `weekend_nudge_shown_${user.uid}`;
+        if (!sessionStorage.getItem(sessionKey)) {
+          setShowWeekendNudge(true);
+          sessionStorage.setItem(sessionKey, "true");
+        }
+      }
+    }
+  }, [user?.uid, (user as any)?.pendingMonths, isWeekend]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -1344,6 +1356,7 @@ function StudentDashboard() {
             const allPayments = await api.getPayments();
             const studentPayments = allPayments.filter(p => p.studentId === user.uid);
             studentPayments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            setPayments(studentPayments);
             if (studentPayments.length > 0) {
                pData.push(studentPayments[0] as any);
             }
@@ -1364,6 +1377,7 @@ function StudentDashboard() {
               status: "rejected",
               label: "Rejected",
               color: "text-red-600 dark:text-red-400",
+              remarks: (latest as any).remarks || "",
             });
           } else if ((user as any).pendingMonths > 0) {
             setPaymentStatus({
@@ -1502,10 +1516,9 @@ function StudentDashboard() {
               Payment Reminder
             </h2>
             <p className="mb-4 font-bold text-sm text-zinc-700 dark:text-zinc-300">
-              Your monthly salary/fee for{" "}
-              <span className="text-red-600 dark:text-red-400">
-                {(user as any).pendingMonths} month
-                {((user as any).pendingMonths || 1) > 1 ? "s" : ""}
+              Your tuition fee for{" "}
+              <span className="text-red-600 dark:text-red-400 underline">
+                {getDueMonths((user as any).pendingMonths, payments)}
               </span>{" "}
               is pending.
             </p>
@@ -1531,18 +1544,11 @@ function StudentDashboard() {
             <h2 className="text-xl font-black uppercase mb-2 text-red-600 dark:text-red-400 tracking-wider">
                Overdue Alert / বকেয়া নোটিশ
             </h2>
-            <div className="mb-4 text-sm font-bold leading-relaxed">
-              {Number((user as any).pendingMonths) >= 2 ? (
-                <>
-                  <p className="text-red-700 dark:text-red-400 font-extrabold uppercase">Your salary/fee for the previous {(user as any).pendingMonths} months is still pending.</p>
-                  <p className="mt-2 text-xs opacity-75 font-normal">আপনার গত {(user as any).pendingMonths} মাসের টিউশন ফি এখনও বকেয়া পড়ে আছে। অনুগ্রহ করে অবিলম্বে পরিশোধ করুন।</p>
-                </>
-              ) : (
-                <>
-                  <p className="text-red-600 dark:text-red-400 font-extrabold uppercase">Your salary for the previous month is still pending.</p>
-                  <p className="mt-2 text-xs opacity-75 font-normal">আপনার গত মাসের টিউশন ফি এখনও বকেয়া পড়ে আছে। অনুগ্রহ করে দ্রুত পরিশোধ করুন।</p>
-                </>
-              )}
+            <div className="mb-4 text-sm font-bold leading-relaxed text-left border-2 border-zinc-900 dark:border-yellow-400/40 p-3 bg-white dark:bg-zinc-950">
+              <p className="text-red-700 dark:text-red-400 font-extrabold uppercase text-xs mb-1">Tuition Fee Pending for:</p>
+              <p className="font-black text-sm text-zinc-900 dark:text-white underline mb-3">{getDueMonths((user as any).pendingMonths, payments)}</p>
+              <p className="text-red-600 dark:text-red-400 font-extrabold uppercase text-xs mb-1">বকেয়া মাসসমূহ:</p>
+              <p className="text-sm font-black text-zinc-800 dark:text-yellow-100">{getDueMonths((user as any).pendingMonths, payments)}</p>
             </div>
             <div className="mb-6 p-2 bg-yellow-200 dark:bg-yellow-950/20 border-2 border-yellow-400 font-mono text-xs font-bold">
                Monthly Fee: ₹{(user as any).monthlyFee} | Dues: ₹{Number((user as any).monthlyFee) * Number((user as any).pendingMonths)}
@@ -1723,12 +1729,26 @@ function StudentDashboard() {
             <div className="text-xs font-bold uppercase text-zinc-500 mb-1">
               Status
             </div>
-            <div className={`font-bold uppercase mb-4 ${paymentStatus.color}`}>
+            <div className={`font-bold uppercase mb-2 ${paymentStatus.color}`}>
               {paymentStatus.label}
             </div>
+
+            {user && Number((user as any).pendingMonths) > 0 && (
+              <div className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 mb-3 border-t border-dashed border-zinc-200 dark:border-zinc-800 pt-2">
+                <span className="uppercase text-[9px] text-zinc-400 block font-bold">Due Months / বকেয়া মাসসমূহ</span>
+                <span className="underline">{getDueMonths((user as any).pendingMonths, payments)}</span>
+              </div>
+            )}
+
+            {paymentStatus.status === "rejected" && paymentStatus.remarks && (
+              <div className="text-[11px] text-red-600 dark:text-red-400 font-extrabold mb-3 p-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded">
+                Reason: {paymentStatus.remarks}
+              </div>
+            )}
+
             <Link
               to="/student/payments"
-              className="inline-block bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-2 hover:-translate-y-0.5 transition-transform border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(161,161,170,1)]"
+              className="inline-block bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-2 hover:-translate-y-0.5 transition-transform border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] w-full text-center"
             >
               Make Payment
             </Link>

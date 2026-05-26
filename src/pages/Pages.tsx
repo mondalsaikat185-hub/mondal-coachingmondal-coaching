@@ -7,6 +7,76 @@ import { AppUser, useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { getAllAttendanceForBatch } from '../lib/exam-session-utils';
 
+const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+export function getMonthOptions(): string[] {
+  const currentYear = new Date().getFullYear();
+  return [
+    ...monthNames.map(m => `${m} ${currentYear - 1}`),
+    ...monthNames.map(m => `${m} ${currentYear}`),
+    ...monthNames.map(m => `${m} ${currentYear + 1}`),
+    ...monthNames.map(m => `${m} ${currentYear + 2}`)
+  ];
+}
+
+export function formatDateTimeSafe(timestamp: any): string {
+  if (!timestamp) return "N/A";
+  let d: Date | null = null;
+  if (timestamp instanceof Date) {
+    d = timestamp;
+  } else if (typeof timestamp === 'number') {
+    d = new Date(timestamp);
+  } else if (typeof timestamp === 'string') {
+    d = new Date(timestamp);
+    if (isNaN(d.getTime())) {
+      d = new Date(timestamp.replace(' ', 'T'));
+    }
+  } else if (typeof timestamp === 'object') {
+    if (timestamp.seconds) {
+      d = new Date(timestamp.seconds * 1000);
+    } else if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      d = timestamp.toDate();
+    }
+  }
+
+  if (!d || isNaN(d.getTime())) {
+    return "N/A";
+  }
+
+  const dateStr = d.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+  const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return `${dateStr} at ${timeStr}`;
+}
+
+export function getDueMonths(pendingMonthsCount: number, studentPayments: any[]): string {
+  if (!pendingMonthsCount || pendingMonthsCount <= 0) return "";
+  
+  const monthOptions = getMonthOptions();
+
+  // Find all paid/approved/pending months
+  const paidMonths = studentPayments
+    .filter(p => p.status === 'paid' || p.status === 'approved' || p.status === 'pending')
+    .flatMap(p => p.month.split(',').map((m: string) => m.trim()));
+    
+  const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
+  const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
+
+  const dueMonths: string[] = [];
+  // Next month after the last paid month
+  let startIndex = maxPaidIndex !== -1 ? maxPaidIndex + 1 : monthOptions.findIndex(m => m.startsWith(monthNames[new Date().getMonth()]));
+  if (startIndex === -1) startIndex = 12; // Fallback to current year start (January)
+
+  for (let i = 0; i < pendingMonthsCount; i++) {
+    const idx = startIndex + i;
+    if (idx < monthOptions.length) {
+      dueMonths.push(monthOptions[idx]);
+    }
+  }
+
+  if (dueMonths.length === 0) return `${pendingMonthsCount} month(s)`;
+  return dueMonths.join(', ');
+}
+
 export function PageHeader({ title, backTo, description, onBack }: { title: string, backTo?: string, description?: string, onBack?: () => void }) {
   const navigate = useNavigate();
   return (
@@ -962,14 +1032,7 @@ export function AdminPayments() {
   const [offlineAmount, setOfflineAmount] = useState('');
   const [offlineSubmitting, setOfflineSubmitting] = useState(false);
   
-  const currentYear = new Date().getFullYear();
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const monthOptions = [
-    ...monthNames.map(m => `${m} ${currentYear - 1}`),
-    ...monthNames.map(m => `${m} ${currentYear}`),
-    ...monthNames.map(m => `${m} ${currentYear + 1}`),
-    ...monthNames.map(m => `${m} ${currentYear + 2}`)
-  ];
+  const monthOptions = getMonthOptions();
 
   const fetchAll = async () => {
     try {
@@ -1345,8 +1408,7 @@ export function AdminPayments() {
                                  )}
                               </div>
                               <div className="text-[10px] text-zinc-500 mb-2 font-bold font-mono">
-                                 Submitted: {p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}
-                                 {p.createdAt && ` at ${new Date(p.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
+                                 Submitted: {formatDateTimeSafe(p.createdAt)}
                               </div>
                               <div className="flex justify-between items-center">
                                  <span className={`text-[10px] font-bold text-black uppercase px-2 py-0.5 ${p.status === 'pending' ? 'bg-yellow-300' : p.status === 'approved' ? 'bg-emerald-300' : 'bg-red-300'}`}>{p.status}</span>
@@ -1672,14 +1734,7 @@ export function StudentPayments() {
      };
   }, [user?.uid]);
 
-  const currentYear = new Date().getFullYear();
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const monthOptions = [
-    ...monthNames.map(m => `${m} ${currentYear - 1}`),
-    ...monthNames.map(m => `${m} ${currentYear}`),
-    ...monthNames.map(m => `${m} ${currentYear + 1}`),
-    ...monthNames.map(m => `${m} ${currentYear + 2}`)
-  ];
+  const monthOptions = getMonthOptions();
 
   const toggleMonth = (m: string) => {
     if (selectedMonths.includes(m)) {
@@ -1920,7 +1975,7 @@ export function StudentPayments() {
          <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 border-2 border-red-600 dark:border-red-500 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-[4px_4px_0px_0px_rgba(220,38,38,1)]">
             <div>
                <h3 className="font-black text-red-800 dark:text-red-400 uppercase">Payment Pending</h3>
-               <p className="text-sm font-bold text-red-700 dark:text-red-300">You have {(user as any).pendingMonths} month{((user as any).pendingMonths || 1) > 1 ? 's' : ''} of fees pending. Please clear them as soon as possible.</p>
+               <p className="text-sm font-bold text-red-700 dark:text-red-300">You have fees pending for: <span className="underline">{getDueMonths((user as any).pendingMonths, payments)}</span>. Please clear them as soon as possible.</p>
             </div>
          </div>
       )}
@@ -2154,8 +2209,7 @@ export function StudentPayments() {
                   <div>
                     <h4 className="font-black text-lg uppercase text-zinc-900 dark:text-zinc-100">Fee for {payment.month}</h4>
                     <div className="text-zinc-600 dark:text-zinc-400 font-bold text-xs mt-1">
-                      Received on: {payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}
-                      {payment.createdAt && ` at ${new Date(payment.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
+                      Received on: {formatDateTimeSafe(payment.createdAt)}
                     </div>
                     <div className="text-zinc-500 font-bold font-mono mt-1 text-sm">Amount: ₹{payment.amount}</div>
                     {(payment as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">TXN ID: {(payment as any).transactionId}</div>}
