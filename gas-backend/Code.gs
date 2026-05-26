@@ -84,7 +84,7 @@ function getManifestContent() {
     background_color: '#000000',
     theme_color: '#000000',
     lang: 'en',
-    orientation: 'portrait-primary',
+    orientation: 'any',
     icons: [
       { src: icon192, sizes: '192x192', type: 'image/png' },
       { src: icon192, sizes: '512x512', type: 'image/png' },
