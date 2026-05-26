@@ -347,9 +347,9 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           )}
        </div>
        
-       <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+       <div className="p-4 grid grid-cols-1 landscape:grid-cols-2 md:grid-cols-2 gap-6 items-start">
           {screen === 'RESULT' && resultSummary && (
-             <div className="md:col-span-2 bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-600 p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+             <div className="landscape:col-span-2 md:col-span-2 bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-600 p-6 flex flex-col md:flex-row items-center justify-between gap-4">
                 <div className="text-center md:text-left">
                   <h3 className="text-xl font-black text-blue-900 dark:text-blue-100 uppercase mb-1">Your Score</h3>
                   <div className="text-4xl font-black text-blue-600">{resultSummary.score} <span className="text-xl text-blue-400">/ {resultSummary.total}</span></div>
@@ -372,7 +372,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           )}
 
           {passage && (
-             <div className="bg-orange-50/50 dark:bg-amber-950/20 shadow-sm dark:shadow-md border-2 border-orange-200/50 dark:border-amber-900/40 p-4 h-max max-h-[50vh] md:sticky md:top-20 md:max-h-[calc(100vh-120px)] overflow-y-auto rounded-lg rounded-tl-sm rounded-br-sm relative overscroll-none block">
+             <div className="bg-orange-50/50 dark:bg-amber-950/20 shadow-sm dark:shadow-md border-2 border-orange-200/50 dark:border-amber-900/40 p-4 h-max max-h-[50vh] landscape:sticky landscape:top-20 landscape:max-h-[calc(100vh-120px)] md:sticky md:top-20 md:max-h-[calc(100vh-120px)] overflow-y-auto rounded-lg rounded-tl-sm rounded-br-sm relative overscroll-none block">
                 <div className="absolute top-0 right-0 p-2 opacity-10 blur-sm pointer-events-none w-full h-full overflow-hidden">
                    <div className="text-9xl rotate-[-20deg] text-orange-900 leading-none" style={{ position: 'absolute', right: '-1rem', top: '-1rem' }}>{"\""}</div>
                 </div>
@@ -384,7 +384,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              </div>
           )}
 
-          <div className={`${passage ? "md:col-span-1" : "md:col-span-2"} flex flex-col gap-6`}>
+          <div className={`${passage ? "landscape:col-span-1 md:col-span-1" : "landscape:col-span-2 md:col-span-2"} flex flex-col gap-6`}>
              {questions.map((q: any, i: number) => {
                const qText = String((lang === 'bn' && q?.question_bn) ? q.question_bn : (q?.question_en || q?.question || 'Question ?'));
                const optsRaw = (lang === 'bn' && q?.options_bn && q.options_bn.length) ? q.options_bn : (q?.options_en || q?.options || []);
