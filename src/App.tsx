@@ -979,7 +979,6 @@ import {
 
 function AdminDashboard() {
   const [absentFlags, setAbsentFlags] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string; missedCount: number }[]>([]);
-  const [excusedStudents, setExcusedStudents] = useState<{ id: string; name: string; phone: string; batchName: string; exemptReason: string }[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
   useEffect(() => {
@@ -995,21 +994,6 @@ function AdminDashboard() {
 
         const students = users.filter((u: any) => u.role !== 'admin' && u.status === 'active');
         const flags: any[] = [];
-        const excusedList: any[] = [];
-
-        // Identify currently excused students
-        students.forEach((student: any) => {
-          if (student.exemptReason && student.exemptReason.length > 0) {
-            excusedList.push({
-              id: student.id,
-              name: student.name || student.phone,
-              phone: student.phone || '',
-              batchName: batchMap[student.batchId] || student.batchId || 'Unassigned',
-              exemptReason: student.exemptReason || 'অসুস্থতা'
-            });
-          }
-        });
-        setExcusedStudents(excusedList);
 
         const batchIds = [...new Set(students.map((s: any) => s.batchId).filter(Boolean))];
 
@@ -1034,8 +1018,7 @@ function AdminDashboard() {
           // Must have at least 3 unique exam dates in this batch to ever trigger a 3 consecutive absence alert!
           if (sBatchAtt.length < 3) return;
 
-          // Exclude students who are actively excused (exemptReason is present) so they are removed from the red Flagged list
-          const batchStudents = students.filter((s: any) => s.batchId === batchId && (!s.exemptReason || s.exemptReason.length === 0));
+          const batchStudents = students.filter((s: any) => s.batchId === batchId);
 
           batchStudents.forEach((student: any) => {
             let recentAbsences = 0;
@@ -1086,7 +1069,7 @@ function AdminDashboard() {
       if (!student) return;
 
       // Update student profile:
-      // 1. Set exemptReason to put them in the green Canceled list & show ❌
+      // 1. Set exemptReason to put the ❌ cross mark next to their name in the students table
       // 2. Set createdAt to current time so they instantly start as a fresh student with 0 absences!
       await api.saveUser({
         ...student,
@@ -1099,31 +1082,6 @@ function AdminDashboard() {
     } catch (err) {
       console.error("Excuse student error:", err);
       alert("ত্রুটি: অনুপস্থিতি মওকুফ করা যায়নি।");
-    }
-  };
-
-  const revokeExcuse = async (studentId: string) => {
-    if (!confirm("আপনি কি এই ছাত্রের অনুপস্থিতি মওকুফ বাতিল করে সাধারণ অনুপস্থিতি গণনা চালু করতে চান?")) return;
-    
-    try {
-      const users = await api.getUsers();
-      const student = users.find((u: any) => u.id === studentId);
-      if (!student) return;
-      
-      // Update student profile:
-      // 1. Clear exemptReason so they are treated like a normal student again
-      // 2. Set createdAt to current time so they start 100% fresh from today with 0 absences!
-      await api.saveUser({
-        ...student,
-        createdAt: new Date().toISOString(),
-        exemptReason: ""
-      });
-      
-      alert("মওকুফ বাতিল করা হয়েছে এবং পুনরায় সাধারণ গণনা শুরু হয়েছে!");
-      setRefreshTrigger(prev => prev + 1);
-    } catch (err) {
-      console.error("Revoke excuse error:", err);
-      alert("ত্রুটি: মওকুফ বাতিল করা যায়নি।");
     }
   };
 
@@ -1172,37 +1130,7 @@ function AdminDashboard() {
         </div>
       )}
 
-      {excusedStudents.length > 0 && (
-        <div className="mb-6 bg-green-50 dark:bg-green-950/30 border-4 border-green-500 p-4">
-          <h3 className="font-black text-green-700 dark:text-green-400 uppercase mb-3 flex items-center gap-2">
-            <span>❌ মওকুফকৃত অনুপস্থিতি তালিকা (Canceled Absences)</span>
-            <span className="bg-green-600 text-white text-xs px-2 py-0.5 font-black">{excusedStudents.length}</span>
-          </h3>
-          <p className="text-sm font-medium text-green-700 dark:text-green-300 mb-3">
-            নিচের ছাত্রছাত্রীদের অনুপস্থিতি মওকুফ করা হয়েছে এবং নামের পাশে `❌` প্রদর্শন করা হচ্ছে:
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {excusedStudents.map((s, i) => (
-              <div key={i} className="bg-green-100 dark:bg-green-900/40 border-2 border-green-400 p-3 text-xs font-black text-green-800 dark:text-green-200 flex flex-col justify-between gap-2 shadow-[2px_2px_0px_0px_rgba(34,197,94,1)]">
-                <div>
-                  <div className="flex justify-between items-start gap-1">
-                    <span className="font-black text-sm">❌ {s.name}</span>
-                    <span className="bg-green-600 text-white text-[9px] px-1.5 py-0.5 font-bold uppercase leading-none">মওকুফকৃত</span>
-                  </div>
-                   <div className="text-green-600 dark:text-green-400 font-bold mt-1">কারণ: {s.exemptReason}</div>
-                  <div className="text-zinc-500 text-[10px] mt-0.5">মোবাইল: {s.phone} | ব্যাচ: {s.batchName}</div>
-                </div>
-                <button
-                  onClick={() => revokeExcuse(s.id)}
-                  className="bg-zinc-700 hover:bg-zinc-800 text-white font-black py-1 px-2 mt-2 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(240,240,240,1)] active:translate-y-0.5 active:shadow-none transition-all text-center"
-                >
-                  🔄 পুনরায় গণনায় ফিরিয়ে আনুন (Bring back to scope)
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+
 
       <div className="mb-6 bg-yellow-100 dark:bg-yellow-900/30 border-4 border-yellow-500 p-4">
         <h3 className="font-black text-yellow-800 dark:text-yellow-500 uppercase mb-2">
