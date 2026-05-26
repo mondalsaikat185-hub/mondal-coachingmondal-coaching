@@ -728,12 +728,25 @@ export function AdminLibrary() {
     if (!activeSession || endingSession) return;
     try {
       setEndingSession(true);
-      await endExamSession(activeSession.sessionId);
-      setActiveSession(null);
+      
+      // Clear polling interval instantly to block any background state overrides
       if (activeSessionIntervalRef.current) {
         clearInterval(activeSessionIntervalRef.current);
         activeSessionIntervalRef.current = null;
       }
+      
+      const sessId = activeSession.sessionId;
+      
+      // Clear state instantly for immediate UI closure
+      setActiveSession(null);
+      
+      // Remove from the local active sessions list immediately so it won't reappear
+      setActiveSessionsList(prev => prev.filter(s => s.id !== sessId));
+      
+      // Proceed to notify spreadsheet database in background
+      await endExamSession(sessId);
+    } catch (err) {
+      console.error("Failed to end session:", err);
     } finally {
       setEndingSession(false);
     }

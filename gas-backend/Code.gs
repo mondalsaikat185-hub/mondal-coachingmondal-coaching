@@ -118,7 +118,7 @@ function seedAdminIfNeeded() {
     
     // Check if headers exist, if not, write them
     if (lastRow === 0) {
-      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt"];
+      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates"];
       sheet.appendRow(headers);
     }
     
@@ -203,6 +203,7 @@ function ensureSheetHeaders(sheetName, requiredHeaders) {
 function readSheet(sheetName) {
   if (sheetName === "users") {
     seedAdminIfNeeded();
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates"]);
   } else if (sheetName === "payments") {
     ensureSheetHeaders("payments", ["id", "studentId", "month", "amount", "status", "transactionId", "paidDate", "proofImage", "paymentMode", "remarks", "createdAt"]);
   }

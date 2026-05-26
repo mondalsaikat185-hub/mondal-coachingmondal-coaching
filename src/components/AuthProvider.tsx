@@ -28,6 +28,7 @@ export interface AppUser {
   passcode?: string;
   paymentStatus?: string;
   reapplyReason?: string;
+  excusedDates?: string;
 }
 
 interface AuthContextType {
@@ -114,7 +115,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       pendingMonths: profile.pendingMonths !== undefined ? Number(profile.pendingMonths) : 0,
       passcode: profile.passcode,
       paymentStatus: profile.paymentStatus,
-      reapplyReason: profile.reapplyReason
+      reapplyReason: profile.reapplyReason,
+      excusedDates: profile.excusedDates || '',
+      exemptReason: profile.exemptReason || ''
     };
   };
 

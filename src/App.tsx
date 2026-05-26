@@ -978,7 +978,9 @@ import {
 } from "lucide-react";
 
 function AdminDashboard() {
-  const [absentFlags, setAbsentFlags] = useState<{ name: string; batchName: string; missedCount: number }[]>([]);
+  const [absentFlags, setAbsentFlags] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string; missedCount: number; sessionIds: string[] }[]>([]);
+  const [excusedStudents, setExcusedStudents] = useState<{ id: string; name: string; phone: string; batchName: string; exemptReason: string }[]>([]);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
   useEffect(() => {
     const computeFlags = async () => {
@@ -994,7 +996,22 @@ function AdminDashboard() {
         batches.forEach((b: any) => { batchMap[b.id] = b.name; });
 
         const students = users.filter((u: any) => u.role !== 'admin' && u.status === 'active');
-        const flags: { name: string; batchName: string; missedCount: number }[] = [];
+        const flags: any[] = [];
+        const excusedList: any[] = [];
+
+        // Identify currently excused students
+        students.forEach((student: any) => {
+          if (student.excusedDates && student.excusedDates.length > 0) {
+            excusedList.push({
+              id: student.id,
+              name: student.name || student.phone,
+              phone: student.phone || '',
+              batchName: batchMap[student.batchId] || student.batchId || 'Unassigned',
+              exemptReason: student.exemptReason || 'অসুস্থতা'
+            });
+          }
+        });
+        setExcusedStudents(excusedList);
 
         const batchIds = [...new Set(students.map((s: any) => s.batchId).filter(Boolean))];
 
@@ -1017,11 +1034,25 @@ function AdminDashboard() {
 
           const batchStudents = students.filter((s: any) => s.batchId === batchId);
           batchStudents.forEach((student: any) => {
+            const studentExcusedDates = student.excusedDates ? student.excusedDates.split(',').filter(Boolean) : [];
             const missedAll = batchSessions.every(
-              (sess: any) => !(presentInSession[sess.id]?.has(student.id))
+              (sess: any) => {
+                const dateStr = sess.createdAt ? sess.createdAt.split('T')[0] : new Date().toLocaleDateString('en-CA');
+                const wasPresent = presentInSession[sess.id]?.has(student.id);
+                const wasExcused = studentExcusedDates.includes(dateStr);
+                return !wasPresent && !wasExcused;
+              }
             );
             if (missedAll) {
-              flags.push({ name: student.name || student.phone, batchName: batchMap[batchId] || batchId, missedCount: 3 });
+              flags.push({
+                id: student.id,
+                name: student.name || student.phone,
+                phone: student.phone || '',
+                batchId: student.batchId,
+                batchName: batchMap[batchId] || batchId,
+                missedCount: 3,
+                sessionIds: batchSessions.map((s: any) => s.id)
+              });
             }
           });
         });
@@ -1032,7 +1063,58 @@ function AdminDashboard() {
       }
     };
     computeFlags();
-  }, []);
+  }, [refreshTrigger]);
+
+  const excuseStudent = async (studentId: string, sessionIds: string[]) => {
+    const reason = prompt("অনুপস্থিতি মওকুফ করার কারণ লিখুন (যেমন: অসুস্থতা/Fever/Illness):", "অসুস্থতা (Illness)");
+    if (reason === null) return;
+    
+    try {
+      const [sessions, users] = await Promise.all([api.getExamSessions(), api.getUsers()]);
+      const student = users.find((u: any) => u.id === studentId);
+      if (!student) return;
+
+      const matchedSessions = sessions.filter((s: any) => sessionIds.includes(s.id));
+      const newExcusedDates = matchedSessions.map((s: any) => s.createdAt ? s.createdAt.split('T')[0] : new Date().toLocaleDateString('en-CA'));
+      
+      const currentExcused = student.excusedDates ? student.excusedDates.split(',').filter(Boolean) : [];
+      const updatedExcused = Array.from(new Set([...currentExcused, ...newExcusedDates])).join(',');
+      
+      await api.saveUser({
+        ...student,
+        excusedDates: updatedExcused,
+        exemptReason: reason || "অসুস্থতা"
+      });
+      
+      alert("ছাত্রের অনুপস্থিতি মওকুফ করা হয়েছে এবং কাউন্ট রিসেট হয়েছে!");
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      console.error("Excuse student error:", err);
+      alert("ত্রুটি: অনুপস্থিতি মওকুফ করা যায়নি।");
+    }
+  };
+
+  const revokeExcuse = async (studentId: string) => {
+    if (!confirm("আপনি কি এই ছাত্রের অনুপস্থিতি মওকুফ বাতিল করে সাধারণ অনুপস্থিতি গণনা চালু করতে চান?")) return;
+    
+    try {
+      const users = await api.getUsers();
+      const student = users.find((u: any) => u.id === studentId);
+      if (!student) return;
+      
+      await api.saveUser({
+        ...student,
+        excusedDates: "",
+        exemptReason: ""
+      });
+      
+      alert("মওকুফ বাতিল করা হয়েছে!");
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      console.error("Revoke excuse error:", err);
+      alert("ত্রুটি: মওকুফ বাতিল করা যায়নি।");
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full">
@@ -1049,25 +1131,65 @@ function AdminDashboard() {
 
       {absentFlags.length > 0 && (
         <div className="mb-6 bg-red-50 dark:bg-red-950/30 border-4 border-red-500 p-4">
-          <h3 className="font-black text-red-700 dark:text-red-400 uppercase mb-2 flex items-center gap-2">
-            <span>⚠️ অনুপস্থিত সতর্কতা</span>
+          <h3 className="font-black text-red-700 dark:text-red-400 uppercase mb-3 flex items-center gap-2">
+            <span>⚠️ অনুপস্থিত সতর্কতা (Flagged Absentees)</span>
             <span className="bg-red-600 text-white text-xs px-2 py-0.5 font-black">{absentFlags.length}</span>
           </h3>
           <p className="text-sm font-medium text-red-700 dark:text-red-300 mb-3">
             নিচের ছাত্রছাত্রীরা পরপর ৩টি exam-এ অনুপস্থিত ছিল:
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {absentFlags.map((f, i) => (
-              <div key={i} className="bg-red-100 dark:bg-red-900/40 border-2 border-red-400 px-3 py-1.5 text-xs font-black text-red-800 dark:text-red-200 flex items-center gap-2">
-                <span>🚩</span>
-                <span>{f.name}</span>
-                <span className="text-red-500 dark:text-red-400 font-medium">({f.batchName})</span>
+              <div key={i} className="bg-red-100 dark:bg-red-900/40 border-2 border-red-400 p-3 text-xs font-black text-red-800 dark:text-red-200 flex flex-col justify-between gap-2 shadow-[2px_2px_0px_0px_rgba(239,68,68,1)]">
+                <div>
+                  <div className="flex justify-between items-start gap-1">
+                    <span className="font-black text-sm">{f.name}</span>
+                    <span className="bg-red-600 text-white text-[9px] px-1.5 py-0.5 font-bold uppercase leading-none">পরপর ৩টি মিস</span>
+                  </div>
+                  <div className="text-red-600 dark:text-red-400 font-bold mt-1">মোবাইল: {f.phone}</div>
+                  <div className="text-zinc-500 text-[10px] mt-0.5">ব্যাচ: {f.batchName}</div>
+                </div>
+                <button
+                  onClick={() => excuseStudent(f.id, f.sessionIds)}
+                  className="bg-red-600 hover:bg-red-700 text-white font-black py-1 px-2 mt-2 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(240,240,240,1)] active:translate-y-0.5 active:shadow-none transition-all text-center"
+                >
+                  🩹 মওকুফ করুন (Cancel Absence)
+                </button>
               </div>
             ))}
           </div>
-          <p className="text-xs text-red-500 dark:text-red-400 font-bold mt-3">
-            ※ এই সমস্যা manually সমাধান করতে Students Management-এ যান।
+        </div>
+      )}
+
+      {excusedStudents.length > 0 && (
+        <div className="mb-6 bg-green-50 dark:bg-green-950/30 border-4 border-green-500 p-4">
+          <h3 className="font-black text-green-700 dark:text-green-400 uppercase mb-3 flex items-center gap-2">
+            <span>❌ মওকুফকৃত অনুপস্থিতি তালিকা (Canceled Absences)</span>
+            <span className="bg-green-600 text-white text-xs px-2 py-0.5 font-black">{excusedStudents.length}</span>
+          </h3>
+          <p className="text-sm font-medium text-green-700 dark:text-green-300 mb-3">
+            নিচের ছাত্রছাত্রীদের অনুপস্থিতি মওকুফ করা হয়েছে এবং নামের পাশে `❌` প্রদর্শন করা হচ্ছে:
           </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {excusedStudents.map((s, i) => (
+              <div key={i} className="bg-green-100 dark:bg-green-900/40 border-2 border-green-400 p-3 text-xs font-black text-green-800 dark:text-green-200 flex flex-col justify-between gap-2 shadow-[2px_2px_0px_0px_rgba(34,197,94,1)]">
+                <div>
+                  <div className="flex justify-between items-start gap-1">
+                    <span className="font-black text-sm">❌ {s.name}</span>
+                    <span className="bg-green-600 text-white text-[9px] px-1.5 py-0.5 font-bold uppercase leading-none">মওকুফকৃত</span>
+                  </div>
+                   <div className="text-green-600 dark:text-green-400 font-bold mt-1">কারণ: {s.exemptReason}</div>
+                  <div className="text-zinc-500 text-[10px] mt-0.5">মোবাইল: {s.phone} | ব্যাচ: {s.batchName}</div>
+                </div>
+                <button
+                  onClick={() => revokeExcuse(s.id)}
+                  className="bg-zinc-700 hover:bg-zinc-800 text-white font-black py-1 px-2 mt-2 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(240,240,240,1)] active:translate-y-0.5 active:shadow-none transition-all text-center"
+                >
+                  🔄 পুনরায় গণনায় ফিরিয়ে আনুন (Bring back to scope)
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1464,7 +1586,9 @@ function StudentDashboard() {
                 }
                 
                 validExamsChecked++;
-                if (!sBatchAtt[i].presentStudentIds.includes(user.uid)) {
+                const studentExcusedDates = (user as any).excusedDates ? String((user as any).excusedDates).split(',').filter(Boolean) : [];
+                const isExcused = studentExcusedDates.includes(sBatchAtt[i].date);
+                if (!sBatchAtt[i].presentStudentIds.includes(user.uid) && !isExcused) {
                    recentAbsences++;
                 } else {
                    break;
@@ -1971,6 +2095,7 @@ function StudentSimulatorWrapper() {
               <option value="">-- Default Admin UID --</option>
               {batchStudents.map((s) => (
                 <option key={s.id} value={s.id}>
+                  {s.excusedDates && s.excusedDates.length > 0 ? '❌ ' : ''}
                   {s.name || s.fullName || s.email}
                 </option>
               ))}
