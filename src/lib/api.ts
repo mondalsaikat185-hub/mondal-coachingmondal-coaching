@@ -42,7 +42,7 @@ export interface Batch {
 export interface LibraryItem {
   id: string;
   title: string;
-  type: 'folder' | 'note' | 'exam';
+  type: 'folder' | 'note' | 'exam' | 'pdf';
   parentId: string | null;
   contentUrl?: string;
   isFolder: boolean;
@@ -116,7 +116,13 @@ export interface ExamResult {
 
 export function cleanPhone(p: any): string {
   if (p === undefined || p === null) return "";
-  let s = String(p);
+  let s = String(p).trim();
+  if (s.toLowerCase().indexOf('e') !== -1) {
+    const num = Number(p);
+    if (!isNaN(num)) {
+      s = num.toFixed(0);
+    }
+  }
   if (s.indexOf('.') !== -1) {
     s = s.split('.')[0];
   }
@@ -466,6 +472,20 @@ export const api = {
     }
   },
 
+  getAnnouncement: async (): Promise<string> => {
+    if (USE_REAL_API) {
+      return runGasMethod<string>('apiGetAnnouncement');
+    }
+    return localStorage.getItem('mc_announcement') || '';
+  },
+  saveAnnouncement: async (message: string): Promise<boolean> => {
+    if (USE_REAL_API) {
+      await runGasMethod<any>('apiSaveAnnouncement', message);
+      return true;
+    }
+    localStorage.setItem('mc_announcement', message);
+    return true;
+  },
   deleteUser: async (userId: string): Promise<boolean> => {
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiDeleteUser", userId);
@@ -916,7 +936,3 @@ export const api = {
     }
   }
 };
-
-
-
-

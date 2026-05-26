@@ -9,6 +9,7 @@ export function AdminSettings() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
   const [settings, setSettings] = useState({
     adminUpiId: '',
     enablePaymentSystem: true
@@ -18,6 +19,8 @@ export function AdminSettings() {
     const fetchSettings = async () => {
       try {
         const data = await api.getSettings();
+        const ann = await api.getAnnouncement();
+        setAnnouncement(ann);
         setSettings({
           adminUpiId: data.adminUpiId || '',
           enablePaymentSystem: data.enablePaymentSystem !== false
@@ -40,6 +43,7 @@ export function AdminSettings() {
         adminUpiId: settings.adminUpiId,
         enablePaymentSystem: settings.enablePaymentSystem
       });
+      await api.saveAnnouncement(announcement);
       clearCache('settings_general'); // Invalidate cache so next read gets fresh data
       alert("Settings saved successfully!");
     } catch (err) {
@@ -59,6 +63,17 @@ export function AdminSettings() {
 
       <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] max-w-2xl">
         <form onSubmit={handleSave} className="space-y-6">
+          <div className="space-y-4 mb-8">
+            <h3 className="font-black uppercase border-b-2 border-zinc-200 dark:border-zinc-800 pb-2 text-red-600">Global Announcement (Urgent Notice)</h3>
+            <p className="text-xs font-bold text-zinc-500">This message will appear at the top of the Student Dashboard for all students. Leave empty to remove.</p>
+            <textarea 
+              value={announcement}
+              onChange={e => setAnnouncement(e.target.value)}
+              placeholder="e.g., Classes are postponed today due to rain."
+              className="w-full bg-red-50/50 dark:bg-red-950/20 border-2 border-red-200 dark:border-red-900 p-3 font-bold text-sm min-h-[100px] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-red-500"
+            />
+          </div>
+
           <div className="space-y-4">
             <h3 className="font-black uppercase border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">Payment System Configuration</h3>
             

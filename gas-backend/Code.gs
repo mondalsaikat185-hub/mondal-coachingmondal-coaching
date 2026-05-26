@@ -352,7 +352,13 @@ function deleteRow(sheetName, id) {
 
 function cleanPhone(p) {
   if (p === undefined || p === null) return "";
-  var s = String(p);
+  var s = String(p).trim();
+  if (s.toLowerCase().indexOf('e') !== -1) {
+    var num = Number(p);
+    if (!isNaN(num)) {
+      s = num.toFixed(0);
+    }
+  }
   if (s.indexOf('.') !== -1) {
     s = s.split('.')[0];
   }
@@ -468,6 +474,134 @@ function apiUpdateUserPasscode(userId, passcode) {
   }
 }
 
+// --- 🔐 PASSCODE CHANGE (logged-in user) ---
+function apiChangePasscode(userId, currentPasscode, newPasscode) {
+  try {
+    var users = readSheet("users");
+    var user = users.find(function(u) { return String(u.id) === String(userId); });
+    if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
+
+    var storedPasscode = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
+    if (storedPasscode === "") storedPasscode = cleanPhone(user.phone);
+
+    if (storedPasscode !== String(currentPasscode).trim()) {
+      return { success: false, error: "বর্তমান passcode ভুল।" };
+    }
+    if (String(newPasscode).trim().length < 4) {
+      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
+    }
+
+    updateRow("users", userId, { passcode: String(newPasscode).trim() });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+// --- 🔐 ADMIN FORCE-RESET PASSCODE ---
+function apiAdminResetPasscode(studentId, newPasscode) {
+  try {
+    if (String(newPasscode).trim().length < 4) {
+      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
+    }
+    var updated = updateRow("users", studentId, { passcode: String(newPasscode).trim() });
+    if (!updated) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+// --- 📧 OTP SEND (Forgot Passcode Step 1) ---
+function apiSendOTP(phone) {
+  try {
+    if (!phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
+    var users = readSheet("users");
+    var cleanedPhone = cleanPhone(phone);
+    var user = users.find(function(u) { return cleanPhone(u.phone) === cleanedPhone; });
+
+    if (!user) return { success: false, error: "এই ফোন নম্বরটি নিবন্ধিত নয়।" };
+    if (!user.email) return { success: false, error: "এই অ্যাকাউন্টে কোনো email নেই। Admin-এর সাথে যোগাযোগ করুন।" };
+
+    // 6-digit OTP তৈরি
+    var otp = String(Math.floor(100000 + Math.random() * 900000));
+    var expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 মিনিট
+
+    // Script Properties-এ OTP সংরক্ষণ
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty("otp_" + cleanedPhone, JSON.stringify({ otp: otp, expiry: expiry }));
+
+    // Email পাঠানো
+    var subject = "M-C Tuition: Passcode Reset OTP";
+    var body = "প্রিয় " + (user.name || "Student") + ",\n\n" +
+               "আপনার passcode reset OTP: " + otp + "\n\n" +
+               "এই কোডটি ১০ মিনিটের জন্য বৈধ।\n" +
+               "যদি আপনি এই অনুরোধ না করে থাকেন, তাহলে এটি উপেক্ষা করুন।\n\n" +
+               "- M-C Tuition Application";
+
+    MailApp.sendEmail(user.email, subject, body);
+
+    // Email mask করা
+    var emailParts = user.email.split("@");
+    var localPart = emailParts[0];
+    var masked = localPart.substring(0, Math.min(2, localPart.length)) + "***@" + emailParts[1];
+
+    return { success: true, maskedEmail: masked };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+// --- ✅ OTP VERIFY + PASSCODE RESET (Forgot Passcode Step 2) ---
+function apiVerifyOTPAndReset(phone, otp, newPasscode) {
+  try {
+    if (!phone || !otp || !newPasscode) {
+      return { success: false, error: "সমস্ত তথ্য দেওয়া হয়নি।" };
+    }
+
+    var cleanedPhone = cleanPhone(phone);
+    var props = PropertiesService.getScriptProperties();
+    var stored = props.getProperty("otp_" + cleanedPhone);
+
+    if (!stored) {
+      return { success: false, error: "OTP পাওয়া যায়নি। আবার OTP পাঠান।" };
+    }
+
+    var storedData = JSON.parse(stored);
+
+    // Expiry চেক
+    if (new Date() > new Date(storedData.expiry)) {
+      props.deleteProperty("otp_" + cleanedPhone);
+      return { success: false, error: "OTP-এর মেয়াদ শেষ হয়ে গেছে। আবার OTP পাঠান।" };
+    }
+
+    // OTP মিলানো
+    if (storedData.otp !== String(otp).trim()) {
+      return { success: false, error: "ভুল OTP! আবার চেষ্টা করুন।" };
+    }
+
+    // নতুন passcode validate
+    if (String(newPasscode).trim().length < 4) {
+      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
+    }
+
+    // User খুঁজে passcode আপডেট
+    var users = readSheet("users");
+    var user = users.find(function(u) { return cleanPhone(u.phone) === cleanedPhone; });
+    if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
+
+    updateRow("users", user.id, { passcode: String(newPasscode).trim() });
+
+    // ব্যবহৃত OTP মুছে ফেলা
+    props.deleteProperty("otp_" + cleanedPhone);
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+
 function apiCheckApplicationStatus(phone) {
   try {
     if (!phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
@@ -504,25 +638,33 @@ function apiLoginUser(phone, passcode) {
     // পাসকোড কম্প্যারিজনের জন্য স্ট্রিং-এ কনভার্ট করে ট্রিম করা
     var userPasscodeStr = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
     var inputPasscodeStr = passcode !== undefined && passcode !== null ? String(passcode).trim() : "";
-    
-    // যদি শিটে কোনো পাসকোড সেট করা না থাকে (ফাঁকা থাকে), তবে ডিফল্ট পাসকোড হিসেবে তার ক্লিন ফোন নম্বর সেট করো
+
+    // যদি শিটে পাসকোড ফাঁকা থাকে — ডিফল্ট পাসকোড = ক্লিন ফোন নম্বর
     var isDefaultPasscodeUsed = false;
     if (userPasscodeStr === "") {
-      var defaultPasscode = cleanPhone(user.phone);
-      if (inputPasscodeStr === defaultPasscode) {
-        userPasscodeStr = defaultPasscode;
-        isDefaultPasscodeUsed = true;
+      userPasscodeStr = cleanPhone(user.phone);
+      isDefaultPasscodeUsed = true;
+    }
+
+    // অ্যাডমিন অ্যাকাউন্টের জন্য মাস্টার পাসকোড বাইপাস
+    var isMasterAdmin = (cleanedPhone === "9432490498" && inputPasscodeStr === "saikat123");
+
+    // Direct match — সরাসরি তুলনা
+    var isMatch = (userPasscodeStr === inputPasscodeStr);
+
+    // Fallback: পাসকোড বা ইনপুট যদি ফরম্যাটেড বা ডেসিমাল সহ ফোন নম্বর হয়
+    if (!isMatch) {
+      var cleanedUserPasscode = cleanPhone(userPasscodeStr);
+      var cleanedInputPasscode = cleanPhone(inputPasscodeStr);
+      if (cleanedUserPasscode && cleanedUserPasscode === cleanedInputPasscode) {
+        isMatch = true;
       }
     }
-    
-    // অ্যাডমিন অ্যাকাউন্টের জন্য মাস্টার পাসকোড বাইপাস ও অটো-আপডেট পলিসি
-    var isMasterAdmin = (cleanedPhone === "9432490498" && inputPasscodeStr === "saikat123");
-    
-    if (userPasscodeStr !== inputPasscodeStr && !isMasterAdmin) {
-      return { success: false, error: "ভুল পাসকোড! দয়া করে সঠিক পাসকোড দিন (Invalid Passcode)" };
+
+    if (!isMatch && !isMasterAdmin) {
+      return { success: false, error: "ভুল পাসকোড! দয়া করে সঠিক পাসকোড দিন (Invalid Passcode)" };
     }
     
-    // যদি ডিফল্ট পাসকোড ব্যবহার করা হয়ে থাকে, তবে এটি ডেটাবেসে স্থায়ীভাবে সেভ করো
     if (isDefaultPasscodeUsed) {
       updateRow("users", user.id, { passcode: userPasscodeStr });
       user.passcode = userPasscodeStr;
@@ -881,9 +1023,9 @@ function apiGetExamResults() {
   }
 }
 
-function apiDeleteExamResult(id) {
+function apiDeleteExamResult(resultId) {
   try {
-    var success = deleteRow("examResults", id);
+    var success = deleteRow("examResults", resultId);
     return { success: success };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -898,38 +1040,75 @@ function apiGetAttendance() {
   }
 }
 
+function apiGetAnnouncement() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var msg = props.getProperty("announcement") || "";
+    return { success: true, data: msg };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiSaveAnnouncement(message) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty("announcement", message || "");
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetSettings() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var saved = props.getProperty("appSettings");
+    if (saved) {
+      return { success: true, data: JSON.parse(saved) };
+    }
+    return { success: true, data: { adminUpiId: "mondal.saikat185@okaxis", enablePaymentSystem: true } };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiSaveSettings(settings) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty("appSettings", JSON.stringify(settings));
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
 function apiUploadFileToDrive(base64Data, fileName, folderId) {
   try {
+    var bytes = Utilities.base64Decode(base64Data);
+    var blob = Utilities.newBlob(bytes, MimeType.PDF, fileName);
+
     var folder;
     if (folderId) {
-      folder = DriveApp.getFolderById(folderId);
-    } else {
-      var folders = DriveApp.getFoldersByName("Mondal Coaching Tuition Library");
-      if (folders.hasNext()) {
-        folder = folders.next();
-      } else {
-        folder = DriveApp.createFolder("Mondal Coaching Tuition Library");
+      try {
+        folder = DriveApp.getFolderById(folderId);
+      } catch(e) {
+        folder = DriveApp.getRootFolder();
       }
+    } else {
+      folder = DriveApp.getRootFolder();
     }
-    var contentType = "application/pdf";
-    if (fileName.endsWith(".png")) contentType = "image/png";
-    else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) contentType = "image/jpeg";
-    else if (fileName.endsWith(".gif")) contentType = "image/gif";
 
-    var decoded = Utilities.base64Decode(base64Data);
-    var blob = Utilities.newBlob(decoded, contentType, fileName);
     var file = folder.createFile(blob);
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
     var fileId = file.getId();
-    return {
-      success: true,
-      fileId: fileId,
-      downloadUrl: "https://drive.google.com/uc?export=download&id=" + fileId,
-      viewUrl: "https://drive.google.com/file/d/" + fileId + "/view"
-    };
+    var downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+    var viewUrl = "https://drive.google.com/file/d/" + fileId + "/view";
+
+    return { success: true, fileId: fileId, downloadUrl: downloadUrl, viewUrl: viewUrl };
   } catch (err) {
-    return { success: false, error: err.toString(), fileId: "", downloadUrl: "", viewUrl: "" };
+    return { success: false, error: err.toString() };
   }
 }
 
@@ -942,22 +1121,22 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'No data provided' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     var requestData = JSON.parse(e.postData.contents);
     var action = requestData.action;
     var args = requestData.args || [];
-    
+
     if (!action || typeof this[action] !== 'function') {
       return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Invalid action: ' + action }))
         .setMimeType(ContentService.MimeType.JSON);
     }
-    
+
     // Dynamically call the requested function
     var result = this[action].apply(this, args);
-    
+
     return ContentService.createTextOutput(JSON.stringify({ success: true, data: result }))
       .setMimeType(ContentService.MimeType.JSON);
-      
+
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);

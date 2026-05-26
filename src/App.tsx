@@ -455,7 +455,7 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <input type="text" placeholder="Name *" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
             <input type="tel" placeholder="Phone Number *" required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
-            <input type="email" placeholder="Email (Optional)" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
+            <input type="email" placeholder="Email *" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
             <textarea placeholder="Address" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
             
             <div className="flex flex-col gap-1.5">
@@ -716,6 +716,7 @@ function TopNav() {
       await api.saveUser({
         id: user.uid,
         name: editName,
+        phone: user.phoneNumber || '',
         address: editAddress
       });
       updateLocalUser({
@@ -1304,6 +1305,7 @@ function StudentDashboard() {
     color: "text-emerald-600 dark:text-emerald-400",
   });
   const [showNudge, setShowNudge] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
 
   useEffect(() => {
     // Check nudge popup
@@ -1387,6 +1389,8 @@ function StudentDashboard() {
     if (user.batchId) {
       try {
         const fetchAssignments = async () => {
+        const ann = await api.getAnnouncement();
+        setAnnouncement(ann);
            const allBatches = await api.getBatches();
            const batch = allBatches.find(b => b.id === user.batchId);
            if (!batch) return;
@@ -1507,6 +1511,16 @@ function StudentDashboard() {
             >
               I Understand, Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {announcement && (
+        <div className="mb-6 bg-red-50 dark:bg-red-950/30 border-2 border-red-500 dark:border-red-400 p-4 shadow-[4px_4px_0px_0px_rgba(239,68,68,1)] flex items-start gap-3 animate-pulse">
+          <span className="text-xl shrink-0 mt-0.5">📢</span>
+          <div>
+            <div className="text-xs font-black uppercase text-red-600 dark:text-red-400 mb-1">Urgent Notice / জরুরি ঘোষণা:</div>
+            <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{announcement}</div>
           </div>
         </div>
       )}

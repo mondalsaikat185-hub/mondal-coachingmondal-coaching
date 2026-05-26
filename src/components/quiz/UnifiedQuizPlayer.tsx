@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Exam } from '../../pages/Pages';
+import { RotateCw } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 import { api } from '../../lib/api';
 import { clearCache } from '../../lib/cache';
 
 export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: Exam, onBack: () => void, isPreview?: boolean }) {
   const { user } = useAuth();
+  const [isForcedLandscape, setIsForcedLandscape] = useState(false);
   const [screen, setScreen] = useState<'AGREEMENT' | 'LANDING' | 'QUIZ' | 'RESULT'>('AGREEMENT');
   const [userAnswers, setUserAnswers] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(0);
@@ -326,7 +328,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   }
 
   return (
-    <div className="max-w-4xl mx-auto relative select-none">
+    <div className={`max-w-4xl mx-auto relative select-none ${isForcedLandscape ? 'force-landscape-active' : ''}`}>
        {screen === 'QUIZ' && (
           <div className="pointer-events-none fixed flex flex-col items-center justify-center opacity-[0.03] dark:opacity-[0.05] w-full h-full z-0 transform -rotate-45" style={{ top: 0, left: 0 }}>
              {Array.from({ length: 15 }).map((_, i) => (
@@ -337,14 +339,26 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           </div>
        )}
        
-       <div className="bg-zinc-200 dark:bg-zinc-800 p-4 font-black uppercase text-xl sticky top-0 z-10 border-b-4 border-zinc-900 dark:border-zinc-100 flex justify-between relative">
+       <div className="bg-zinc-200 dark:bg-zinc-800 p-4 font-black uppercase text-xl sticky top-0 z-10 border-b-4 border-zinc-900 dark:border-zinc-100 flex justify-between items-center relative">
           <div>Time Left: {Math.floor(timeLeft / 3600) > 0 ? `${Math.floor(timeLeft / 3600)}:${Math.floor((timeLeft % 3600) / 60).toString().padStart(2, '0')}:${(timeLeft % 60).toString().padStart(2, '0')}` : `${Math.floor(timeLeft / 60).toString().padStart(2, '0')}:${(timeLeft % 60).toString().padStart(2, '0')}`}</div>
-          {exam.examType?.includes('Bilingual') && (
-            <select value={lang} onChange={e => setLang(e.target.value)} className="text-sm p-1 ml-4 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 border-2 border-zinc-900 dark:border-zinc-100">
-               <option value="en">English</option>
-               <option value="bn">বাংলা</option>
-            </select>
-          )}
+          <div className="flex items-center gap-3">
+            <button 
+              type="button"
+              onClick={() => setIsForcedLandscape(!isForcedLandscape)}
+              className="text-xs flex items-center gap-1.5 px-3 py-2 bg-yellow-300 hover:bg-yellow-400 text-zinc-900 border-2 border-zinc-900 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] font-bold uppercase transition-all animate-bounce"
+              title="Rotate Screen / স্ক্রিন ঘোরান"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Rotate Screen / স্ক্রিন ঘোরান</span>
+              <span className="sm:hidden">Rotate / ঘোরান</span>
+            </button>
+            {exam.examType?.includes('Bilingual') && (
+              <select value={lang} onChange={e => setLang(e.target.value)} className="text-sm p-1 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 border-2 border-zinc-900 dark:border-zinc-100">
+                 <option value="en">English</option>
+                 <option value="bn">বাংলা</option>
+              </select>
+            )}
+          </div>
        </div>
        
        <div className="p-4 grid grid-cols-1 landscape:grid-cols-2 md:grid-cols-2 gap-6 items-start">

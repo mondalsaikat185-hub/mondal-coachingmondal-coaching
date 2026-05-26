@@ -9,3 +9,19 @@
 body {
   overscroll-behavior-y: none;
 }
+
+.force-landscape-active {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 100vh !important;
+  height: 100vw !important;
+  transform: translate(-50%, -50%) rotate(90deg) !important;
+  z-index: 99999 !important;
+  overflow-y: auto !important;
+  background-color: #ffffff !important;
+}
+
+.dark .force-landscape-active {
+  background-color: #18181b !important;
+}
