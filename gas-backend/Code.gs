@@ -1118,7 +1118,7 @@ function apiVerifyGatewayPayment(paymentId, months, amount, studentId) {
         
         if (responseCode === 200) {
           var paymentData = JSON.parse(responseBody);
-          if (paymentData.status === 'captured') {
+          if (paymentData.status === 'captured' || paymentData.status === 'authorized') {
             isVerified = true;
           }
         }
