@@ -71,6 +71,8 @@ export interface PaymentRecord {
   transactionId?: string;
   paidDate?: string;
   remarks?: string;
+  proofImage?: string;
+  paymentMode?: 'manual' | 'proof_upload' | 'gateway';
   createdAt: string;
 }
 

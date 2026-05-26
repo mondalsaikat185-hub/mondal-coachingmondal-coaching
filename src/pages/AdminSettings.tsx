@@ -106,13 +106,14 @@ export function AdminSettings() {
                   disabled={!settings.enablePaymentSystem}
                   className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-bold"
                 >
-                  <option value="manual" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Manual UPI Scan & Admin Review</option>
+                <option value="manual" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Manual UPI Scan & Admin Review</option>
+                  <option value="proof_upload" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Payment Proof Upload (Screenshot + TXN ID)</option>
                   <option value="gateway" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Automated Razorpay Payment Gateway (Instant Approval)</option>
                 </select>
-                <p className="text-xs text-zinc-500">Choose between manual student UPI reporting or instant automated gateway checkout.</p>
+                <p className="text-xs text-zinc-500">Choose: Manual UPI scan, Screenshot proof upload, or Razorpay instant checkout.</p>
               </div>
 
-              {settings.paymentMethod === 'manual' ? (
+              {settings.paymentMethod !== 'gateway' ? (
                 <div className="space-y-2">
                   <label className="block text-xs font-bold uppercase">Your UPI ID (For Scan to Pay)</label>
                   <input 

@@ -934,6 +934,9 @@ export interface Payment {
   month: string;
   status: 'pending' | 'approved' | 'rejected';
   remarks?: string;
+  transactionId?: string;
+  proofImage?: string;
+  paymentMode?: 'manual' | 'proof_upload' | 'gateway';
   createdAt?: any;
 }
 
@@ -949,6 +952,7 @@ export function AdminPayments() {
 
   const [rejectingPaymentId, setRejectingPaymentId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [viewingProofPayment, setViewingProofPayment] = useState<Payment | null>(null);
   
   const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState('');
@@ -990,6 +994,9 @@ export function AdminPayments() {
           month: p.month,
           status: p.status as any,
           remarks: (p as any).remarks || '',
+          transactionId: (p as any).transactionId || '',
+          proofImage: (p as any).proofImage || '',
+          paymentMode: (p as any).paymentMode || 'manual',
           createdAt: p.createdAt
         };
       });
@@ -1188,6 +1195,40 @@ export function AdminPayments() {
     </div>
   ) : null;
 
+  const proofViewerModal = viewingProofPayment ? (
+    <div className="fixed inset-0 bg-black/90 flex justify-center items-center z-[100] p-4" onClick={() => setViewingProofPayment(null)}>
+      <div className="bg-white dark:bg-zinc-900 border-4 border-blue-500 w-full max-w-lg p-4 transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(59,130,246,1)] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-3">
+           <h3 className="font-black text-lg text-blue-600 uppercase">📸 Payment Proof</h3>
+           <button onClick={() => setViewingProofPayment(null)} className="p-1.5 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 font-bold">
+              <X className="w-4 h-4" />
+           </button>
+        </div>
+        <div className="space-y-3">
+           <div className="text-xs space-y-1">
+              <div><span className="font-bold uppercase text-zinc-500">Month:</span> <span className="font-black">{viewingProofPayment.month}</span></div>
+              <div><span className="font-bold uppercase text-zinc-500">Amount:</span> <span className="font-black font-mono">₹{viewingProofPayment.amount}</span></div>
+              {(viewingProofPayment as any).transactionId && (
+                 <div><span className="font-bold uppercase text-zinc-500">TXN ID:</span> <span className="font-black font-mono text-blue-600 dark:text-blue-400">{(viewingProofPayment as any).transactionId}</span></div>
+              )}
+              <div><span className="font-bold uppercase text-zinc-500">Status:</span> <span className={`font-black uppercase ${viewingProofPayment.status === 'pending' ? 'text-yellow-600' : viewingProofPayment.status === 'approved' ? 'text-emerald-600' : 'text-red-600'}`}>{viewingProofPayment.status}</span></div>
+           </div>
+           {(viewingProofPayment as any).proofImage ? (
+              <img src={(viewingProofPayment as any).proofImage} alt="Payment proof screenshot" className="w-full border-2 border-zinc-300 dark:border-zinc-600" />
+           ) : (
+              <div className="text-center py-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 font-bold text-sm">No screenshot attached</div>
+           )}
+           {viewingProofPayment.status === 'pending' && (
+              <div className="flex gap-2 pt-2 border-t-2 border-zinc-200 dark:border-zinc-700">
+                 <button onClick={() => { updatePaymentStatus(viewingProofPayment.id, 'approved'); setViewingProofPayment(null); }} className="flex-1 bg-emerald-500 text-white font-bold uppercase text-xs py-3 hover:-translate-y-0.5 transition-transform shadow-[3px_3px_0px_0px_#064e3b] flex items-center justify-center gap-1"><Check className="w-4 h-4" />Approve</button>
+                 <button onClick={() => { setRejectingPaymentId(viewingProofPayment.id); setViewingProofPayment(null); }} className="flex-1 bg-red-500 text-white font-bold uppercase text-xs py-3 hover:-translate-y-0.5 transition-transform shadow-[3px_3px_0px_0px_#450a0a] flex items-center justify-center gap-1"><X className="w-4 h-4" />Reject</button>
+              </div>
+           )}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin w-8 h-8" /></div>;
 
   if (selectedStudentId) {
@@ -1198,6 +1239,7 @@ export function AdminPayments() {
      return (
        <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full space-y-6 relative">
           {rejectModal}
+          {proofViewerModal}
 
           <div className="flex items-center gap-4">
              <button onClick={() => setSelectedStudentId(null)} className="px-3 py-1.5 bg-zinc-200 dark:bg-zinc-800 font-bold uppercase text-xs hover:-translate-y-0.5 border-2 border-zinc-900 dark:border-zinc-100 flex items-center gap-1"><ArrowLeft className="w-3.5 h-3.5"/> Back</button>
@@ -1316,6 +1358,12 @@ export function AdminPayments() {
                                  )}
                               </div>
                               {p.remarks && <div className="text-[10px] text-zinc-500 mt-2 italic border-t border-zinc-200 dark:border-zinc-800 pt-1">Reason: {p.remarks}</div>}
+                              {(p as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">TXN ID: {(p as any).transactionId}</div>}
+                              {(p as any).proofImage && (
+                                 <button onClick={() => setViewingProofPayment(p)} className="mt-2 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold uppercase px-2 py-1 hover:bg-blue-200 dark:hover:bg-blue-800/30 transition-colors border border-blue-300 dark:border-blue-700 flex items-center gap-1">
+                                    📸 View Proof
+                                 </button>
+                              )}
                            </div>
                         ))}
                      </div>
@@ -1439,6 +1487,73 @@ export function StudentPayments() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [proofImage, setProofImage] = useState<string>('');
+  const [transactionId, setTransactionId] = useState('');
+  const [imagePreview, setImagePreview] = useState<string>('');
+
+  // Image compression utility — compress screenshot to max ~200KB Base64
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { reject('Canvas context failed'); return; }
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Compress to JPEG at 60% quality
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+          resolve(compressedBase64);
+        };
+        img.onerror = () => reject('Image load failed');
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject('File read failed');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file (JPG, PNG, etc.)');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large. Maximum 10MB allowed.');
+      return;
+    }
+    try {
+      const compressed = await compressImage(file);
+      setProofImage(compressed);
+      setImagePreview(compressed);
+    } catch (err) {
+      console.error('Image compression failed:', err);
+      alert('Failed to process image. Please try again.');
+    }
+  };
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [settings, setSettings] = useState({
     adminUpiId: '',
@@ -1533,6 +1648,9 @@ export function StudentPayments() {
            month: p.month,
            status: p.status as any,
            remarks: (p as any).remarks || '',
+           transactionId: (p as any).transactionId || '',
+           proofImage: (p as any).proofImage || '',
+           paymentMode: (p as any).paymentMode || 'manual',
            createdAt: p.createdAt
          }));
          const getMs = (t: any) => new Date(t).getTime() || 0;
@@ -1732,15 +1850,37 @@ export function StudentPayments() {
     
     try {
       setSubmitting(true);
-      await api.addPayment({
+      const paymentData: any = {
         studentId: user.uid,
         studentName: user.fullName || user.displayName || 'Unknown Student',
         studentEmail: user.email || '',
         month: selectedMonths.join(', '),
         amount: calculatedAmount,
-        status: 'pending'
-      } as any);
+        status: 'pending',
+        paymentMode: settings.paymentMethod || 'manual',
+      };
+      
+      // Attach proof data if using proof_upload mode
+      if (settings.paymentMethod === 'proof_upload') {
+        if (!proofImage) {
+          alert('Please upload a payment screenshot as proof.');
+          setSubmitting(false);
+          return;
+        }
+        if (!transactionId.trim()) {
+          alert('Please enter the Transaction ID / UTR Number.');
+          setSubmitting(false);
+          return;
+        }
+        paymentData.proofImage = proofImage;
+        paymentData.transactionId = transactionId.trim();
+      }
+      
+      await api.addPayment(paymentData);
       setSelectedMonths([]);
+      setProofImage('');
+      setImagePreview('');
+      setTransactionId('');
       setPaymentSuccess(true);
       setTimeout(() => setPaymentSuccess(false), 3000);
 
@@ -1756,6 +1896,9 @@ export function StudentPayments() {
         month: p.month,
         status: p.status as any,
         remarks: (p as any).remarks || '',
+        transactionId: (p as any).transactionId || '',
+        proofImage: (p as any).proofImage || '',
+        paymentMode: (p as any).paymentMode || 'manual',
         createdAt: p.createdAt
       }));
       const getMs = (t: any) => new Date(t).getTime() || 0;
@@ -1810,7 +1953,70 @@ export function StudentPayments() {
                    ⚡ Instant Auto-Approval
                 </div>
              </div>
-          ) : (
+          ) : settings.paymentMethod === 'proof_upload' ? (
+              <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
+                 <div className="text-xs font-bold uppercase mb-3 dark:text-yellow-100">📸 Upload Payment Screenshot</div>
+                 
+                 {settings.adminUpiId && (
+                    <div className="mb-3 w-full">
+                       <div className="text-[10px] text-zinc-500 mb-1">Pay to this UPI ID first:</div>
+                       <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 dark:border-zinc-600 select-all bg-zinc-50 dark:bg-zinc-800">{settings.adminUpiId}</div>
+                       <button 
+                         type="button"
+                         onClick={() => {
+                            navigator.clipboard.writeText(settings.adminUpiId);
+                            alert('UPI ID copied!');
+                         }}
+                         className="mt-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                       >
+                         📋 Copy UPI ID
+                       </button>
+                    </div>
+                 )}
+
+                 <div className="w-full border-t-2 border-zinc-200 dark:border-zinc-700 pt-3 mt-1">
+                    {imagePreview ? (
+                       <div className="relative mb-3">
+                          <img src={imagePreview} alt="Payment proof" className="max-h-48 mx-auto border-2 border-emerald-500 shadow-[3px_3px_0px_0px_rgba(16,185,129,1)]" />
+                          <button
+                            type="button"
+                            onClick={() => { setProofImage(''); setImagePreview(''); }}
+                            className="absolute top-1 right-1 bg-red-500 text-white p-1 text-xs font-bold hover:bg-red-600"
+                          >
+                            ✕ Remove
+                          </button>
+                          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">✅ Screenshot attached</div>
+                       </div>
+                    ) : (
+                       <label className="cursor-pointer block">
+                          <div className="border-2 border-dashed border-zinc-400 dark:border-zinc-600 p-6 hover:border-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-colors">
+                             <div className="text-3xl mb-2">📷</div>
+                             <div className="text-xs font-bold text-zinc-600 dark:text-zinc-400">Tap to upload payment screenshot</div>
+                             <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">JPG, PNG — Max 10MB</div>
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                          />
+                       </label>
+                    )}
+                 </div>
+
+                 <div className="w-full mt-3">
+                    <label className="block text-[10px] font-bold uppercase text-left mb-1 dark:text-yellow-100">Transaction ID / UTR Number</label>
+                    <input
+                       type="text"
+                       value={transactionId}
+                       onChange={e => setTransactionId(e.target.value)}
+                       placeholder="e.g. 412345678901 or UPI Ref No."
+                       className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-mono dark:text-white"
+                    />
+                 </div>
+              </div>
+           ) : (
              <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
                 <div className="text-xs font-bold uppercase mb-2 dark:text-yellow-100">Scan to Pay via UPI</div>
                 {settings.adminUpiId ? (
@@ -1915,11 +2121,15 @@ export function StudentPayments() {
               >
                 {submitting ? 'Initializing Checkout...' : `Pay ₹${calculatedAmount} via Razorpay`}
               </button>
-            ) : (
-              <button type="submit" disabled={submitting || selectedMonths.length === 0} className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0">
-                {submitting ? 'Submitting...' : 'Submit to Admin'}
-              </button>
-            )}
+            ) : settings.paymentMethod === 'proof_upload' ? (
+               <button type="submit" disabled={submitting || selectedMonths.length === 0 || !proofImage || !transactionId.trim()} className="mt-2 bg-emerald-600 text-white font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-emerald-800 disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2">
+                 {submitting ? 'Uploading Proof...' : `📸 Submit Proof for ₹${calculatedAmount}`}
+               </button>
+             ) : (
+               <button type="submit" disabled={submitting || selectedMonths.length === 0} className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0">
+                 {submitting ? 'Submitting...' : 'Submit to Admin'}
+               </button>
+             )}
           </form>
           </>
           )}
@@ -1948,6 +2158,8 @@ export function StudentPayments() {
                       {payment.createdAt && ` at ${new Date(payment.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
                     </div>
                     <div className="text-zinc-500 font-bold font-mono mt-1 text-sm">Amount: ₹{payment.amount}</div>
+                    {(payment as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">TXN ID: {(payment as any).transactionId}</div>}
+                    {(payment as any).paymentMode === 'proof_upload' && <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">📸 Proof Uploaded</div>}
                   </div>
                   <div>
                     {payment.status === 'pending' && <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold uppercase rounded-full border-2 border-yellow-200">Pending Review</span>}
