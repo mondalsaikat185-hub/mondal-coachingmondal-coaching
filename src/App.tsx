@@ -26,7 +26,7 @@ import {
   Bell,
 } from "lucide-react";
 import { api } from "./lib/api";
-import { safeToDate } from "./lib/utils";
+import { safeToDate, formatDateOnlySafe } from "./lib/utils";
 import {
   AdminStudents,
   AdminPayments,
@@ -1723,7 +1723,7 @@ function StudentDashboard() {
                 <span className="font-bold text-zinc-500 uppercase text-xs block">
                   Joined Date:
                 </span>{" "}
-                <div className="font-bold">{user?.joinDate || "N/A"}</div>
+                <div className="font-bold">{formatDateOnlySafe(user?.joinDate)}</div>
               </div>
               <div className="sm:col-span-2">
                 <span className="font-bold text-zinc-500 uppercase text-xs block">

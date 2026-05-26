@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { AppUser, useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { getAllAttendanceForBatch } from '../lib/exam-session-utils';
+import { formatDateOnlySafe } from '../lib/utils';
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -408,7 +409,7 @@ export function AdminStudents() {
                
                {selectedStudentForModal.joinDate && (
                  <div className="text-xs font-bold uppercase text-zinc-500 text-right mt-2">
-                   Joined Date: {selectedStudentForModal.joinDate}
+                   Joined Date: {formatDateOnlySafe(selectedStudentForModal.joinDate)}
                  </div>
                )}
             </div>
@@ -724,7 +725,7 @@ export function AdminStudents() {
                   <td className="p-2 hidden md:table-cell text-sm">
                     {student.phone ? <div className="font-bold">{student.phone}</div> : null}
                     {student.address ? <div className="text-xs text-zinc-500 line-clamp-1">{student.address}</div> : null}
-                    {student.joinDate ? <div className="text-[10px] text-zinc-400 uppercase mt-1">Joined: {student.joinDate}</div> : null}
+                    {student.joinDate ? <div className="text-[10px] text-zinc-400 uppercase mt-1">Joined: {formatDateOnlySafe(student.joinDate)}</div> : null}
                   </td>
                   <td className="p-2">
                     <select

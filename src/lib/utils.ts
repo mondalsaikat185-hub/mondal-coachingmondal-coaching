@@ -22,3 +22,26 @@ export function safeToDate(timestamp: any): Date | null {
   }
   return null;
 }
+
+export function formatDateOnlySafe(timestamp: any): string {
+  if (!timestamp) return "N/A";
+  const d = safeToDate(timestamp);
+  if (!d) {
+    const match = String(timestamp).match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+    if (match) {
+      const year = match[1];
+      const monthIndex = parseInt(match[2], 10) - 1;
+      const day = parseInt(match[3], 10);
+      const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+      if (monthIndex >= 0 && monthIndex < 12) {
+        return `${day} ${monthNames[monthIndex]} ${year}`;
+      }
+    }
+    return String(timestamp);
+  }
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const day = d.getDate();
+  const monthName = monthNames[d.getMonth()];
+  const year = d.getFullYear();
+  return `${day} ${monthName} ${year}`;
+}
