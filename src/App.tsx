@@ -1307,6 +1307,13 @@ function StudentDashboard() {
   const [showNudge, setShowNudge] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
+  // Weekend (Saturday=6, Sunday=0) Overdue alert check
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+  const isOverdue = user && Number((user as any).pendingMonths) > 0;
+  const [showWeekendNudge, setShowWeekendNudge] = useState(isWeekend && isOverdue);
+
   useEffect(() => {
     // Check nudge popup
     if (
@@ -1511,6 +1518,43 @@ function StudentDashboard() {
             >
               I Understand, Close
             </button>
+          </div>
+        </div>
+      )}
+
+      {showWeekendNudge && (
+        <div className="fixed inset-0 bg-black/85 z-[110] flex items-center justify-center p-4">
+          <div className="bg-yellow-100 dark:bg-zinc-900 border-4 border-zinc-900 dark:border-yellow-400 w-full max-w-sm p-6 text-center transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(24,24,27,1)] dark:shadow-[8px_8px_0px_0px_rgba(234,179,8,1)] text-zinc-900 dark:text-zinc-100">
+            <div className="w-16 h-16 bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-red-600 dark:border-red-400">
+              <span className="font-black text-2xl animate-bounce">⚠️</span>
+            </div>
+            <h2 className="text-xl font-black uppercase mb-2 text-red-600 dark:text-red-400 tracking-wider">
+               Overdue Alert / বকেয়া নোটিশ
+            </h2>
+            <div className="mb-4 text-sm font-bold leading-relaxed">
+              {Number((user as any).pendingMonths) >= 2 ? (
+                <>
+                  <p className="text-red-700 dark:text-red-400 font-extrabold uppercase">Your salary/fee for the previous {(user as any).pendingMonths} months is still pending.</p>
+                  <p className="mt-2 text-xs opacity-75 font-normal">আপনার গত {(user as any).pendingMonths} মাসের টিউশন ফি এখনও বকেয়া পড়ে আছে। অনুগ্রহ করে অবিলম্বে পরিশোধ করুন।</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-red-600 dark:text-red-400 font-extrabold uppercase">Your salary for the previous month is still pending.</p>
+                  <p className="mt-2 text-xs opacity-75 font-normal">আপনার গত মাসের টিউশন ফি এখনও বকেয়া পড়ে আছে। অনুগ্রহ করে দ্রুত পরিশোধ করুন।</p>
+                </>
+              )}
+            </div>
+            <div className="mb-6 p-2 bg-yellow-200 dark:bg-yellow-950/20 border-2 border-yellow-400 font-mono text-xs font-bold">
+               Monthly Fee: ₹{(user as any).monthlyFee} | Dues: ₹{Number((user as any).monthlyFee) * Number((user as any).pendingMonths)}
+            </div>
+            <div className="flex flex-col gap-2">
+               <button
+                 onClick={() => setShowWeekendNudge(false)}
+                 className="w-full border-2 border-zinc-900 dark:border-yellow-400 bg-zinc-900 text-white dark:bg-yellow-400 dark:text-zinc-900 font-bold uppercase py-2.5 hover:-translate-y-0.5 transition-transform"
+               >
+                 Close / বন্ধ করুন
+               </button>
+            </div>
           </div>
         </div>
       )}

@@ -614,8 +614,17 @@ export function AdminStudents() {
                         )}
                       </td>
                       <td className="p-2">
-                        <div className="font-bold cursor-pointer hover:underline text-blue-600 dark:text-blue-400" onClick={() => setSelectedStudentForModal(student)}>
+                        <div className="font-bold cursor-pointer hover:underline text-blue-600 dark:text-blue-400 flex items-center gap-2" onClick={() => setSelectedStudentForModal(student)}>
                           {student.fullName || student.displayName || 'Unknown'}
+                          {Number(student.pendingMonths) > 0 && (
+                            <span className={`text-[9px] px-1.5 py-0.5 font-black uppercase rounded ${
+                              Number(student.pendingMonths) >= 2 
+                                ? 'bg-red-500 text-white animate-pulse' 
+                                : 'bg-yellow-300 text-black border border-yellow-400'
+                            }`} title="Overdue alert">
+                              {student.pendingMonths}M Due
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-zinc-500">{student.email}</div>
                       </td>
@@ -1063,7 +1072,7 @@ export function AdminPayments() {
         }
       }
 
-      await api.updatePaymentStatus(id, status as any);
+      await api.updatePaymentStatus(id, status as any, remarks);
       setPayments(payments.map(p => p.id === id ? { ...p, status, remarks } : p));
       
       if (status === 'rejected') {
@@ -1293,6 +1302,10 @@ export function AdminPayments() {
                                     <span className="font-mono font-bold hover:underline cursor-pointer" onClick={() => {setEditingAmountId(p.id); setEditingAmount(p.amount.toString());}}>₹{p.amount} ✎</span>
                                  )}
                               </div>
+                              <div className="text-[10px] text-zinc-500 mb-2 font-bold font-mono">
+                                 Submitted: {p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}
+                                 {p.createdAt && ` at ${new Date(p.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
+                              </div>
                               <div className="flex justify-between items-center">
                                  <span className={`text-[10px] font-bold text-black uppercase px-2 py-0.5 ${p.status === 'pending' ? 'bg-yellow-300' : p.status === 'approved' ? 'bg-emerald-300' : 'bg-red-300'}`}>{p.status}</span>
                                  {p.status === 'pending' && (
@@ -1302,7 +1315,7 @@ export function AdminPayments() {
                                     </div>
                                  )}
                               </div>
-                              {p.remarks && <div className="text-[10px] text-zinc-500 mt-2 italic border-t border-zinc-200 dark:border-zinc-800 pt-1">Remark: {p.remarks}</div>}
+                              {p.remarks && <div className="text-[10px] text-zinc-500 mt-2 italic border-t border-zinc-200 dark:border-zinc-800 pt-1">Reason: {p.remarks}</div>}
                            </div>
                         ))}
                      </div>
@@ -1335,7 +1348,18 @@ export function AdminPayments() {
                    const pendingCount = payments.filter(p => p.studentId === s.id && p.status === 'pending').length;
                    return (
                      <button key={s.id} onClick={() => setSelectedStudentId(s.id)} className="w-full text-left p-4 border-2 border-zinc-200 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-zinc-100 flex flex-col items-start gap-1">
-                       <span className="font-bold">{s.fullName || s.email}</span>
+                        <span className="font-bold flex items-center justify-between w-full">
+                           <span>{s.fullName || s.email}</span>
+                           {Number(s.pendingMonths) > 0 && (
+                              <span className={`text-[9px] px-1.5 py-0.5 font-black uppercase rounded ${
+                                 Number(s.pendingMonths) >= 2 
+                                   ? 'bg-red-500 text-white animate-pulse' 
+                                   : 'bg-yellow-300 text-black border border-yellow-400'
+                              }`} title="Overdue alert">
+                                 {s.pendingMonths}M Due
+                              </span>
+                           )}
+                        </span>
                        {s.monthlyFee > 0 ? (
                           <span className="text-xs font-mono text-zinc-500">Fee: ₹{s.monthlyFee}</span>
                        ) : (
@@ -1918,14 +1942,18 @@ export function StudentPayments() {
               {payments.map((payment, idx) => (
                 <div key={payment.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 border-2 border-zinc-200 dark:border-zinc-800 gap-4">
                   <div>
-                    <h4 className="font-black text-lg uppercase">{payment.month}</h4>
-                    <div className="text-zinc-500 font-bold font-mono mt-1">₹{payment.amount}</div>
+                    <h4 className="font-black text-lg uppercase text-zinc-900 dark:text-zinc-100">Fee for {payment.month}</h4>
+                    <div className="text-zinc-600 dark:text-zinc-400 font-bold text-xs mt-1">
+                      Received on: {payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}
+                      {payment.createdAt && ` at ${new Date(payment.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
+                    </div>
+                    <div className="text-zinc-500 font-bold font-mono mt-1 text-sm">Amount: ₹{payment.amount}</div>
                   </div>
                   <div>
                     {payment.status === 'pending' && <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold uppercase rounded-full border-2 border-yellow-200">Pending Review</span>}
                     {payment.status === 'approved' && <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold uppercase rounded-full border-2 border-emerald-200">Approved</span>}
                     {payment.status === 'rejected' && <span className="px-3 py-1 bg-red-100 text-red-800 text-xs font-bold uppercase rounded-full border-2 border-red-200">Rejected</span>}
-                    {payment.remarks && <div className="text-[10px] text-zinc-500 mt-2 italic flex justify-end">Remark: {payment.remarks}</div>}
+                    {payment.remarks && <div className="text-[10px] text-red-600 dark:text-red-400 mt-2 font-black italic flex justify-end">Reason: {payment.remarks}</div>}
                   </div>
                 </div>
               ))}

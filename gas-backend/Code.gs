@@ -866,7 +866,7 @@ function apiAddPayment(paymentData) {
   }
 }
 
-function apiUpdatePaymentStatus(paymentId, status) {
+function apiUpdatePaymentStatus(paymentId, status, remarks) {
   try {
     // updateRow() শুধু updateObj return করে (partial), studentId থাকে না।
     // তাই আগে payment record পড়ে studentId বের করতে হবে।
@@ -879,7 +879,11 @@ function apiUpdatePaymentStatus(paymentId, status) {
       }
     }
 
-    var updated = updateRow("payments", paymentId, { status: status });
+    var updateObj = { status: status };
+    if (remarks !== undefined && remarks !== null) {
+      updateObj.remarks = remarks;
+    }
+    var updated = updateRow("payments", paymentId, updateObj);
 
     // এখন সঠিকভাবে studentId পেয়ে user record আপডেট করা যাবে
     if (payment && payment.studentId) {

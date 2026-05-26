@@ -70,6 +70,7 @@ export interface PaymentRecord {
   status: 'paid' | 'unpaid' | 'pending';
   transactionId?: string;
   paidDate?: string;
+  remarks?: string;
   createdAt: string;
 }
 
@@ -649,14 +650,17 @@ export const api = {
     }
   },
 
-  updatePaymentStatus: async (paymentId: string, status: PaymentRecord['status']): Promise<PaymentRecord> => {
+  updatePaymentStatus: async (paymentId: string, status: PaymentRecord['status'], remarks: string = ''): Promise<PaymentRecord> => {
     if (USE_REAL_API) {
-      return runGasMethod<PaymentRecord>("apiUpdatePaymentStatus", paymentId, status);
+      return runGasMethod<PaymentRecord>("apiUpdatePaymentStatus", paymentId, status, remarks);
     } else {
       const db = getMockDB();
       const idx = db.payments.findIndex(p => p.id === paymentId);
       if (idx === -1) throw new Error("Payment record not found");
       db.payments[idx].status = status;
+      if (remarks) {
+        db.payments[idx].remarks = remarks;
+      }
       
       // Update user global status
       const userIdx = db.users.findIndex(u => u.id === db.payments[idx].studentId);
