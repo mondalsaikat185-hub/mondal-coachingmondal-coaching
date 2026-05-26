@@ -748,12 +748,22 @@ function TopNav() {
       <div className="font-black italic uppercase">Tuition Portal</div>
       <div className="flex items-center gap-4">
         {user && (
-          <div className="text-xs font-mono hidden sm:block">
-            {user.fullName || user.displayName || user.email || user.phone || "User"}{" "}
-            <span className="uppercase font-bold text-orange-500 ml-2">
+          <div className="text-xs font-mono hidden sm:flex items-center gap-2">
+            <span>
+              {user.fullName || user.displayName || user.email || user.phone || "User"}
+            </span>{" "}
+            <span className="uppercase font-bold text-orange-500">
               [{user.role}]
             </span>
           </div>
+        )}
+        {user && user.role === "student" && (
+          <Link
+            to="/"
+            className="px-2.5 py-1 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 font-bold uppercase text-[10px] hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] flex items-center gap-1"
+          >
+            Dashboard / ড্যাশবোর্ড
+          </Link>
         )}
         {user && user.role === "admin" && (
           <Link
@@ -1395,8 +1405,9 @@ function StudentDashboard() {
   }, [user?.uid, (user as any)?.showPaymentNudge, (user as any)?.monthlyFee, (user as any)?.pendingMonths]);
 
   useEffect(() => {
-    if (user && isWeekend) {
-      const overdue = Number((user as any).pendingMonths) > 0;
+    const isSimulated = !!localStorage.getItem("simulatedStudentId");
+    if (user && (isWeekend || isSimulated)) {
+      const overdue = Number((user as any).pendingMonths) >= 2;
       if (overdue) {
         const sessionKey = `weekend_nudge_shown_${user.uid}`;
         if (!sessionStorage.getItem(sessionKey)) {
@@ -1599,29 +1610,54 @@ function StudentDashboard() {
       )}
 
       {showWeekendNudge && (
-        <div className="fixed inset-0 bg-black/85 z-[110] flex items-center justify-center p-4">
-          <div className="bg-yellow-100 dark:bg-zinc-900 border-4 border-zinc-900 dark:border-yellow-400 w-full max-w-sm p-6 text-center transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(24,24,27,1)] dark:shadow-[8px_8px_0px_0px_rgba(234,179,8,1)] text-zinc-900 dark:text-zinc-100">
-            <div className="w-16 h-16 bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-red-600 dark:border-red-400">
-              <span className="font-black text-2xl animate-bounce">⚠️</span>
+        <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-red-50 dark:bg-zinc-950 border-8 border-red-600 w-full max-w-lg p-6 sm:p-8 text-center transform scale-100 shadow-[12px_12px_0px_0px_rgba(220,38,38,1)] text-zinc-900 dark:text-zinc-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-20 h-20 bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-red-600 animate-pulse">
+              <span className="font-black text-4xl">⚠️</span>
             </div>
-            <h2 className="text-xl font-black uppercase mb-2 text-red-600 dark:text-red-400 tracking-wider">
-               Overdue Alert / বকেয়া নোটিশ
+            
+            <h2 className="text-2xl sm:text-3xl font-black uppercase mb-4 text-red-600 dark:text-red-400 tracking-wider">
+               DUES ALERT / বকেয়া নোটিশ
             </h2>
-            <div className="mb-4 text-sm font-bold leading-relaxed text-left border-2 border-zinc-900 dark:border-yellow-400/40 p-3 bg-white dark:bg-zinc-950">
-              <p className="text-red-700 dark:text-red-400 font-extrabold uppercase text-xs mb-1">Tuition Fee Pending for:</p>
-              <p className="font-black text-sm text-zinc-900 dark:text-white underline mb-3">{getDueMonths((user as any).pendingMonths, payments)}</p>
-              <p className="text-red-600 dark:text-red-400 font-extrabold uppercase text-xs mb-1">বকেয়া মাসসমূহ:</p>
-              <p className="text-sm font-black text-zinc-800 dark:text-yellow-100">{getDueMonths((user as any).pendingMonths, payments)}</p>
+            
+            {/* The core warnings as requested */}
+            <div className="mb-6 p-5 border-4 border-red-600 bg-white dark:bg-zinc-900 text-left space-y-4">
+              <div>
+                <p className="text-red-600 dark:text-red-400 font-extrabold uppercase text-xs tracking-wider mb-1">⚠️ Warning Message:</p>
+                <p className="font-black text-base sm:text-lg text-zinc-950 dark:text-white leading-snug">
+                  You have not paid your dues. Please pay your dues and contact the administrator or a teacher.
+                </p>
+              </div>
+              
+              <div className="border-t-2 border-red-200 dark:border-red-950/60 pt-3">
+                <p className="text-red-600 dark:text-red-400 font-extrabold uppercase text-xs tracking-wider mb-1">⚠️ বকেয়া নোটিশ:</p>
+                <p className="font-black text-base sm:text-lg text-zinc-950 dark:text-white leading-snug">
+                  আপনি আপনার বকেয়া পরিশোধ করেননি। অনুগ্রহ করে আপনার বকেয়া পরিশোধ করুন এবং অ্যাডমিনিস্ট্রেটর বা কোনো শিক্ষকের সাথে যোগাযোগ করুন।
+                </p>
+              </div>
             </div>
-            <div className="mb-6 p-2 bg-yellow-200 dark:bg-yellow-950/20 border-2 border-yellow-400 font-mono text-xs font-bold">
-               Monthly Fee: ₹{(user as any).monthlyFee} | Dues: ₹{Number((user as any).monthlyFee) * Number((user as any).pendingMonths)}
+
+            <div className="mb-6 text-sm font-bold text-left border-2 border-zinc-900 dark:border-zinc-700 p-3 bg-zinc-100 dark:bg-zinc-900 font-mono">
+              <div className="flex justify-between border-b border-zinc-300 dark:border-zinc-800 pb-1.5 mb-1.5">
+                <span>Monthly Tuition Fee:</span>
+                <span>₹{(user as any).monthlyFee}</span>
+              </div>
+              <div className="flex justify-between border-b border-zinc-300 dark:border-zinc-800 pb-1.5 mb-1.5">
+                <span>Dues Months Count:</span>
+                <span className="text-red-600 font-black">{(user as any).pendingMonths} Month(s)</span>
+              </div>
+              <div className="flex justify-between font-black text-base">
+                <span>Total Overdue:</span>
+                <span className="text-red-600">₹{Number((user as any).monthlyFee) * Number((user as any).pendingMonths)}</span>
+              </div>
             </div>
+
             <div className="flex flex-col gap-2">
                <button
                  onClick={() => setShowWeekendNudge(false)}
-                 className="w-full border-2 border-zinc-900 dark:border-yellow-400 bg-zinc-900 text-white dark:bg-yellow-400 dark:text-zinc-900 font-bold uppercase py-2.5 hover:-translate-y-0.5 transition-transform"
+                 className="w-full border-4 border-zinc-900 dark:border-red-600 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 text-sm tracking-wider shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-transform"
                >
-                 Close / বন্ধ করুন
+                 I UNDERSTAND / আমি বুঝতে পেরেছি
                </button>
             </div>
           </div>
