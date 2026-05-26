@@ -192,6 +192,10 @@ export function AdminStudents() {
         students.forEach(s => {
           newAbsentCount[s.uid] = 0;
           
+          if (s.exemptReason && s.exemptReason.length > 0) {
+             return;
+          }
+          
           // Calculate absent count
           const sBatchAtt = attendanceData[s.batchId!] || [];
           let recentAbsences = 0;

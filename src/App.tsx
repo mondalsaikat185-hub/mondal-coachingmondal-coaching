@@ -978,16 +978,14 @@ import {
 } from "lucide-react";
 
 function AdminDashboard() {
-  const [absentFlags, setAbsentFlags] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string; missedCount: number; sessionIds: string[] }[]>([]);
+  const [absentFlags, setAbsentFlags] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string; missedCount: number }[]>([]);
   const [excusedStudents, setExcusedStudents] = useState<{ id: string; name: string; phone: string; batchName: string; exemptReason: string }[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
 
   useEffect(() => {
     const computeFlags = async () => {
       try {
-        const [sessions, attendance, users, batches] = await Promise.all([
-          api.getExamSessions(),
-          api.getAttendance(),
+        const [users, batches] = await Promise.all([
           api.getUsers(),
           api.getBatches(),
         ]);
@@ -1015,43 +1013,56 @@ function AdminDashboard() {
 
         const batchIds = [...new Set(students.map((s: any) => s.batchId).filter(Boolean))];
 
+        const { getAllAttendanceForBatch } = await import('./lib/exam-session-utils');
+        
+        // Fetch unique attendance dates in parallel for each batch
+        const batchAttendanceResults = await Promise.all(
+          batchIds.map(async (batchId) => {
+            const att = await getAllAttendanceForBatch(batchId, 3);
+            return { batchId, att };
+          })
+        );
+
+        const attendanceMap: Record<string, any[]> = {};
+        batchAttendanceResults.forEach((r) => {
+          attendanceMap[r.batchId] = r.att;
+        });
+
         batchIds.forEach((batchId: any) => {
-          const batchSessions = sessions
-            .filter((s: any) => s.batchId === batchId)
-            .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-            .slice(0, 3);
+          const sBatchAtt = attendanceMap[batchId] || [];
+          
+          // Must have at least 3 unique exam dates in this batch to ever trigger a 3 consecutive absence alert!
+          if (sBatchAtt.length < 3) return;
 
-          if (batchSessions.length < 3) return;
+          // Exclude students who are actively excused (exemptReason is present) so they are removed from the red Flagged list
+          const batchStudents = students.filter((s: any) => s.batchId === batchId && (!s.exemptReason || s.exemptReason.length === 0));
 
-          const lastThreeIds = new Set(batchSessions.map((s: any) => s.id));
-          const presentInSession: Record<string, Set<string>> = {};
-          attendance.forEach((a: any) => {
-            if (lastThreeIds.has(a.sessionId)) {
-              if (!presentInSession[a.sessionId]) presentInSession[a.sessionId] = new Set();
-              presentInSession[a.sessionId].add(a.studentId);
-            }
-          });
-
-          const batchStudents = students.filter((s: any) => s.batchId === batchId);
           batchStudents.forEach((student: any) => {
-            const studentExcusedDates = student.excusedDates ? student.excusedDates.split(',').filter(Boolean) : [];
-            const missedAll = batchSessions.every(
-              (sess: any) => {
-                const dateStr = sess.createdAt ? sess.createdAt.split('T')[0] : new Date().toLocaleDateString('en-CA');
-                const wasPresent = presentInSession[sess.id]?.has(student.id);
-                const wasExcused = studentExcusedDates.includes(dateStr);
-                return !wasPresent && !wasExcused;
-              }
-            );
-            if (missedAll) {
+            let recentAbsences = 0;
+            let validExamsChecked = 0;
+            for (let i = 0; i < sBatchAtt.length && validExamsChecked < 3; i++) {
+               const attDateMs = new Date(sBatchAtt[i].date).getTime();
+               const msJoined = student.createdAt ? new Date(student.createdAt).getTime() : 0;
+               if (msJoined && attDateMs < msJoined - 86400000) {
+                  continue; // skip exams before they joined / re-joined
+               }
+               
+               validExamsChecked++;
+               if (!sBatchAtt[i].presentStudentIds.includes(student.id)) {
+                  recentAbsences++;
+               } else {
+                  break; // they were present recently! Breaks consecutive chain.
+               }
+            }
+
+            if (recentAbsences >= 3) {
               flags.push({
                 id: student.id,
                 name: student.name || student.phone,
                 phone: student.phone || '',
                 batchId: student.batchId,
                 batchName: batchMap[batchId] || batchId,
-                missedCount: 3,
-                sessionIds: batchSessions.map((s: any) => s.id)
+                missedCount: 3
               });
             }
           });
@@ -1065,24 +1076,21 @@ function AdminDashboard() {
     computeFlags();
   }, [refreshTrigger]);
 
-  const excuseStudent = async (studentId: string, sessionIds: string[]) => {
+  const excuseStudent = async (studentId: string) => {
     const reason = prompt("অনুপস্থিতি মওকুফ করার কারণ লিখুন (যেমন: অসুস্থতা/Fever/Illness):", "অসুস্থতা (Illness)");
     if (reason === null) return;
     
     try {
-      const [sessions, users] = await Promise.all([api.getExamSessions(), api.getUsers()]);
+      const users = await api.getUsers();
       const student = users.find((u: any) => u.id === studentId);
       if (!student) return;
 
-      const matchedSessions = sessions.filter((s: any) => sessionIds.includes(s.id));
-      const newExcusedDates = matchedSessions.map((s: any) => s.createdAt ? s.createdAt.split('T')[0] : new Date().toLocaleDateString('en-CA'));
-      
-      const currentExcused = student.excusedDates ? student.excusedDates.split(',').filter(Boolean) : [];
-      const updatedExcused = Array.from(new Set([...currentExcused, ...newExcusedDates])).join(',');
-      
+      // Update student profile:
+      // 1. Set exemptReason to put them in the green Canceled list & show ❌
+      // 2. Set createdAt to current time so they instantly start as a fresh student with 0 absences!
       await api.saveUser({
         ...student,
-        excusedDates: updatedExcused,
+        createdAt: new Date().toISOString(),
         exemptReason: reason || "অসুস্থতা"
       });
       
@@ -1102,12 +1110,16 @@ function AdminDashboard() {
       const student = users.find((u: any) => u.id === studentId);
       if (!student) return;
       
+      // Update student profile:
+      // 1. Clear exemptReason so they are treated like a normal student again
+      // 2. Set createdAt to current time so they start 100% fresh from today with 0 absences!
       await api.saveUser({
         ...student,
+        createdAt: new Date().toISOString(),
         exemptReason: ""
       });
       
-      alert("মওকুফ বাতিল করা হয়েছে!");
+      alert("মওকুফ বাতিল করা হয়েছে এবং পুনরায় সাধারণ গণনা শুরু হয়েছে!");
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error("Revoke excuse error:", err);
@@ -1149,7 +1161,7 @@ function AdminDashboard() {
                   <div className="text-zinc-500 text-[10px] mt-0.5">ব্যাচ: {f.batchName}</div>
                 </div>
                 <button
-                  onClick={() => excuseStudent(f.id, f.sessionIds)}
+                  onClick={() => excuseStudent(f.id)}
                   className="bg-red-600 hover:bg-red-700 text-white font-black py-1 px-2 mt-2 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(240,240,240,1)] active:translate-y-0.5 active:shadow-none transition-all text-center"
                 >
                   🩹 মওকুফ করুন (Cancel Absence)
