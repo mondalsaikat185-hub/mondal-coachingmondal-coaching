@@ -109,8 +109,8 @@ export function AdminResults() {
       setDeleting(true);
       const idsArray = Array.from(selectedIds) as string[];
 
-      // Delete results in parallel using our new api method!
-      await Promise.all(idsArray.map(id => api.deleteExamResult(id)));
+      // Delete results in one batch API request to prevent server-side lock failures and ensure extreme speed!
+      await api.deleteMultipleExamResults(idsArray);
       
       setResults(results.filter(r => !selectedIds.has(r.id)));
       setSelectedIds(new Set());

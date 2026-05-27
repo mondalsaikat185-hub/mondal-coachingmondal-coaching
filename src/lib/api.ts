@@ -604,6 +604,29 @@ export const api = {
     }
   },
 
+  deleteMultipleLibraryItems: async (itemIds: string[]): Promise<{ success: boolean; count?: number }> => {
+    if (USE_REAL_API) {
+      return runGasMethod<{ success: boolean; count?: number }>("apiDeleteMultipleLibraryItems", itemIds);
+    } else {
+      const db = getMockDB();
+      const initialLength = db.library.length;
+      const idsSet = new Set(itemIds);
+      db.library = db.library.filter(i => !idsSet.has(i.id));
+      
+      // Clean up batch share links
+      db.batches.forEach(b => {
+        itemIds.forEach(id => {
+          if (b.assignedItemsMap[id]) {
+            delete b.assignedItemsMap[id];
+          }
+        });
+      });
+      
+      saveMockDB(db);
+      return { success: true, count: initialLength - db.library.length };
+    }
+  },
+
   shareLibraryItem: async (itemId: string, batchIdsMap: Record<string, boolean>): Promise<boolean> => {
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiShareLibraryItem", itemId, batchIdsMap);
@@ -920,6 +943,19 @@ export const api = {
       db.examResults = db.examResults.filter(r => r.id !== id);
       saveMockDB(db);
       return db.examResults.length < initialLength;
+    }
+  },
+
+  deleteMultipleExamResults: async (ids: string[]): Promise<{ success: boolean; count?: number }> => {
+    if (USE_REAL_API) {
+      return runGasMethod<{ success: boolean; count?: number }>("apiDeleteMultipleExamResults", ids);
+    } else {
+      const db = getMockDB();
+      const initialLength = db.examResults.length;
+      const idsSet = new Set(ids);
+      db.examResults = db.examResults.filter(r => !idsSet.has(r.id));
+      saveMockDB(db);
+      return { success: true, count: initialLength - db.examResults.length };
     }
   },
 

@@ -130,7 +130,7 @@ function seedAdminIfNeeded() {
     }
     
     var headersRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    var roleColIdx = headersRow.indexOf("role");
+    var roleColIdx = headersRow.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
     
     var hasAdmin = false;
     if (roleColIdx !== -1) {
@@ -365,7 +365,7 @@ function deleteRow(sheetName, id) {
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
   
-  var idColIdx = headers.indexOf("id");
+  var idColIdx = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "id"; });
   if (idColIdx === -1) return false;
   
   for (var r = 0; r < values.length; r++) {
@@ -388,16 +388,16 @@ function deleteMultipleRows(sheetName, columnName, columnValue) {
     var lastCol = sheet.getLastColumn();
     var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
     
-    var colIdx = headers.indexOf(columnName);
+    var colIdx = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === String(columnName).trim().toLowerCase(); });
     if (colIdx === -1) return 0;
     
     var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
     var deletedCount = 0;
     
-    // αª¿αª┐αªÜαºç αªÑαºçαªòαºç αªôαª¬αª░αºçαª░ αªªαª┐αªòαºç αª▓αºüαª¬ αªÜαª╛αª▓αª╛αª¿αºï αª»αª╛αªñαºç αªíαª┐αª▓αª┐αªƒ αªòαª░αª╛αª░ αª¬αª░ αªôαª¬αª░αºçαª░ αª░αºï αª¿αª«αºìαª¼αª░αªùαºüαª▓αºïαª░ αªçαª¿αªíαºçαªòαºìαª╕ αªáαª┐αªò αªÑαª╛αªòαºç
+    // নিচে থেকে উপরের দিকে লুপ চালানো যাতে ডিলিট করার পর উপরের রো নম্বরগুলোর ইনডেক্স ঠিক থাকে
     for (var r = values.length - 1; r >= 0; r--) {
       if (String(values[r][colIdx]) === String(columnValue)) {
-        sheet.deleteRow(r + 2); // αºº-αªçαª¿αªíαºçαªòαºìαª╕αªí αªÅαª¼αªé αººαªƒαª┐ αª╣αºçαªíαª╛αª░ αª░αºï
+        sheet.deleteRow(r + 2); // ১-ইনডেক্সড এবং ১টি হেডার রো
         deletedCount++;
       }
     }
@@ -902,7 +902,7 @@ function apiSaveLibraryItem(itemData) {
 function apiDeleteLibraryItem(itemId) {
   try {
     var success = deleteRow("library", itemId);
-    // αª»αªªαª┐ αªòαºïαª¿αºï αª¼αºìαª»αª╛αªÜ αªàαºìαª»αª╛αª╕αª╛αªçαª¿αª«αºçαª¿αºìαªƒαºç αªÑαª╛αªòαºç, αªñαª╛ αªíαª┐αª▓αª┐αªƒ αªòαª░αª╛ αª╣αª¼αºç
+    // If shared to batches, clean it up
     var batches = readSheet("batches");
     batches.forEach(function(b) {
       var assigned = {};
@@ -913,6 +913,83 @@ function apiDeleteLibraryItem(itemId) {
       }
     });
     return { success: success };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiDeleteMultipleLibraryItems(itemIds) {
+  try {
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+      return { success: true, count: 0 };
+    }
+    
+    var sheet = getSheet("library");
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, count: 0 };
+    
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    
+    var idColIdx = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "id"; });
+    if (idColIdx === -1) return { success: false, error: "Missing id column" };
+    
+    var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var deletedCount = 0;
+    
+    // Delete rows from bottom to top to preserve indices
+    for (var r = values.length - 1; r >= 0; r--) {
+      var rowId = String(values[r][idColIdx]);
+      if (itemIds.indexOf(rowId) !== -1) {
+        sheet.deleteRow(r + 2);
+        deletedCount++;
+      }
+    }
+    
+    if (deletedCount > 0) {
+      SpreadsheetApp.flush();
+    }
+    
+    // Clean up batch assignments in one go
+    var batchSheet = getSheet("batches");
+    var batchLastRow = batchSheet.getLastRow();
+    if (batchLastRow >= 2) {
+      var batchLastCol = batchSheet.getLastColumn();
+      var batchHeaders = batchSheet.getRange(1, 1, 1, batchLastCol).getValues()[0];
+      var batchValues = batchSheet.getRange(2, 1, batchLastRow - 1, batchLastCol).getValues();
+      
+      var bIdColIdx = batchHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "id"; });
+      var assignedColIdx = batchHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "assigneditemsmap"; });
+      
+      if (bIdColIdx !== -1 && assignedColIdx !== -1) {
+        var batchDirty = false;
+        for (var b = 0; b < batchValues.length; b++) {
+          var bId = String(batchValues[b][bIdColIdx]);
+          var assignedStr = batchValues[b][assignedColIdx];
+          var assigned = {};
+          try { assigned = JSON.parse(assignedStr || "{}"); } catch(e) {}
+          
+          var originalStr = JSON.stringify(assigned);
+          var itemCleaned = false;
+          for (var i = 0; i < itemIds.length; i++) {
+            if (assigned[itemIds[i]]) {
+              delete assigned[itemIds[i]];
+              itemCleaned = true;
+            }
+          }
+          
+          if (itemCleaned) {
+            batchSheet.getRange(b + 2, assignedColIdx + 1).setValue(JSON.stringify(assigned));
+            batchDirty = true;
+          }
+        }
+        if (batchDirty) {
+          SpreadsheetApp.flush();
+        }
+      }
+    }
+    
+    return { success: true, count: deletedCount };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -1159,6 +1236,44 @@ function apiDeleteExamResult(resultId) {
   try {
     var success = deleteRow("examResults", resultId);
     return { success: success };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiDeleteMultipleExamResults(resultIds) {
+  try {
+    if (!Array.isArray(resultIds) || resultIds.length === 0) {
+      return { success: true, count: 0 };
+    }
+    
+    var sheet = getSheet("examResults");
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, count: 0 };
+    
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    
+    var idColIdx = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "id"; });
+    if (idColIdx === -1) return { success: false, error: "Missing id column" };
+    
+    var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var deletedCount = 0;
+    
+    // We want to delete rows from bottom to top to preserve indices!
+    for (var r = values.length - 1; r >= 0; r--) {
+      var rowId = String(values[r][idColIdx]);
+      if (resultIds.indexOf(rowId) !== -1) {
+        sheet.deleteRow(r + 2); // r + 2 due to 0-index vs 1-index plus header row
+        deletedCount++;
+      }
+    }
+    
+    if (deletedCount > 0) {
+      SpreadsheetApp.flush();
+    }
+    
+    return { success: true, count: deletedCount };
   } catch (err) {
     return { success: false, error: err.toString() };
   }

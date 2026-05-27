@@ -561,9 +561,8 @@ export function AdminLibrary() {
 
        const idsToDelete = await getItemsToDelete(id);
 
-       for (const delId of idsToDelete) {
-         await api.deleteLibraryItem(delId);
-       }
+       // Delete all items/folders in one single API request to avoid lock failures and ensure high speed!
+       await api.deleteMultipleLibraryItems(idsToDelete);
 
        setDeleteItemId(null);
        handleRefreshFolder();
