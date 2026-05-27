@@ -26,15 +26,13 @@ import {
   Bell,
 } from "lucide-react";
 import { api } from "./lib/api";
-import { safeToDate, formatDateOnlySafe } from "./lib/utils";
+import { safeToDate } from "./lib/utils";
 import {
   AdminStudents,
   AdminPayments,
   StudentPayments,
   AdminBatches,
   PageHeader,
-  getDueMonths,
-  formatDateTimeSafe,
 } from "./pages/Pages";
 import { AdminLibrary } from "./pages/AdminLibrary";
 import { AdminResults } from "./pages/AdminResults";
@@ -457,7 +455,7 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <input type="text" placeholder="Name *" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
             <input type="tel" placeholder="Phone Number *" required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
-            <input type="email" placeholder="Email *" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
+            <input type="email" placeholder="Email (Optional)" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
             <textarea placeholder="Address" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
             
             <div className="flex flex-col gap-1.5">
@@ -748,22 +746,12 @@ function TopNav() {
       <div className="font-black italic uppercase">Tuition Portal</div>
       <div className="flex items-center gap-4">
         {user && (
-          <div className="text-xs font-mono hidden sm:flex items-center gap-2">
-            <span>
-              {user.fullName || user.displayName || user.email || user.phone || "User"}
-            </span>{" "}
-            <span className="uppercase font-bold text-orange-500">
+          <div className="text-xs font-mono hidden sm:block">
+            {user.fullName || user.displayName || user.email || user.phone || "User"}{" "}
+            <span className="uppercase font-bold text-orange-500 ml-2">
               [{user.role}]
             </span>
           </div>
-        )}
-        {user && user.role === "student" && (
-          <Link
-            to="/"
-            className="px-2.5 py-1 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 font-bold uppercase text-[10px] hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] flex items-center gap-1"
-          >
-            Dashboard / ড্যাশবোর্ড
-          </Link>
         )}
         {user && user.role === "admin" && (
           <Link
@@ -988,13 +976,14 @@ import {
 } from "lucide-react";
 
 function AdminDashboard() {
-  const [absentFlags, setAbsentFlags] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string; missedCount: number }[]>([]);
-  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  const [absentFlags, setAbsentFlags] = useState<{ name: string; batchName: string; missedCount: number }[]>([]);
 
   useEffect(() => {
     const computeFlags = async () => {
       try {
-        const [users, batches] = await Promise.all([
+        const [sessions, attendance, users, batches] = await Promise.all([
+          api.getExamSessions(),
+          api.getAttendance(),
           api.getUsers(),
           api.getBatches(),
         ]);
@@ -1003,60 +992,34 @@ function AdminDashboard() {
         batches.forEach((b: any) => { batchMap[b.id] = b.name; });
 
         const students = users.filter((u: any) => u.role !== 'admin' && u.status === 'active');
-        const flags: any[] = [];
+        const flags: { name: string; batchName: string; missedCount: number }[] = [];
 
         const batchIds = [...new Set(students.map((s: any) => s.batchId).filter(Boolean))];
 
-        const { getAllAttendanceForBatch } = await import('./lib/exam-session-utils');
-        
-        // Fetch unique attendance dates in parallel for each batch
-        const batchAttendanceResults = await Promise.all(
-          batchIds.map(async (batchId) => {
-            const att = await getAllAttendanceForBatch(batchId, 3);
-            return { batchId, att };
-          })
-        );
-
-        const attendanceMap: Record<string, any[]> = {};
-        batchAttendanceResults.forEach((r) => {
-          attendanceMap[r.batchId] = r.att;
-        });
-
         batchIds.forEach((batchId: any) => {
-          const sBatchAtt = attendanceMap[batchId] || [];
-          
-          // Must have at least 3 unique exam dates in this batch to ever trigger a 3 consecutive absence alert!
-          if (sBatchAtt.length < 3) return;
+          const batchSessions = sessions
+            .filter((s: any) => s.batchId === batchId)
+            .sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+            .slice(0, 3);
+
+          if (batchSessions.length < 3) return;
+
+          const lastThreeIds = new Set(batchSessions.map((s: any) => s.id));
+          const presentInSession: Record<string, Set<string>> = {};
+          attendance.forEach((a: any) => {
+            if (lastThreeIds.has(a.sessionId)) {
+              if (!presentInSession[a.sessionId]) presentInSession[a.sessionId] = new Set();
+              presentInSession[a.sessionId].add(a.studentId);
+            }
+          });
 
           const batchStudents = students.filter((s: any) => s.batchId === batchId);
-
           batchStudents.forEach((student: any) => {
-            let recentAbsences = 0;
-            let validExamsChecked = 0;
-            for (let i = 0; i < sBatchAtt.length && validExamsChecked < 3; i++) {
-               const attDateMs = new Date(sBatchAtt[i].date).getTime();
-               const msJoined = student.createdAt ? new Date(student.createdAt).getTime() : 0;
-               if (msJoined && attDateMs < msJoined - 86400000) {
-                  continue; // skip exams before they joined / re-joined
-               }
-               
-               validExamsChecked++;
-               if (!sBatchAtt[i].presentStudentIds.includes(student.id)) {
-                  recentAbsences++;
-               } else {
-                  break; // they were present recently! Breaks consecutive chain.
-               }
-            }
-
-            if (recentAbsences >= 3) {
-              flags.push({
-                id: student.id,
-                name: student.name || student.phone,
-                phone: student.phone || '',
-                batchId: student.batchId,
-                batchName: batchMap[batchId] || batchId,
-                missedCount: 3
-              });
+            const missedAll = batchSessions.every(
+              (sess: any) => !(presentInSession[sess.id]?.has(student.id))
+            );
+            if (missedAll) {
+              flags.push({ name: student.name || student.phone, batchName: batchMap[batchId] || batchId, missedCount: 3 });
             }
           });
         });
@@ -1067,33 +1030,7 @@ function AdminDashboard() {
       }
     };
     computeFlags();
-  }, [refreshTrigger]);
-
-  const excuseStudent = async (studentId: string) => {
-    const reason = prompt("অনুপস্থিতি মওকুফ করার কারণ লিখুন (যেমন: অসুস্থতা/Fever/Illness):", "অসুস্থতা (Illness)");
-    if (reason === null) return;
-    
-    try {
-      const users = await api.getUsers();
-      const student = users.find((u: any) => u.id === studentId);
-      if (!student) return;
-
-      // Update student profile:
-      // 1. Set exemptReason to put the ❌ cross mark next to their name in the students table
-      // 2. Set createdAt to current time so they instantly start as a fresh student with 0 absences!
-      await api.saveUser({
-        ...student,
-        createdAt: new Date().toISOString(),
-        exemptReason: reason || "অসুস্থতা"
-      });
-      
-      alert("ছাত্রের অনুপস্থিতি মওকুফ করা হয়েছে এবং কাউন্ট রিসেট হয়েছে!");
-      setRefreshTrigger(prev => prev + 1);
-    } catch (err) {
-      console.error("Excuse student error:", err);
-      alert("ত্রুটি: অনুপস্থিতি মওকুফ করা যায়নি।");
-    }
-  };
+  }, []);
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full">
@@ -1110,37 +1047,27 @@ function AdminDashboard() {
 
       {absentFlags.length > 0 && (
         <div className="mb-6 bg-red-50 dark:bg-red-950/30 border-4 border-red-500 p-4">
-          <h3 className="font-black text-red-700 dark:text-red-400 uppercase mb-3 flex items-center gap-2">
-            <span>⚠️ অনুপস্থিত সতর্কতা (Flagged Absentees)</span>
+          <h3 className="font-black text-red-700 dark:text-red-400 uppercase mb-2 flex items-center gap-2">
+            <span>⚠️ অনুপস্থিত সতর্কতা</span>
             <span className="bg-red-600 text-white text-xs px-2 py-0.5 font-black">{absentFlags.length}</span>
           </h3>
           <p className="text-sm font-medium text-red-700 dark:text-red-300 mb-3">
             নিচের ছাত্রছাত্রীরা পরপর ৩টি exam-এ অনুপস্থিত ছিল:
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="flex flex-wrap gap-2">
             {absentFlags.map((f, i) => (
-              <div key={i} className="bg-red-100 dark:bg-red-900/40 border-2 border-red-400 p-3 text-xs font-black text-red-800 dark:text-red-200 flex flex-col justify-between gap-2 shadow-[2px_2px_0px_0px_rgba(239,68,68,1)]">
-                <div>
-                  <div className="flex justify-between items-start gap-1">
-                    <span className="font-black text-sm">{f.name}</span>
-                    <span className="bg-red-600 text-white text-[9px] px-1.5 py-0.5 font-bold uppercase leading-none">পরপর ৩টি মিস</span>
-                  </div>
-                  <div className="text-red-600 dark:text-red-400 font-bold mt-1">মোবাইল: {f.phone}</div>
-                  <div className="text-zinc-500 text-[10px] mt-0.5">ব্যাচ: {f.batchName}</div>
-                </div>
-                <button
-                  onClick={() => excuseStudent(f.id)}
-                  className="bg-red-600 hover:bg-red-700 text-white font-black py-1 px-2 mt-2 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(240,240,240,1)] active:translate-y-0.5 active:shadow-none transition-all text-center"
-                >
-                  🩹 মওকুফ করুন (Cancel Absence)
-                </button>
+              <div key={i} className="bg-red-100 dark:bg-red-900/40 border-2 border-red-400 px-3 py-1.5 text-xs font-black text-red-800 dark:text-red-200 flex items-center gap-2">
+                <span>🚩</span>
+                <span>{f.name}</span>
+                <span className="text-red-500 dark:text-red-400 font-medium">({f.batchName})</span>
               </div>
             ))}
           </div>
+          <p className="text-xs text-red-500 dark:text-red-400 font-bold mt-3">
+            ※ এই সমস্যা manually সমাধান করতে Students Management-এ যান।
+          </p>
         </div>
       )}
-
-
 
       <div className="mb-6 bg-yellow-100 dark:bg-yellow-900/30 border-4 border-yellow-500 p-4">
         <h3 className="font-black text-yellow-800 dark:text-yellow-500 uppercase mb-2">
@@ -1368,12 +1295,10 @@ function StudentDashboard() {
   const [exams, setExams] = useState<Exam[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [absentCount, setAbsentCount] = useState<number>(0);
-  const [payments, setPayments] = useState<any[]>([]);
   const [paymentStatus, setPaymentStatus] = useState<{
     status: string;
     label: string;
     color: string;
-    remarks?: string;
   }>({
     status: "paid",
     label: "All Paid Up",
@@ -1381,12 +1306,6 @@ function StudentDashboard() {
   });
   const [showNudge, setShowNudge] = useState(false);
   const [announcement, setAnnouncement] = useState('');
-
-  // Weekend (Saturday=6, Sunday=0) Overdue alert check
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-  const [showWeekendNudge, setShowWeekendNudge] = useState(false);
 
   useEffect(() => {
     // Check nudge popup
@@ -1402,21 +1321,11 @@ function StudentDashboard() {
         sessionStorage.setItem(sessionKey, "true");
       }
     }
-  }, [user?.uid, (user as any)?.showPaymentNudge, (user as any)?.monthlyFee, (user as any)?.pendingMonths]);
 
-  useEffect(() => {
-    const isSimulated = !!localStorage.getItem("simulatedStudentId");
-    if (user && (isWeekend || isSimulated)) {
-      const overdue = Number((user as any).pendingMonths) >= 2;
-      if (overdue) {
-        const sessionKey = `weekend_nudge_shown_${user.uid}`;
-        if (!sessionStorage.getItem(sessionKey)) {
-          setShowWeekendNudge(true);
-          sessionStorage.setItem(sessionKey, "true");
-        }
-      }
+    if (user && (user as any).pendingMonths > 0) {
+        // Pending months check moved to second useEffect to prevent flashing
     }
-  }, [user?.uid, (user as any)?.pendingMonths, isWeekend]);
+  }, [user?.uid, (user as any)?.showPaymentNudge, (user as any)?.monthlyFee, (user as any)?.pendingMonths]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -1428,7 +1337,6 @@ function StudentDashboard() {
             const allPayments = await api.getPayments();
             const studentPayments = allPayments.filter(p => p.studentId === user.uid);
             studentPayments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            setPayments(studentPayments);
             if (studentPayments.length > 0) {
                pData.push(studentPayments[0] as any);
             }
@@ -1449,7 +1357,6 @@ function StudentDashboard() {
               status: "rejected",
               label: "Rejected",
               color: "text-red-600 dark:text-red-400",
-              remarks: (latest as any).remarks || "",
             });
           } else if ((user as any).pendingMonths > 0) {
             setPaymentStatus({
@@ -1536,9 +1443,7 @@ function StudentDashboard() {
                 }
                 
                 validExamsChecked++;
-                const studentExcusedDates = (user as any).excusedDates ? String((user as any).excusedDates).split(',').filter(Boolean) : [];
-                const isExcused = studentExcusedDates.includes(sBatchAtt[i].date);
-                if (!sBatchAtt[i].presentStudentIds.includes(user.uid) && !isExcused) {
+                if (!sBatchAtt[i].presentStudentIds.includes(user.uid)) {
                    recentAbsences++;
                 } else {
                    break;
@@ -1590,9 +1495,10 @@ function StudentDashboard() {
               Payment Reminder
             </h2>
             <p className="mb-4 font-bold text-sm text-zinc-700 dark:text-zinc-300">
-              Your tuition fee for{" "}
-              <span className="text-red-600 dark:text-red-400 underline">
-                {getDueMonths((user as any).pendingMonths, payments)}
+              Your monthly salary/fee for{" "}
+              <span className="text-red-600 dark:text-red-400">
+                {(user as any).pendingMonths} month
+                {((user as any).pendingMonths || 1) > 1 ? "s" : ""}
               </span>{" "}
               is pending.
             </p>
@@ -1605,71 +1511,6 @@ function StudentDashboard() {
             >
               I Understand, Close
             </button>
-          </div>
-        </div>
-      )}
-
-      {showWeekendNudge && (
-        <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4 backdrop-blur-md">
-          <div className="bg-red-50 dark:bg-zinc-950 border-8 border-red-600 w-full max-w-lg p-6 sm:p-8 text-center transform scale-100 shadow-[12px_12px_0px_0px_rgba(220,38,38,1)] text-zinc-900 dark:text-zinc-100 animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-20 h-20 bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-red-600 animate-pulse">
-              <span className="font-black text-4xl">⚠️</span>
-            </div>
-            
-            <h2 className="text-2xl sm:text-3xl font-black uppercase mb-4 text-red-600 dark:text-red-400 tracking-wider">
-               DUES ALERT / বকেয়া নোটিশ
-            </h2>
-            
-            {/* The core warnings as requested */}
-            <div className="mb-6 p-5 border-4 border-red-600 bg-white dark:bg-zinc-900 text-left space-y-4">
-              <div>
-                <p className="text-red-600 dark:text-red-400 font-extrabold uppercase text-xs tracking-wider mb-1">⚠️ Warning Message:</p>
-                <p className="font-black text-base sm:text-lg text-zinc-950 dark:text-white leading-snug">
-                  You have not paid your dues. Please pay your dues and contact the administrator or a teacher.
-                </p>
-              </div>
-              
-              <div className="border-t-2 border-red-200 dark:border-red-950/60 pt-3">
-                <p className="text-red-600 dark:text-red-400 font-extrabold uppercase text-xs tracking-wider mb-1">⚠️ বকেয়া নোটিশ:</p>
-                <p className="font-black text-base sm:text-lg text-zinc-950 dark:text-white leading-snug">
-                  আপনি আপনার বকেয়া পরিশোধ করেননি। অনুগ্রহ করে আপনার বকেয়া পরিশোধ করুন এবং অ্যাডমিনিস্ট্রেটর বা কোনো শিক্ষকের সাথে যোগাযোগ করুন।
-                </p>
-              </div>
-            </div>
-
-            <div className="mb-6 text-sm font-bold text-left border-2 border-zinc-900 dark:border-zinc-700 p-3 bg-zinc-100 dark:bg-zinc-900 font-mono">
-              <div className="flex justify-between border-b border-zinc-300 dark:border-zinc-800 pb-1.5 mb-1.5">
-                <span>Monthly Tuition Fee:</span>
-                <span>₹{(user as any).monthlyFee}</span>
-              </div>
-              <div className="flex justify-between border-b border-zinc-300 dark:border-zinc-800 pb-1.5 mb-1.5">
-                <span>Dues Months Count:</span>
-                <span className="text-red-600 font-black">{(user as any).pendingMonths} Month(s)</span>
-              </div>
-              <div className="flex justify-between font-black text-base">
-                <span>Total Overdue:</span>
-                <span className="text-red-600">₹{Number((user as any).monthlyFee) * Number((user as any).pendingMonths)}</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-               <button
-                 onClick={() => setShowWeekendNudge(false)}
-                 className="w-full border-4 border-zinc-900 dark:border-red-600 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 text-sm tracking-wider shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-transform"
-               >
-                 I UNDERSTAND / আমি বুঝতে পেরেছি
-               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {announcement && (
-        <div className="mb-6 bg-red-50 dark:bg-red-950/30 border-2 border-red-500 dark:border-red-400 p-4 shadow-[4px_4px_0px_0px_rgba(239,68,68,1)] flex items-start gap-3 animate-pulse">
-          <span className="text-xl shrink-0 mt-0.5">📢</span>
-          <div>
-            <div className="text-xs font-black uppercase text-red-600 dark:text-red-400 mb-1">Urgent Notice / জরুরি ঘোষণা:</div>
-            <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{announcement}</div>
           </div>
         </div>
       )}
@@ -1723,7 +1564,7 @@ function StudentDashboard() {
                 <span className="font-bold text-zinc-500 uppercase text-xs block">
                   Joined Date:
                 </span>{" "}
-                <div className="font-bold">{formatDateOnlySafe(user?.joinDate)}</div>
+                <div className="font-bold">{user?.joinDate || "N/A"}</div>
               </div>
               <div className="sm:col-span-2">
                 <span className="font-bold text-zinc-500 uppercase text-xs block">
@@ -1828,26 +1669,12 @@ function StudentDashboard() {
             <div className="text-xs font-bold uppercase text-zinc-500 mb-1">
               Status
             </div>
-            <div className={`font-bold uppercase mb-2 ${paymentStatus.color}`}>
+            <div className={`font-bold uppercase mb-4 ${paymentStatus.color}`}>
               {paymentStatus.label}
             </div>
-
-            {user && Number((user as any).pendingMonths) > 0 && (
-              <div className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 mb-3 border-t border-dashed border-zinc-200 dark:border-zinc-800 pt-2">
-                <span className="uppercase text-[9px] text-zinc-400 block font-bold">Due Months / বকেয়া মাসসমূহ</span>
-                <span className="underline">{getDueMonths((user as any).pendingMonths, payments)}</span>
-              </div>
-            )}
-
-            {paymentStatus.status === "rejected" && paymentStatus.remarks && (
-              <div className="text-[11px] text-red-600 dark:text-red-400 font-extrabold mb-3 p-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded">
-                Reason: {paymentStatus.remarks}
-              </div>
-            )}
-
             <Link
               to="/student/payments"
-              className="inline-block bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-2 hover:-translate-y-0.5 transition-transform border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] w-full text-center"
+              className="inline-block bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-2 hover:-translate-y-0.5 transition-transform border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(161,161,170,1)]"
             >
               Make Payment
             </Link>
@@ -2070,7 +1897,6 @@ function StudentSimulatorWrapper() {
               <option value="">-- Default Admin UID --</option>
               {batchStudents.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.exemptReason && s.exemptReason.length > 0 ? '❌ ' : ''}
                   {s.name || s.fullName || s.email}
                 </option>
               ))}

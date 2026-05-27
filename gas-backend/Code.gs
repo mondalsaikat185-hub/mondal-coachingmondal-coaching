@@ -378,6 +378,40 @@ function deleteRow(sheetName, id) {
   return false;
 }
 
+// শিট থেকে নির্দিষ্ট কলামের ওপর ভিত্তি করে একাধিক রো ফিজিক্যালি ডিলিট করার জেনেরিক ফাংশন
+function deleteMultipleRows(sheetName, columnName, columnValue) {
+  try {
+    var sheet = getSheet(sheetName);
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return 0;
+    
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    
+    var colIdx = headers.indexOf(columnName);
+    if (colIdx === -1) return 0;
+    
+    var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var deletedCount = 0;
+    
+    // নিচে থেকে ওপরের দিকে লুপ চালানো যাতে ডিলিট করার পর ওপরের রো নম্বরগুলোর ইনডেক্স ঠিক থাকে
+    for (var r = values.length - 1; r >= 0; r--) {
+      if (String(values[r][colIdx]) === String(columnValue)) {
+        sheet.deleteRow(r + 2); // ১-ইনডেক্সড এবং ১টি হেডার রো
+        deletedCount++;
+      }
+    }
+    
+    if (deletedCount > 0) {
+      SpreadsheetApp.flush();
+    }
+    return deletedCount;
+  } catch (e) {
+    Logger.log("deleteMultipleRows error for " + sheetName + ": " + e.toString());
+    return 0;
+  }
+}
+
 // =========================================================================
 // 3. API INTERFACE: ফ্রন্টএন্ড থেকে কল করার ফাংশনসমূহ
 // =========================================================================
@@ -473,6 +507,16 @@ function apiRegisterUser(userData) {
 }
 function apiDeleteUser(userId) {
   try {
+    // ১. স্টুডেন্টের সমস্ত পেমেন্ট রেকর্ড ডিলিট করো
+    deleteMultipleRows("payments", "studentId", userId);
+    
+    // ২. স্টুডেন্টের সমস্ত উপস্থিতির রেকর্ড ডিলিট করো
+    deleteMultipleRows("attendance", "studentId", userId);
+    
+    // ৩. স্টুডেন্টের সমস্ত পরীক্ষার রেজাল্ট ডিলিট করো
+    deleteMultipleRows("examResults", "studentId", userId);
+    
+    // ৪. ফাইনালি ইউজার শিট থেকে স্টুডেন্টকে ডিলিট করো
     var success = deleteRow("users", userId);
     return { success: success };
   } catch (err) {
@@ -757,14 +801,25 @@ function apiSaveBatch(batchData) {
 
 function apiDeleteBatch(batchId) {
   try {
-    // BUG 5 FIX: ব্যাচ ডিলিটের আগে সেই ব্যাচের সকল স্টুডেন্টের batchId ক্লিয়ার করো
+    // ব্যাচ ডিলিট করার আগে সেই ব্যাচের সমস্ত স্টুডেন্ট এবং তাদের সমস্ত রেকর্ড ফিজিক্যালি ডিলিট করো
     var users = readSheet("users");
     users.forEach(function(u) {
       if (u.batchId === batchId) {
-        updateRow("users", u.id, { batchId: "" });
+        // ১. স্টুডেন্টের সমস্ত পেমেন্ট রেকর্ড ডিলিট করো
+        deleteMultipleRows("payments", "studentId", u.id);
+        
+        // ২. স্টুডেন্টের সমস্ত উপস্থিতির রেকর্ড ডিলিট করো
+        deleteMultipleRows("attendance", "studentId", u.id);
+        
+        // ৩. স্টুডেন্টের সমস্ত পরীক্ষার রেজাল্ট ডিলিট করো
+        deleteMultipleRows("examResults", "studentId", u.id);
+        
+        // ৪. ইউজার শিট থেকে স্টুডেন্টকে ডিলিট করো
+        deleteRow("users", u.id);
       }
     });
     
+    // ৫. সবশেষে ব্যাচ শিট থেকে ব্যাচটিকে ডিলিট করো
     var success = deleteRow("batches", batchId);
     return { success: success };
   } catch (err) {
