@@ -4,7 +4,7 @@
 // Year: 2026
 // =========================================================================
 
-// CONFIGURATION: স্প্রেডশিট আইডি এখানে বসাতে হবে।
+// CONFIGURATION: αª╕αºìαª¬αºìαª░αºçαªíαª╢αª┐αªƒ αªåαªçαªíαª┐ αªÅαªûαª╛αª¿αºç αª¼αª╕αª╛αªñαºç αª╣αª¼αºçαÑñ
 var SPREADSHEET_ID = "YOUR_SPREADSHEET_ID_HERE"; 
 
 // 1. Serving Frontend Web App
@@ -93,7 +93,7 @@ function getManifestContent() {
   });
 }
 
-// 2. HELPER FUNCTIONS: গুগল শিট ডেটাবেস হ্যান্ডলার
+// 2. HELPER FUNCTIONS: αªùαºüαªùαª▓ αª╢αª┐αªƒ αªíαºçαªƒαª╛αª¼αºçαª╕ αª╣αºìαª»αª╛αª¿αºìαªíαª▓αª╛αª░
 function getSpreadsheet() {
   if (SPREADSHEET_ID === "YOUR_SPREADSHEET_ID_HERE" || !SPREADSHEET_ID) {
     return SpreadsheetApp.getActiveSpreadsheet();
@@ -105,7 +105,7 @@ function getSheet(sheetName) {
   var ss = getSpreadsheet();
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
-    // যদি শিটটি না থাকে, তবে সেটি স্বয়ংক্রিয়ভাবে তৈরি করো
+    // αª»αªªαª┐ αª╢αª┐αªƒαªƒαª┐ αª¿αª╛ αªÑαª╛αªòαºç, αªñαª¼αºç αª╕αºçαªƒαª┐ αª╕αºìαª¼αºƒαªéαªòαºìαª░αª┐αºƒαª¡αª╛αª¼αºç αªñαºêαª░αª┐ αªòαª░αºï
     sheet = ss.insertSheet(sheetName);
   }
   return sheet;
@@ -168,7 +168,7 @@ function seedAdminIfNeeded() {
   }
 }
 
-// শিটের হেডার কলামগুলো নিশ্চিত করার জন্য হেল্পার
+// αª╢αª┐αªƒαºçαª░ αª╣αºçαªíαª╛αª░ αªòαª▓αª╛αª«αªùαºüαª▓αºï αª¿αª┐αª╢αºìαªÜαª┐αªñ αªòαª░αª╛αª░ αª£αª¿αºìαª» αª╣αºçαª▓αºìαª¬αª╛αª░
 function ensureSheetHeaders(sheetName, requiredHeaders) {
   try {
     var sheet = getSheet(sheetName);
@@ -199,7 +199,7 @@ function ensureSheetHeaders(sheetName, requiredHeaders) {
   }
 }
 
-// শিট থেকে অবজেক্ট অ্যারে রিড করার জন্য জেনেরিক রিডার
+// αª╢αª┐αªƒ αªÑαºçαªòαºç αªàαª¼αª£αºçαªòαºìαªƒ αªàαºìαª»αª╛αª░αºç αª░αª┐αªí αªòαª░αª╛αª░ αª£αª¿αºìαª» αª£αºçαª¿αºçαª░αª┐αªò αª░αª┐αªíαª╛αª░
 function readSheet(sheetName) {
   if (sheetName === "users") {
     seedAdminIfNeeded();
@@ -209,7 +209,7 @@ function readSheet(sheetName) {
   }
   var sheet = getSheet(sheetName);
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return []; // শুধু হেডার আছে বা একদম ফাঁকা
+  if (lastRow < 2) return []; // αª╢αºüαªºαºü αª╣αºçαªíαª╛αª░ αªåαª¢αºç αª¼αª╛ αªÅαªòαªªαª« αª½αª╛αªüαªòαª╛
   
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
@@ -222,7 +222,7 @@ function readSheet(sheetName) {
       var headerKey = headers[c];
       var val = values[r][c];
       
-      // ডেট বা ফ্লোট অবজেক্ট কনভার্ট করা
+      // αªíαºçαªƒ αª¼αª╛ αª½αºìαª▓αºïαªƒ αªàαª¼αª£αºçαªòαºìαªƒ αªòαª¿αª¡αª╛αª░αºìαªƒ αªòαª░αª╛
       if (val instanceof Date) {
         obj[headerKey] = val.toISOString();
       } else {
@@ -234,12 +234,12 @@ function readSheet(sheetName) {
   return result;
 }
 
-// শিটে একটি অবজেক্ট সেভ করার জন্য জেনেরিক রাইটার
+// αª╢αª┐αªƒαºç αªÅαªòαªƒαª┐ αªàαª¼αª£αºçαªòαºìαªƒ αª╕αºçαª¡ αªòαª░αª╛αª░ αª£αª¿αºìαª» αª£αºçαª¿αºçαª░αª┐αªò αª░αª╛αªçαªƒαª╛αª░
 function saveRow(sheetName, dataObj) {
   var sheet = getSheet(sheetName);
   var lastCol = sheet.getLastColumn();
   
-  // যদি শিটে কোনো কলাম না থাকে, অবজেক্টের কীগুলো হেডার বানাও
+  // αª»αªªαª┐ αª╢αª┐αªƒαºç αªòαºïαª¿αºï αªòαª▓αª╛αª« αª¿αª╛ αªÑαª╛αªòαºç, αªàαª¼αª£αºçαªòαºìαªƒαºçαª░ αªòαºÇαªùαºüαª▓αºï αª╣αºçαªíαª╛αª░ αª¼αª╛αª¿αª╛αªô
   if (lastCol === 0) {
     var tempHeaders = Object.keys(dataObj);
     sheet.appendRow(tempHeaders);
@@ -248,7 +248,7 @@ function saveRow(sheetName, dataObj) {
   
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   
-  // আইডি যদি অবজেক্টে না থাকে, তবে একটি ইউনিক ইউআইডি জেনারেট করো
+  // αªåαªçαªíαª┐ αª»αªªαª┐ αªàαª¼αª£αºçαªòαºìαªƒαºç αª¿αª╛ αªÑαª╛αªòαºç, αªñαª¼αºç αªÅαªòαªƒαª┐ αªçαªëαª¿αª┐αªò αªçαªëαªåαªçαªíαª┐ αª£αºçαª¿αª╛αª░αºçαªƒ αªòαª░αºï
   if (!dataObj.id) {
     dataObj.id = "id_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
   }
@@ -256,7 +256,7 @@ function saveRow(sheetName, dataObj) {
     dataObj.createdAt = new Date().toISOString();
   }
   
-  // BUG 4 FIX: অবজেক্টে যেসব কী আছে কিন্তু হেডারে নেই, সেগুলো স্বয়ংক্রিয়ভাবে হেডারে যোগ করো
+  // BUG 4 FIX: αªàαª¼αª£αºçαªòαºìαªƒαºç αª»αºçαª╕αª¼ αªòαºÇ αªåαª¢αºç αªòαª┐αª¿αºìαªñαºü αª╣αºçαªíαª╛αª░αºç αª¿αºçαªç, αª╕αºçαªùαºüαª▓αºï αª╕αºìαª¼αª»αª╝αªéαªòαºìαª░αª┐αª»αª╝αª¡αª╛αª¼αºç αª╣αºçαªíαª╛αª░αºç αª»αºïαªù αªòαª░αºï
   var dataKeys = Object.keys(dataObj);
   var newKeys = [];
   for (var k = 0; k < dataKeys.length; k++) {
@@ -276,12 +276,12 @@ function saveRow(sheetName, dataObj) {
     lastCol = lastCol + newKeys.length;
   }
   
-  // হেডার অনুযায়ী ডেটা সাজানো
+  // αª╣αºçαªíαª╛αª░ αªàαª¿αºüαª»αª╛αª»αª╝αºÇ αªíαºçαªƒαª╛ αª╕αª╛αª£αª╛αª¿αºï
   var rowValues = [];
   for (var c = 0; c < headers.length; c++) {
     var val = dataObj[headers[c]] !== undefined ? dataObj[headers[c]] : "";
     
-    // অবজেক্ট বা অ্যারে হলে জেসন স্ট্রিং করা
+    // αªàαª¼αª£αºçαªòαºìαªƒ αª¼αª╛ αªàαºìαª»αª╛αª░αºç αª╣αª▓αºç αª£αºçαª╕αª¿ αª╕αºìαªƒαºìαª░αª┐αªé αªòαª░αª╛
     if (typeof val === 'object' && val !== null) {
       rowValues.push(JSON.stringify(val));
     } else {
@@ -294,7 +294,7 @@ function saveRow(sheetName, dataObj) {
   return dataObj;
 }
 
-// শিটে একটি এক্সিস্টিং অবজেক্ট আপডেট করার জন্য জেনেরিক এডিটর
+// αª╢αª┐αªƒαºç αªÅαªòαªƒαª┐ αªÅαªòαºìαª╕αª┐αª╕αºìαªƒαª┐αªé αªàαª¼αª£αºçαªòαºìαªƒ αªåαª¬αªíαºçαªƒ αªòαª░αª╛αª░ αª£αª¿αºìαª» αª£αºçαª¿αºçαª░αª┐αªò αªÅαªíαª┐αªƒαª░
 function updateRow(sheetName, id, updateObj) {
   var sheet = getSheet(sheetName);
   var lastRow = sheet.getLastRow();
@@ -310,16 +310,16 @@ function updateRow(sheetName, id, updateObj) {
   var targetRowIdx = -1;
   for (var r = 0; r < values.length; r++) {
     if (String(values[r][idColIdx]) === String(id)) {
-      targetRowIdx = r + 2; // ১-ইনডেক্সড এবং ১টি হেডার রো
+      targetRowIdx = r + 2; // αºº-αªçαª¿αªíαºçαªòαºìαª╕αªí αªÅαª¼αªé αººαªƒαª┐ αª╣αºçαªíαª╛αª░ αª░αºï
       break;
     }
   }
   
-  if (targetRowIdx === -1) return null; // আইডি পাওয়া যায়নি
+  if (targetRowIdx === -1) return null; // αªåαªçαªíαª┐ αª¬αª╛αªôαºƒαª╛ αª»αª╛αºƒαª¿αª┐
   
   updateObj.updatedAt = new Date().toISOString();
   
-  // নতুন কোনো কলাম থাকলে তা স্বয়ংক্রিয়ভাবে হেডার লাইনে যোগ করো (dynamic columns)
+  // αª¿αªñαºüαª¿ αªòαºïαª¿αºï αªòαª▓αª╛αª« αªÑαª╛αªòαª▓αºç αªñαª╛ αª╕αºìαª¼αºƒαªéαªòαºìαª░αª┐αºƒαª¡αª╛αª¼αºç αª╣αºçαªíαª╛αª░ αª▓αª╛αªçαª¿αºç αª»αºïαªù αªòαª░αºï (dynamic columns)
   var dataKeys = Object.keys(updateObj);
   var newKeys = [];
   for (var k = 0; k < dataKeys.length; k++) {
@@ -339,7 +339,7 @@ function updateRow(sheetName, id, updateObj) {
     lastCol = lastCol + newKeys.length;
   }
   
-  // প্রয়োজনীয় কলামগুলো আপডেট করা
+  // αª¬αºìαª░αºƒαºïαª£αª¿αºÇαºƒ αªòαª▓αª╛αª«αªùαºüαª▓αºï αªåαª¬αªíαºçαªƒ αªòαª░αª╛
   for (var c = 0; c < headers.length; c++) {
     var key = headers[c];
     if (updateObj[key] !== undefined) {
@@ -355,7 +355,7 @@ function updateRow(sheetName, id, updateObj) {
   return updateObj;
 }
 
-// শিট থেকে রো ডিলিট করার ফাংশন
+// αª╢αª┐αªƒ αªÑαºçαªòαºç αª░αºï αªíαª┐αª▓αª┐αªƒ αªòαª░αª╛αª░ αª½αª╛αªéαª╢αª¿
 function deleteRow(sheetName, id) {
   var sheet = getSheet(sheetName);
   var lastRow = sheet.getLastRow();
@@ -378,7 +378,7 @@ function deleteRow(sheetName, id) {
   return false;
 }
 
-// শিট থেকে নির্দিষ্ট কলামের ওপর ভিত্তি করে একাধিক রো ফিজিক্যালি ডিলিট করার জেনেরিক ফাংশন
+// αª╢αª┐αªƒ αªÑαºçαªòαºç αª¿αª┐αª░αºìαªªαª┐αª╖αºìαªƒ αªòαª▓αª╛αª«αºçαª░ αªôαª¬αª░ αª¡αª┐αªñαºìαªñαª┐ αªòαª░αºç αªÅαªòαª╛αªºαª┐αªò αª░αºï αª½αª┐αª£αª┐αªòαºìαª»αª╛αª▓αª┐ αªíαª┐αª▓αª┐αªƒ αªòαª░αª╛αª░ αª£αºçαª¿αºçαª░αª┐αªò αª½αª╛αªéαª╢αª¿
 function deleteMultipleRows(sheetName, columnName, columnValue) {
   try {
     var sheet = getSheet(sheetName);
@@ -394,10 +394,10 @@ function deleteMultipleRows(sheetName, columnName, columnValue) {
     var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
     var deletedCount = 0;
     
-    // নিচে থেকে ওপরের দিকে লুপ চালানো যাতে ডিলিট করার পর ওপরের রো নম্বরগুলোর ইনডেক্স ঠিক থাকে
+    // αª¿αª┐αªÜαºç αªÑαºçαªòαºç αªôαª¬αª░αºçαª░ αªªαª┐αªòαºç αª▓αºüαª¬ αªÜαª╛αª▓αª╛αª¿αºï αª»αª╛αªñαºç αªíαª┐αª▓αª┐αªƒ αªòαª░αª╛αª░ αª¬αª░ αªôαª¬αª░αºçαª░ αª░αºï αª¿αª«αºìαª¼αª░αªùαºüαª▓αºïαª░ αªçαª¿αªíαºçαªòαºìαª╕ αªáαª┐αªò αªÑαª╛αªòαºç
     for (var r = values.length - 1; r >= 0; r--) {
       if (String(values[r][colIdx]) === String(columnValue)) {
-        sheet.deleteRow(r + 2); // ১-ইনডেক্সড এবং ১টি হেডার রো
+        sheet.deleteRow(r + 2); // αºº-αªçαª¿αªíαºçαªòαºìαª╕αªí αªÅαª¼αªé αººαªƒαª┐ αª╣αºçαªíαª╛αª░ αª░αºï
         deletedCount++;
       }
     }
@@ -413,10 +413,10 @@ function deleteMultipleRows(sheetName, columnName, columnValue) {
 }
 
 // =========================================================================
-// 3. API INTERFACE: ফ্রন্টএন্ড থেকে কল করার ফাংশনসমূহ
+// 3. API INTERFACE: αª½αºìαª░αª¿αºìαªƒαªÅαª¿αºìαªí αªÑαºçαªòαºç αªòαª▓ αªòαª░αª╛αª░ αª½αª╛αªéαª╢αª¿αª╕αª«αºéαª╣
 // =========================================================================
 
-// --- 👤 USERS / AUTHENTICATION ---
+// --- ≡ƒæñ USERS / AUTHENTICATION ---
 
 function cleanPhone(p) {
   if (p === undefined || p === null) return "";
@@ -448,21 +448,21 @@ function apiGetUsers() {
 function apiSaveUser(userData) {
   try {
     var users = readSheet("users");
-    // চেক করো অলরেডি এই ফোন নম্বর দিয়ে ইউজার আছে কি না
+    // αªÜαºçαªò αªòαª░αºï αªàαª▓αª░αºçαªíαª┐ αªÅαªç αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαª┐αºƒαºç αªçαªëαª£αª╛αª░ αªåαª¢αºç αªòαª┐ αª¿αª╛
     var existingUser = users.find(function(u) { 
       return cleanPhone(u.phone) === cleanPhone(userData.phone); 
     });
     
     if (existingUser) {
-      // যদি আগে থেকেই ইউজার থাকে, জাস্ট প্রোফাইল আপডেট বা রি-অ্যাপ্লাই আপডেট করো
+      // αª»αªªαª┐ αªåαªùαºç αªÑαºçαªòαºçαªç αªçαªëαª£αª╛αª░ αªÑαª╛αªòαºç, αª£αª╛αª╕αºìαªƒ αª¬αºìαª░αºïαª½αª╛αªçαª▓ αªåαª¬αªíαºçαªƒ αª¼αª╛ αª░αª┐-αªàαºìαª»αª╛αª¬αºìαª▓αª╛αªç αªåαª¬αªíαºçαªƒ αªòαª░αºï
       var updated = updateRow("users", existingUser.id, userData);
       return { success: true, data: updated };
     } else {
-      // নতুন ইউজার রেজিস্ট্রেশন
+      // αª¿αªñαºüαª¿ αªçαªëαª£αª╛αª░ αª░αºçαª£αª┐αª╕αºìαªƒαºìαª░αºçαª╢αª¿
       userData.role = userData.role || "student";
       userData.status = userData.status || "incomplete";
       userData.paymentStatus = userData.paymentStatus || "unpaid";
-      // প্রথমবার ডিফল্ট পাসকোড ফোন নম্বর রাখা হলো
+      // αª¬αºìαª░αªÑαª«αª¼αª╛αª░ αªíαª┐αª½αª▓αºìαªƒ αª¬αª╛αª╕αªòαºïαªí αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αª░αª╛αªûαª╛ αª╣αª▓αºï
       userData.passcode = userData.passcode || cleanPhone(userData.phone); 
       
       var saved = saveRow("users", userData);
@@ -475,9 +475,9 @@ function apiSaveUser(userData) {
 
 function apiRegisterUser(userData) {
   try {
-    if (!userData.phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
-    if (!userData.name) return { success: false, error: "নাম দেওয়া হয়নি।" };
-    if (!userData.batchId) return { success: false, error: "ব্যাচ নির্বাচন করা হয়নি।" };
+    if (!userData.phone) return { success: false, error: "αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
+    if (!userData.name) return { success: false, error: "αª¿αª╛αª« αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
+    if (!userData.batchId) return { success: false, error: "αª¼αºìαª»αª╛αªÜ αª¿αª┐αª░αºìαª¼αª╛αªÜαª¿ αªòαª░αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
 
     var users = readSheet("users");
     var cleanedPhone = cleanPhone(userData.phone);
@@ -486,16 +486,16 @@ function apiRegisterUser(userData) {
     });
 
     if (existingUser) {
-      // ইতিমধ্যে আবেদন আছে — নতুন row বানাবে না, শুধু status জানাবে
+      // αªçαªñαª┐αª«αªºαºìαª»αºç αªåαª¼αºçαªªαª¿ αªåαª¢αºç ΓÇö αª¿αªñαºüαª¿ row αª¼αª╛αª¿αª╛αª¼αºç αª¿αª╛, αª╢αºüαªºαºü status αª£αª╛αª¿αª╛αª¼αºç
       var st = String(existingUser.status || "pending").toLowerCase().trim();
       return { success: true, status: st, message: "User already exists" };
     }
 
-    // নতুন student
+    // αª¿αªñαºüαª¿ student
     userData.role = "student";
     userData.status = "pending";
     userData.paymentStatus = "unpaid";
-    userData.passcode = cleanedPhone; // ডিফল্ট পাসকোড = ফোন নম্বর
+    userData.passcode = cleanedPhone; // αªíαª┐αª½αª▓αºìαªƒ αª¬αª╛αª╕αªòαºïαªí = αª½αºïαª¿ αª¿αª«αºìαª¼αª░
     userData.createdAt = new Date().toISOString();
     userData.updatedAt = new Date().toISOString();
 
@@ -510,7 +510,7 @@ function apiDeleteUser(userId) {
     // ১. স্টুডেন্টের সমস্ত পেমেন্ট রেকর্ড ডিলিট করো
     deleteMultipleRows("payments", "studentId", userId);
     
-    // ২. স্টুডেন্টের সমস্ত উপস্থিতির রেকর্ড ডিলিট করো
+    // ২. স্টুডেন্টের সমস্ত এটেনডেন্স রেকর্ড ডিলিট করো
     deleteMultipleRows("attendance", "studentId", userId);
     
     // ৩. স্টুডেন্টের সমস্ত পরীক্ষার রেজাল্ট ডিলিট করো
@@ -585,21 +585,21 @@ function apiUpdateUserPasscode(userId, passcode) {
   }
 }
 
-// --- 🔐 PASSCODE CHANGE (logged-in user) ---
+// --- ≡ƒöÉ PASSCODE CHANGE (logged-in user) ---
 function apiChangePasscode(userId, currentPasscode, newPasscode) {
   try {
     var users = readSheet("users");
     var user = users.find(function(u) { return String(u.id) === String(userId); });
-    if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
+    if (!user) return { success: false, error: "αª¼αºìαª»αª¼αª╣αª╛αª░αªòαª╛αª░αºÇ αª¬αª╛αªôαª»αª╝αª╛ αª»αª╛αª»αª╝αª¿αª┐αÑñ" };
 
     var storedPasscode = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
     if (storedPasscode === "") storedPasscode = cleanPhone(user.phone);
 
     if (storedPasscode !== String(currentPasscode).trim()) {
-      return { success: false, error: "বর্তমান passcode ভুল।" };
+      return { success: false, error: "αª¼αª░αºìαªñαª«αª╛αª¿ passcode αª¡αºüαª▓αÑñ" };
     }
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
+      return { success: false, error: "αª¿αªñαºüαª¿ passcode αªòαª«αª¬αªòαºìαª╖αºç αº¬ αªàαªòαºìαª╖αª░αºçαª░ αª╣αªñαºç αª╣αª¼αºçαÑñ" };
     }
 
     updateRow("users", userId, { passcode: String(newPasscode).trim() });
@@ -609,50 +609,50 @@ function apiChangePasscode(userId, currentPasscode, newPasscode) {
   }
 }
 
-// --- 🔐 ADMIN FORCE-RESET PASSCODE ---
+// --- ≡ƒöÉ ADMIN FORCE-RESET PASSCODE ---
 function apiAdminResetPasscode(studentId, newPasscode) {
   try {
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
+      return { success: false, error: "αª¿αªñαºüαª¿ passcode αªòαª«αª¬αªòαºìαª╖αºç αº¬ αªàαªòαºìαª╖αª░αºçαª░ αª╣αªñαºç αª╣αª¼αºçαÑñ" };
     }
     var updated = updateRow("users", studentId, { passcode: String(newPasscode).trim() });
-    if (!updated) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
+    if (!updated) return { success: false, error: "αª¼αºìαª»αª¼αª╣αª╛αª░αªòαª╛αª░αºÇ αª¬αª╛αªôαª»αª╝αª╛ αª»αª╛αª»αª╝αª¿αª┐αÑñ" };
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
 }
 
-// --- 📧 OTP SEND (Forgot Passcode Step 1) ---
+// --- ≡ƒôº OTP SEND (Forgot Passcode Step 1) ---
 function apiSendOTP(phone) {
   try {
-    if (!phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
+    if (!phone) return { success: false, error: "αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
     var users = readSheet("users");
     var cleanedPhone = cleanPhone(phone);
     var user = users.find(function(u) { return cleanPhone(u.phone) === cleanedPhone; });
 
-    if (!user) return { success: false, error: "এই ফোন নম্বরটি নিবন্ধিত নয়।" };
-    if (!user.email) return { success: false, error: "এই অ্যাকাউন্টে কোনো email নেই। Admin-এর সাথে যোগাযোগ করুন।" };
+    if (!user) return { success: false, error: "αªÅαªç αª½αºïαª¿ αª¿αª«αºìαª¼αª░αªƒαª┐ αª¿αª┐αª¼αª¿αºìαªºαª┐αªñ αª¿αª»αª╝αÑñ" };
+    if (!user.email) return { success: false, error: "αªÅαªç αªàαºìαª»αª╛αªòαª╛αªëαª¿αºìαªƒαºç αªòαºïαª¿αºï email αª¿αºçαªçαÑñ Admin-αªÅαª░ αª╕αª╛αªÑαºç αª»αºïαªùαª╛αª»αºïαªù αªòαª░αºüαª¿αÑñ" };
 
-    // 6-digit OTP তৈরি
+    // 6-digit OTP αªñαºêαª░αª┐
     var otp = String(Math.floor(100000 + Math.random() * 900000));
-    var expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 মিনিট
+    var expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 αª«αª┐αª¿αª┐αªƒ
 
-    // Script Properties-এ OTP সংরক্ষণ
+    // Script Properties-αªÅ OTP αª╕αªéαª░αªòαºìαª╖αªú
     var props = PropertiesService.getScriptProperties();
     props.setProperty("otp_" + cleanedPhone, JSON.stringify({ otp: otp, expiry: expiry }));
 
-    // Email পাঠানো
+    // Email αª¬αª╛αªáαª╛αª¿αºï
     var subject = "M-C Tuition: Passcode Reset OTP";
-    var body = "প্রিয় " + (user.name || "Student") + ",\n\n" +
-               "আপনার passcode reset OTP: " + otp + "\n\n" +
-               "এই কোডটি ১০ মিনিটের জন্য বৈধ।\n" +
-               "যদি আপনি এই অনুরোধ না করে থাকেন, তাহলে এটি উপেক্ষা করুন।\n\n" +
+    var body = "αª¬αºìαª░αª┐αª»αª╝ " + (user.name || "Student") + ",\n\n" +
+               "αªåαª¬αª¿αª╛αª░ passcode reset OTP: " + otp + "\n\n" +
+               "αªÅαªç αªòαºïαªíαªƒαª┐ αººαºª αª«αª┐αª¿αª┐αªƒαºçαª░ αª£αª¿αºìαª» αª¼αºêαªºαÑñ\n" +
+               "αª»αªªαª┐ αªåαª¬αª¿αª┐ αªÅαªç αªàαª¿αºüαª░αºïαªº αª¿αª╛ αªòαª░αºç αªÑαª╛αªòαºçαª¿, αªñαª╛αª╣αª▓αºç αªÅαªƒαª┐ αªëαª¬αºçαªòαºìαª╖αª╛ αªòαª░αºüαª¿αÑñ\n\n" +
                "- M-C Tuition Application";
 
     MailApp.sendEmail(user.email, subject, body);
 
-    // Email mask করা
+    // Email mask αªòαª░αª╛
     var emailParts = user.email.split("@");
     var localPart = emailParts[0];
     var masked = localPart.substring(0, Math.min(2, localPart.length)) + "***@" + emailParts[1];
@@ -663,11 +663,11 @@ function apiSendOTP(phone) {
   }
 }
 
-// --- ✅ OTP VERIFY + PASSCODE RESET (Forgot Passcode Step 2) ---
+// --- Γ£à OTP VERIFY + PASSCODE RESET (Forgot Passcode Step 2) ---
 function apiVerifyOTPAndReset(phone, otp, newPasscode) {
   try {
     if (!phone || !otp || !newPasscode) {
-      return { success: false, error: "সমস্ত তথ্য দেওয়া হয়নি।" };
+      return { success: false, error: "αª╕αª«αª╕αºìαªñ αªñαªÑαºìαª» αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
     }
 
     var cleanedPhone = cleanPhone(phone);
@@ -675,35 +675,35 @@ function apiVerifyOTPAndReset(phone, otp, newPasscode) {
     var stored = props.getProperty("otp_" + cleanedPhone);
 
     if (!stored) {
-      return { success: false, error: "OTP পাওয়া যায়নি। আবার OTP পাঠান।" };
+      return { success: false, error: "OTP αª¬αª╛αªôαª»αª╝αª╛ αª»αª╛αª»αª╝αª¿αª┐αÑñ αªåαª¼αª╛αª░ OTP αª¬αª╛αªáαª╛αª¿αÑñ" };
     }
 
     var storedData = JSON.parse(stored);
 
-    // Expiry চেক
+    // Expiry αªÜαºçαªò
     if (new Date() > new Date(storedData.expiry)) {
       props.deleteProperty("otp_" + cleanedPhone);
-      return { success: false, error: "OTP-এর মেয়াদ শেষ হয়ে গেছে। আবার OTP পাঠান।" };
+      return { success: false, error: "OTP-αªÅαª░ αª«αºçαª»αª╝αª╛αªª αª╢αºçαª╖ αª╣αª»αª╝αºç αªùαºçαª¢αºçαÑñ αªåαª¼αª╛αª░ OTP αª¬αª╛αªáαª╛αª¿αÑñ" };
     }
 
-    // OTP মিলানো
+    // OTP αª«αª┐αª▓αª╛αª¿αºï
     if (storedData.otp !== String(otp).trim()) {
-      return { success: false, error: "ভুল OTP! আবার চেষ্টা করুন।" };
+      return { success: false, error: "αª¡αºüαª▓ OTP! αªåαª¼αª╛αª░ αªÜαºçαª╖αºìαªƒαª╛ αªòαª░αºüαª¿αÑñ" };
     }
 
-    // নতুন passcode validate
+    // αª¿αªñαºüαª¿ passcode validate
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
+      return { success: false, error: "αª¿αªñαºüαª¿ passcode αªòαª«αª¬αªòαºìαª╖αºç αº¬ αªàαªòαºìαª╖αª░αºçαª░ αª╣αªñαºç αª╣αª¼αºçαÑñ" };
     }
 
-    // User খুঁজে passcode আপডেট
+    // User αªûαºüαªüαª£αºç passcode αªåαª¬αªíαºçαªƒ
     var users = readSheet("users");
     var user = users.find(function(u) { return cleanPhone(u.phone) === cleanedPhone; });
-    if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
+    if (!user) return { success: false, error: "αª¼αºìαª»αª¼αª╣αª╛αª░αªòαª╛αª░αºÇ αª¬αª╛αªôαª»αª╝αª╛ αª»αª╛αª»αª╝αª¿αª┐αÑñ" };
 
     updateRow("users", user.id, { passcode: String(newPasscode).trim() });
 
-    // ব্যবহৃত OTP মুছে ফেলা
+    // αª¼αºìαª»αª¼αª╣αºâαªñ OTP αª«αºüαª¢αºç αª½αºçαª▓αª╛
     props.deleteProperty("otp_" + cleanedPhone);
 
     return { success: true };
@@ -715,7 +715,7 @@ function apiVerifyOTPAndReset(phone, otp, newPasscode) {
 
 function apiCheckApplicationStatus(phone) {
   try {
-    if (!phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
+    if (!phone) return { success: false, error: "αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
     var users = readSheet("users");
     var cleanedPhone = cleanPhone(phone);
     var user = users.find(function(u) {
@@ -743,27 +743,27 @@ function apiLoginUser(phone, passcode) {
     });
     
     if (!user) {
-      return { success: false, error: "ফোন নম্বরটি নিবন্ধিত নয় (Phone number not registered)" };
+      return { success: false, error: "αª½αºïαª¿ αª¿αª«αºìαª¼αª░αªƒαª┐ αª¿αª┐αª¼αª¿αºìαªºαª┐αªñ αª¿αºƒ (Phone number not registered)" };
     }
     
-    // পাসকোড কম্প্যারিজনের জন্য স্ট্রিং-এ কনভার্ট করে ট্রিম করা
+    // αª¬αª╛αª╕αªòαºïαªí αªòαª«αºìαª¬αºìαª»αª╛αª░αª┐αª£αª¿αºçαª░ αª£αª¿αºìαª» αª╕αºìαªƒαºìαª░αª┐αªé-αªÅ αªòαª¿αª¡αª╛αª░αºìαªƒ αªòαª░αºç αªƒαºìαª░αª┐αª« αªòαª░αª╛
     var userPasscodeStr = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
     var inputPasscodeStr = passcode !== undefined && passcode !== null ? String(passcode).trim() : "";
 
-    // যদি শিটে পাসকোড ফাঁকা থাকে — ডিফল্ট পাসকোড = ক্লিন ফোন নম্বর
+    // αª»αªªαª┐ αª╢αª┐αªƒαºç αª¬αª╛αª╕αªòαºïαªí αª½αª╛αªüαªòαª╛ αªÑαª╛αªòαºç ΓÇö αªíαª┐αª½αª▓αºìαªƒ αª¬αª╛αª╕αªòαºïαªí = αªòαºìαª▓αª┐αª¿ αª½αºïαª¿ αª¿αª«αºìαª¼αª░
     var isDefaultPasscodeUsed = false;
     if (userPasscodeStr === "") {
       userPasscodeStr = cleanPhone(user.phone);
       isDefaultPasscodeUsed = true;
     }
 
-    // অ্যাডমিন অ্যাকাউন্টের জন্য মাস্টার পাসকোড বাইপাস
+    // αªàαºìαª»αª╛αªíαª«αª┐αª¿ αªàαºìαª»αª╛αªòαª╛αªëαª¿αºìαªƒαºçαª░ αª£αª¿αºìαª» αª«αª╛αª╕αºìαªƒαª╛αª░ αª¬αª╛αª╕αªòαºïαªí αª¼αª╛αªçαª¬αª╛αª╕
     var isMasterAdmin = (cleanedPhone === "9432490498" && inputPasscodeStr === "saikat123");
 
-    // Direct match — সরাসরি তুলনা
+    // Direct match ΓÇö αª╕αª░αª╛αª╕αª░αª┐ αªñαºüαª▓αª¿αª╛
     var isMatch = (userPasscodeStr === inputPasscodeStr);
 
-    // Fallback: পাসকোড বা ইনপুট যদি ফরম্যাটেড বা ডেসিমাল সহ ফোন নম্বর হয়
+    // Fallback: αª¬αª╛αª╕αªòαºïαªí αª¼αª╛ αªçαª¿αª¬αºüαªƒ αª»αªªαª┐ αª½αª░αª«αºìαª»αª╛αªƒαºçαªí αª¼αª╛ αªíαºçαª╕αª┐αª«αª╛αª▓ αª╕αª╣ αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αª╣αª»αª╝
     if (!isMatch) {
       var cleanedUserPasscode = cleanPhone(userPasscodeStr);
       var cleanedInputPasscode = cleanPhone(inputPasscodeStr);
@@ -773,7 +773,7 @@ function apiLoginUser(phone, passcode) {
     }
 
     if (!isMatch && !isMasterAdmin) {
-      return { success: false, error: "ভুল পাসকোড! দয়া করে সঠিক পাসকোড দিন (Invalid Passcode)" };
+      return { success: false, error: "αª¡αºüαª▓ αª¬αª╛αª╕αªòαºïαªí! αªªαª»αª╝αª╛ αªòαª░αºç αª╕αªáαª┐αªò αª¬αª╛αª╕αªòαºïαªí αªªαª┐αª¿ (Invalid Passcode)" };
     }
     
     if (isDefaultPasscodeUsed) {
@@ -782,7 +782,7 @@ function apiLoginUser(phone, passcode) {
     }
     
     if (isMasterAdmin && userPasscodeStr !== inputPasscodeStr) {
-      // গুগল শিটে পাসকোডটি স্বয়ংক্রিয়ভাবে আপডেট করে দাও
+      // αªùαºüαªùαª▓ αª╢αª┐αªƒαºç αª¬αª╛αª╕αªòαºïαªíαªƒαª┐ αª╕αºìαª¼αºƒαªéαªòαºìαª░αª┐αºƒαª¡αª╛αª¼αºç αªåαª¬αªíαºçαªƒ αªòαª░αºç αªªαª╛αªô
       updateRow("users", user.id, { passcode: "saikat123" });
       user.passcode = "saikat123";
     }
@@ -793,12 +793,12 @@ function apiLoginUser(phone, passcode) {
   }
 }
 
-// --- 🎒 BATCHES ---
+// --- ≡ƒÄÆ BATCHES ---
 
 function apiGetBatches() {
   try {
     var list = readSheet("batches");
-    // জেসন স্ট্রিং ডিকোড করা
+    // αª£αºçαª╕αª¿ αª╕αºìαªƒαºìαª░αª┐αªé αªíαª┐αªòαºïαªí αªòαª░αª╛
     list.forEach(function(item) {
       if (item.assignedItemsMap) {
         try {
@@ -836,14 +836,12 @@ function apiDeleteBatch(batchId) {
   try {
     // ব্যাচ ডিলিট করার আগে সেই ব্যাচের সমস্ত স্টুডেন্ট এবং তাদের সমস্ত রেকর্ড ফিজিক্যালি ডিলিট করো
     var users = readSheet("users");
-    var batchStudentIds = [];
     users.forEach(function(u) {
       if (String(u.batchId) === String(batchId)) {
-        batchStudentIds.push(u.id);
         // ১. স্টুডেন্টের সমস্ত পেমেন্ট রেকর্ড ডিলিট করো
         deleteMultipleRows("payments", "studentId", u.id);
         
-        // ২. স্টুডেন্টের সমস্ত উপস্থিতির রেকর্ড ডিলিট করো
+        // ২. স্টুডেন্টের সমস্ত এটেনডেন্স রেকর্ড ডিলিট করো
         deleteMultipleRows("attendance", "studentId", u.id);
         
         // ৩. স্টুডেন্টের সমস্ত পরীক্ষার রেজাল্ট ডিলিট করো
@@ -868,7 +866,7 @@ function apiDeleteBatch(batchId) {
   }
 }
 
-// --- 📚 LIBRARY ---
+// --- ≡ƒôÜ LIBRARY ---
 
 function apiGetLibrary() {
   try {
@@ -904,7 +902,7 @@ function apiSaveLibraryItem(itemData) {
 function apiDeleteLibraryItem(itemId) {
   try {
     var success = deleteRow("library", itemId);
-    // যদি কোনো ব্যাচ অ্যাসাইনমেন্টে থাকে, তা ডিলিট করা হবে
+    // αª»αªªαª┐ αªòαºïαª¿αºï αª¼αºìαª»αª╛αªÜ αªàαºìαª»αª╛αª╕αª╛αªçαª¿αª«αºçαª¿αºìαªƒαºç αªÑαª╛αªòαºç, αªñαª╛ αªíαª┐αª▓αª┐αªƒ αªòαª░αª╛ αª╣αª¼αºç
     var batches = readSheet("batches");
     batches.forEach(function(b) {
       var assigned = {};
@@ -973,7 +971,7 @@ function apiShareLibraryItem(itemId, batchIdsMap) {
   }
 }
 
-// --- 💳 PAYMENTS ---
+// --- ≡ƒÆ│ PAYMENTS ---
 
 function apiGetPayments() {
   try {
@@ -987,7 +985,7 @@ function apiAddPayment(paymentData) {
   try {
     var saved = saveRow("payments", paymentData);
     
-    // ইউজারের গ্লোবাল পেমেন্ট স্ট্যাটাস আপডেট করা
+    // αªçαªëαª£αª╛αª░αºçαª░ αªùαºìαª▓αºïαª¼αª╛αª▓ αª¬αºçαª«αºçαª¿αºìαªƒ αª╕αºìαªƒαºìαª»αª╛αªƒαª╛αª╕ αªåαª¬αªíαºçαªƒ αªòαª░αª╛
     updateRow("users", paymentData.studentId, { paymentStatus: paymentData.status });
     
     return { success: true, data: saved };
@@ -998,8 +996,8 @@ function apiAddPayment(paymentData) {
 
 function apiUpdatePaymentStatus(paymentId, status, remarks) {
   try {
-    // updateRow() শুধু updateObj return করে (partial), studentId থাকে না।
-    // তাই আগে payment record পড়ে studentId বের করতে হবে।
+    // updateRow() αª╢αºüαªºαºü updateObj return αªòαª░αºç (partial), studentId αªÑαª╛αªòαºç αª¿αª╛αÑñ
+    // αªñαª╛αªç αªåαªùαºç payment record αª¬αªíαª╝αºç studentId αª¼αºçαª░ αªòαª░αªñαºç αª╣αª¼αºçαÑñ
     var payments = readSheet("payments");
     var payment = null;
     for (var i = 0; i < payments.length; i++) {
@@ -1015,7 +1013,7 @@ function apiUpdatePaymentStatus(paymentId, status, remarks) {
     }
     var updated = updateRow("payments", paymentId, updateObj);
 
-    // এখন সঠিকভাবে studentId পেয়ে user record আপডেট করা যাবে
+    // αªÅαªûαª¿ αª╕αªáαª┐αªòαª¡αª╛αª¼αºç studentId αª¬αºçαª»αª╝αºç user record αªåαª¬αªíαºçαªƒ αªòαª░αª╛ αª»αª╛αª¼αºç
     if (payment && payment.studentId) {
       updateRow("users", payment.studentId, { paymentStatus: status });
     }
@@ -1026,7 +1024,7 @@ function apiUpdatePaymentStatus(paymentId, status, remarks) {
   }
 }
 
-// --- 📢 NOTIFICATIONS ---
+// --- ≡ƒôó NOTIFICATIONS ---
 
 function apiGetNotifications() {
   try {
@@ -1061,7 +1059,7 @@ function apiDeleteNotification(notifId) {
   }
 }
 
-// --- 📝 EXAMS & ATTENDANCE ---
+// --- ≡ƒô¥ EXAMS & ATTENDANCE ---
 
 function apiGetExamSessions() {
   try {
@@ -1093,3 +1091,278 @@ function apiCreateExamSession(sessionData) {
   }
 }
 
+function apiEndExamSession(sessionId) {
+  try {
+    var updated = updateRow("examSessions", sessionId, { isActive: false });
+    return { success: true, data: updated };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiJoinExamSession(sessionId, userId, studentName, studentPhone, enteredCode) {
+  try {
+    var sessionsResponse = apiGetExamSessions();
+    if (!sessionsResponse.success) return sessionsResponse;
+    var session = sessionsResponse.data.find(function(s) { return s.id === sessionId; });
+    
+    if (!session) return { success: false, error: "αª╕αºçαª╢αª¿ αª¬αª╛αªôαºƒαª╛ αª»αª╛αºƒαª¿αª┐ (Session not found)" };
+    if (!session.isActive) return { success: false, error: "αª╕αºçαª╢αª¿ αª╕αªòαºìαª░αª┐αºƒ αª¿αºƒ (Session is inactive)" };
+    
+    // αªÜαºçαªò αªòαºïαªí αª»αªªαª┐ αªÅαª¿αª╛αª¼αºçαª▓ αªÑαª╛αªòαºç ΓÇö αªªαºüαªªαª┐αªòαºçαªç normalize αªòαª░αª╛ (trim + uppercase)
+    var storedCode = String(session.code || "").trim().toUpperCase();
+    var givenCode  = String(enteredCode || "").trim().toUpperCase();
+    if (session.codeEnabled && storedCode !== givenCode) {
+      return { success: false, error: "wrong_code" };
+    }
+    
+    // αª╕αºçαª╢αª¿αºç αªçαªëαª£αª╛αª░ αª»αºüαªòαºìαªñ αªòαª░αª╛
+    var uids = session.participantUids || [];
+    if (uids.indexOf(userId) === -1) {
+      uids.push(userId);
+            updateRow("examSessions", sessionId, { participantUids: JSON.stringify(uids) });
+    }
+
+    var attendanceEntry = {
+      sessionId: sessionId,
+      studentId: userId,
+      studentName: studentName || "Student",
+      studentPhone: studentPhone || "0000000000",
+      joinedTime: new Date().toISOString()
+    };
+    saveRow("attendance", attendanceEntry);
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiSubmitExamResult(resultData) {
+  try {
+    var saved = saveRow("examResults", resultData);
+    return { success: true, data: saved };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetExamResults() {
+  try {
+    return { success: true, data: readSheet("examResults") };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiDeleteExamResult(resultId) {
+  try {
+    var success = deleteRow("examResults", resultId);
+    return { success: success };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetAttendance() {
+  try {
+    return { success: true, data: readSheet("attendance") };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetAnnouncement() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var msg = props.getProperty("announcement") || "";
+    return { success: true, data: msg };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiSaveAnnouncement(message) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty("announcement", message || "");
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetSettings() {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var saved = props.getProperty("appSettings");
+    if (saved) {
+      return { success: true, data: JSON.parse(saved) };
+    }
+    return { success: true, data: { adminUpiId: "mondal.saikat185@okaxis", enablePaymentSystem: true } };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiSaveSettings(settings) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty("appSettings", JSON.stringify(settings));
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiVerifyGatewayPayment(paymentId, months, amount, studentId) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var savedSettings = props.getProperty("appSettings");
+    var keyId = "";
+    var keySecret = "";
+    if (savedSettings) {
+      var parsed = JSON.parse(savedSettings);
+      keyId = parsed.razorpayKeyId || "";
+      keySecret = parsed.razorpayKeySecret || "";
+    }
+
+    // Default standard Sandbox key if admin has not configured their own keys
+    if (!keyId) {
+      keyId = "rzp_test_mX3qXFv3Xv9Xv9";
+    }
+
+    var isVerified = false;
+    if (keySecret) {
+      try {
+        var authString = keyId + ":" + keySecret;
+        var headers = {
+          "Authorization": "Basic " + Utilities.base64Encode(authString)
+        };
+        var options = {
+          "method": "get",
+          "headers": headers,
+          "muteHttpExceptions": true
+        };
+        var response = UrlFetchApp.fetch("https://api.razorpay.com/v1/payments/" + paymentId, options);
+        var responseCode = response.getResponseCode();
+        var responseBody = response.getContentText();
+        
+        if (responseCode === 200) {
+          var paymentData = JSON.parse(responseBody);
+          if (paymentData.status === 'captured' || paymentData.status === 'authorized') {
+            isVerified = true;
+          }
+        }
+      } catch (e) {
+        Logger.log("Razorpay fetch error: " + e.toString());
+      }
+    } else {
+      // Sandbox/Test mode fallback: if no keySecret is configured, approve the mock checkout instantly
+      isVerified = true;
+    }
+
+    if (!isVerified) {
+      return { success: false, error: "Razorpay verification failed (Payment not captured or unauthorized)" };
+    }
+
+    // 1. Create approved payment record in the sheet
+    var paymentRecord = {
+      id: "pay_" + Utilities.getUuid().substring(0, 8),
+      studentId: studentId,
+      month: months,
+      amount: Number(amount) || 0,
+      status: "approved",
+      transactionId: paymentId,
+      paidDate: new Date().toISOString(),
+      createdAt: new Date().toISOString()
+    };
+    saveRow("payments", paymentRecord);
+
+    // 2. Fetch student details and decrement pendingMonths
+    var users = readSheet("users");
+    var user = null;
+    for (var i = 0; i < users.length; i++) {
+      if (String(users[i].id) === String(studentId)) {
+        user = users[i];
+        break;
+      }
+    }
+
+    if (user) {
+      var count = months.split(',').length;
+      var currentPending = Number(user.pendingMonths) || 0;
+      var newPending = Math.max(0, currentPending - count);
+      
+      updateRow("users", studentId, {
+        paymentStatus: "approved",
+        pendingMonths: newPending,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiUploadFileToDrive(base64Data, fileName, folderId) {
+  try {
+    var bytes = Utilities.base64Decode(base64Data);
+    var blob = Utilities.newBlob(bytes, MimeType.PDF, fileName);
+
+    var folder;
+    if (folderId) {
+      try {
+        folder = DriveApp.getFolderById(folderId);
+      } catch(e) {
+        folder = DriveApp.getRootFolder();
+      }
+    } else {
+      folder = DriveApp.getRootFolder();
+    }
+
+    var file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    var fileId = file.getId();
+    var downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+    var viewUrl = "https://drive.google.com/file/d/" + fileId + "/view";
+
+    return { success: true, fileId: fileId, downloadUrl: downloadUrl, viewUrl: viewUrl };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+// =========================================================================
+// API ENDPOINT FOR VERCEL (doPost)
+// =========================================================================
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'No data provided' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var requestData = JSON.parse(e.postData.contents);
+    var action = requestData.action;
+    var args = requestData.args || [];
+
+    if (!action || typeof this[action] !== 'function') {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Invalid action: ' + action }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Dynamically call the requested function
+    var result = this[action].apply(this, args);
+
+    return ContentService.createTextOutput(JSON.stringify({ success: true, data: result }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
