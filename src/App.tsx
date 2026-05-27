@@ -76,6 +76,16 @@ function ProtectedRoute({
               may update your details and submit a new request if you believe
               this was a mistake.
             </p>
+            {(user as any).reapplyReason && (
+              <div className="mb-6 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-800 text-sm text-left">
+                <span className="font-black text-red-700 dark:text-red-300 uppercase text-xs block mb-1">
+                  প্রত্যাখ্যানের কারণ / Reason:
+                </span>
+                <span className="font-bold text-zinc-800 dark:text-zinc-200">
+                  {(user as any).reapplyReason}
+                </span>
+              </div>
+            )}
             <Link
               to="/setup-profile"
               className="inline-block bg-black dark:bg-white text-white dark:text-black font-bold uppercase px-6 py-3 hover:-translate-y-1 transition-transform border-2 border-transparent"
@@ -990,6 +1000,8 @@ import {
 function AdminDashboard() {
   const [absentFlags, setAbsentFlags] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string; missedCount: number }[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  const [selectedAbsentee, setSelectedAbsentee] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string } | null>(null);
+  const [submittingAction, setSubmittingAction] = useState(false);
 
   useEffect(() => {
     const computeFlags = async () => {
@@ -1033,6 +1045,10 @@ function AdminDashboard() {
           batchStudents.forEach((student: any) => {
             let recentAbsences = 0;
             let validExamsChecked = 0;
+            const studentExcusedDates = student.excusedDates
+              ? String(student.excusedDates).split(',').filter(Boolean)
+              : [];
+
             for (let i = 0; i < sBatchAtt.length && validExamsChecked < 3; i++) {
                const attDateMs = new Date(sBatchAtt[i].date).getTime();
                const msJoined = student.createdAt ? new Date(student.createdAt).getTime() : 0;
@@ -1040,10 +1056,12 @@ function AdminDashboard() {
                   continue; // skip exams before they joined / re-joined
                }
                
+               const isExcused = studentExcusedDates.includes(sBatchAtt[i].date);
+               
                validExamsChecked++;
-               if (!sBatchAtt[i].presentStudentIds.includes(student.id)) {
+               if (!sBatchAtt[i].presentStudentIds.includes(student.id) && !isExcused) {
                   recentAbsences++;
-               } else {
+               } else if (!isExcused) {
                   break; // they were present recently! Breaks consecutive chain.
                }
             }
@@ -1069,10 +1087,8 @@ function AdminDashboard() {
     computeFlags();
   }, [refreshTrigger]);
 
-  const excuseStudent = async (studentId: string) => {
-    const reason = prompt("অনুপস্থিতি মওকুফ করার কারণ লিখুন (যেমন: অসুস্থতা/Fever/Illness):", "অসুস্থতা (Illness)");
-    if (reason === null) return;
-    
+  const handleContinueStudent = async (studentId: string) => {
+    setSubmittingAction(true);
     try {
       const users = await api.getUsers();
       const student = users.find((u: any) => u.id === studentId);
@@ -1084,14 +1100,61 @@ function AdminDashboard() {
       await api.saveUser({
         ...student,
         createdAt: new Date().toISOString(),
-        exemptReason: reason || "অসুস্থতা"
+        exemptReason: "চলমান রাখা হয়েছে"
       });
       
       alert("ছাত্রের অনুপস্থিতি মওকুফ করা হয়েছে এবং কাউন্ট রিসেট হয়েছে!");
+      setSelectedAbsentee(null);
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error("Excuse student error:", err);
       alert("ত্রুটি: অনুপস্থিতি মওকুফ করা যায়নি।");
+    } finally {
+      setSubmittingAction(false);
+    }
+  };
+
+  const handleCompleteAttendance = async (studentId: string, batchId: string) => {
+    setSubmittingAction(true);
+    try {
+      const [users, sessions] = await Promise.all([
+        api.getUsers(),
+        api.getExamSessions()
+      ]);
+      const student = users.find((u: any) => u.id === studentId);
+      if (!student) return;
+
+      // Filter sessions for this batch
+      const batchSessions = sessions.filter((s: any) => s.batchId === batchId);
+      // Sort sessions descending by date/createdAt to find the last 3 sessions
+      batchSessions.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      
+      const last3Sessions = batchSessions.slice(0, 3);
+      if (last3Sessions.length === 0) {
+        alert("কোনো পরীক্ষা পাওয়া যায়নি যার উপস্থিতি পূর্ণ করা যাবে।");
+        setSelectedAbsentee(null);
+        return;
+      }
+
+      // Mark the student as present in each of the last 3 sessions
+      for (const session of last3Sessions) {
+        await api.joinExamSession(
+          session.id,
+          student.id,
+          student.name || student.phone || "Student",
+          student.phone || "0000000000",
+          ""
+        );
+      }
+
+      alert("ছাত্রের অনুপস্থিত পরীক্ষাগুলোর উপস্থিতি সফলভাবে পূর্ণ করা হয়েছে!");
+      setSelectedAbsentee(null);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err) {
+      console.error("Complete attendance error:", err);
+      alert("ত্রুটি: উপস্থিতি সম্পন্ন করা যায়নি।");
+    } finally {
+      setSubmittingAction(false);
     }
   };
 
@@ -1129,10 +1192,10 @@ function AdminDashboard() {
                   <div className="text-zinc-500 text-[10px] mt-0.5">ব্যাচ: {f.batchName}</div>
                 </div>
                 <button
-                  onClick={() => excuseStudent(f.id)}
+                  onClick={() => setSelectedAbsentee(f)}
                   className="bg-red-600 hover:bg-red-700 text-white font-black py-1 px-2 mt-2 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(240,240,240,1)] active:translate-y-0.5 active:shadow-none transition-all text-center"
                 >
-                  🩹 মওকুফ করুন (Cancel Absence)
+                  ⚡ ব্যবস্থা নিন (Absence Action)
                 </button>
               </div>
             ))}
@@ -1357,6 +1420,54 @@ function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {selectedAbsentee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 border-4 border-zinc-900 dark:border-zinc-100 p-6 max-w-md w-full shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] dark:shadow-[8px_8px_0px_0px_rgba(255,255,255,1)] text-zinc-900 dark:text-white">
+            <h3 className="text-lg font-black uppercase text-zinc-950 dark:text-zinc-50 border-b-4 border-zinc-900 dark:border-zinc-100 pb-2 mb-4 flex justify-between items-center">
+              <span>অনুপস্থিতি ব্যবস্থা / Absence Action</span>
+              <button 
+                onClick={() => setSelectedAbsentee(null)} 
+                className="text-red-500 hover:text-red-700 font-bold"
+              >
+                ✕
+              </button>
+            </h3>
+            
+            <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-4 leading-relaxed">
+              <strong className="text-red-600 dark:text-red-400">{selectedAbsentee.name}</strong> পরপর ৩টি পরীক্ষায় অনুপস্থিত ছিল। অনুগ্রহ করে নিচের যেকোনো একটি ব্যবস্থা গ্রহণ করুন:
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <button
+                disabled={submittingAction}
+                onClick={() => handleContinueStudent(selectedAbsentee.id)}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black py-3 px-4 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] dark:shadow-[3px_3px_0px_0px_rgba(255,255,255,1)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex flex-col items-center justify-center"
+              >
+                <span className="text-sm">🔄 চলমান রাখুন (Continue)</span>
+                <span className="text-[10px] opacity-90 lowercase font-medium mt-0.5">অনুপস্থিতি মওকুফ করে নতুন করে হিসাব শুরু করবে</span>
+              </button>
+
+              <button
+                disabled={submittingAction}
+                onClick={() => handleCompleteAttendance(selectedAbsentee.id, selectedAbsentee.batchId)}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black py-3 px-4 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] dark:shadow-[3px_3px_0px_0px_rgba(255,255,255,1)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex flex-col items-center justify-center"
+              >
+                <span className="text-sm">✅ উপস্থিতি পূর্ণ করুন (Fill Attendance)</span>
+                <span className="text-[10px] opacity-90 lowercase font-medium mt-0.5">অনুপস্থিত পরীক্ষাগুলোতে সরাসরি উপস্থিত হিসেবে রেকর্ড করবে</span>
+              </button>
+
+              <button
+                disabled={submittingAction}
+                onClick={() => setSelectedAbsentee(null)}
+                className="w-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 font-bold py-2 border-2 border-zinc-900 dark:border-zinc-100 transition-all uppercase text-xs"
+              >
+                বাতিল করুন (Cancel)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1392,7 +1503,6 @@ function StudentDashboard() {
     // Check nudge popup
     if (
       user &&
-      (user as any).showPaymentNudge &&
       (user as any).monthlyFee > 0 &&
       (user as any).pendingMonths > 0
     ) {
@@ -1402,7 +1512,7 @@ function StudentDashboard() {
         sessionStorage.setItem(sessionKey, "true");
       }
     }
-  }, [user?.uid, (user as any)?.showPaymentNudge, (user as any)?.monthlyFee, (user as any)?.pendingMonths]);
+  }, [user?.uid, (user as any)?.monthlyFee, (user as any)?.pendingMonths]);
 
   useEffect(() => {
     const isSimulated = !!localStorage.getItem("simulatedStudentId");
@@ -1732,7 +1842,9 @@ function StudentDashboard() {
                 <div className="font-bold">
                   {absentCount > 0 ? (
                     <span className={absentCount >= 3 ? "text-red-500 font-black" : "text-yellow-600"}>
-                      You missed {absentCount} of the last 3 live exams!
+                      {absentCount === 3
+                        ? "⚠️ সর্বশেষ ৩টি exam-এ অনুপস্থিত! (streak reset করতে Admin-কে জানান)"
+                        : `সর্বশেষ ৩টি লাইভ পরীক্ষার মধ্যে ${absentCount}টিতে অনুপস্থিত।`}
                     </span>
                   ) : (
                     <span className="text-emerald-500">Perfect recently. Keep it up!</span>

@@ -240,8 +240,11 @@ export function StudentLibrary() {
 
         let base64String = chunkedPdfCache.current.get(item.id);
         if (!base64String) {
-           // Not supported in pure GAS - fallback warning
-           alert("This is a legacy chunked file. Please ask Admin to re-upload it as a Google Drive link.");
+           setDownloadMessage({
+             title: "⚠️ Legacy File / পুরনো ফাইল",
+             body: "এই ফাইলটি পুরনো ফরম্যাটে রয়েছে। অনুগ্রহ করে অ্যাডমিনকে বলুন এটি পুনরায় গুগল ড্রাইভ লিংক হিসেবে আপলোড করতে।",
+             isWarning: true
+           });
            setDownloadingId(null);
            return;
         }
