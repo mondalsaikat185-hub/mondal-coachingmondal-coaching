@@ -306,8 +306,14 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     saveStateToLocalStorage(nextAnswers, questionStates, currentIdx);
   };
 
+  // Click once to select, click second time to deselect
   const selectOption = (optIdx: number) => {
-    const nextAnswers = { ...userAnswers, [currentIdx]: optIdx };
+    const nextAnswers = { ...userAnswers };
+    if (nextAnswers[currentIdx] === optIdx) {
+      delete nextAnswers[currentIdx];
+    } else {
+      nextAnswers[currentIdx] = optIdx;
+    }
     setUserAnswers(nextAnswers);
     saveStateToLocalStorage(nextAnswers, questionStates, currentIdx);
   };
@@ -436,7 +442,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   if (checkingResult) {
      return (
         <div className="p-12 text-center flex flex-col items-center justify-center min-h-[50vh] gap-4 bg-[#121214] text-zinc-100">
-          <div className="w-12 h-12 border-4 border-zinc-700 border-t-yellow-500 rounded-full animate-spin"></div>
+          <div className="w-12 h-12 border-4 border-zinc-750 border-t-yellow-500 rounded-full animate-spin"></div>
           <p className="font-bold text-zinc-400">
             Checking your credentials... / যাচাই করা হচ্ছে
           </p>
@@ -448,7 +454,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   if (alreadySubmitted) {
      return (
        <div className="flex items-center justify-center p-6 min-h-[80vh] bg-[#121214] text-zinc-100">
-         <div className="max-w-md w-full bg-[#1c1c1f] border border-zinc-800 p-8 rounded-3xl text-center space-y-6 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+         <div className="max-w-md w-full bg-[#1c1c1f] border-4 border-zinc-900 dark:border-zinc-100 p-8 rounded-2xl text-center space-y-6 shadow-[8px_8px_0px_0px_rgba(234,179,8,0.2)]">
            <div className="mx-auto w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center text-2xl font-bold">⚠️</div>
            <h2 className="serif text-2xl font-black uppercase text-red-500">Exam Already Submitted</h2>
            <p className="font-bold text-zinc-400 text-sm leading-relaxed">
@@ -466,7 +472,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   if (questions.length === 0) {
     return (
       <div className="flex items-center justify-center p-6 min-h-[80vh] bg-[#121214] text-zinc-100">
-        <div className="max-w-md w-full bg-[#1c1c1f] border border-zinc-800 p-8 rounded-3xl text-center space-y-6 shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+        <div className="max-w-md w-full bg-[#1c1c1f] border-4 border-zinc-900 dark:border-zinc-100 p-8 rounded-2xl text-center space-y-6 shadow-[8px_8px_0px_0px_rgba(234,179,8,0.2)]">
           <div className="mx-auto w-14 h-14 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 rounded-full flex items-center justify-center text-2xl font-bold">⚠️</div>
           <h2 className="serif text-2xl font-black uppercase text-white">No Questions Available</h2>
           <p className="font-bold text-zinc-400 text-sm leading-relaxed">
@@ -480,11 +486,11 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     );
   }
 
-  // SCREEN 1: Guidelines and Anti-Cheat Agreement
+  // SCREEN 1: Guidelines and Anti-Cheat Agreement (Neobrutalist styling)
   if (screen === 'AGREEMENT') {
      return (
         <div className="flex items-center justify-center p-6 min-h-screen bg-[#121214] text-zinc-100">
-           <div className="max-w-xl w-full bg-[#1c1c1f] border border-zinc-800/80 p-8 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] space-y-6">
+           <div className="max-w-xl w-full bg-[#1c1c1f] border-4 border-zinc-900 dark:border-zinc-100 p-8 rounded-2xl shadow-[8px_8px_0px_0px_rgba(234,179,8,0.2)] space-y-6">
               <div className="space-y-2 border-b border-zinc-800 pb-4">
                  <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-red-500">Security Gate</span>
                  <h2 className="serif text-2xl font-black uppercase text-red-500 flex items-center gap-2">
@@ -499,15 +505,15 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                  <li>Make sure your internet connection is stable. The page will auto-save your responses.</li>
               </ul>
               
-              <label className="flex items-start gap-3 bg-red-950/20 p-4 border border-red-900/50 rounded-xl cursor-pointer select-none">
+              <label className="flex items-start gap-3 bg-red-955/10 p-4 border border-red-900/50 rounded-xl cursor-pointer select-none">
                  <input 
                    type="checkbox" 
                    checked={agreed} 
                    onChange={e => setAgreed(e.target.checked)} 
-                   className="w-5 h-5 rounded border-zinc-800 bg-zinc-900 accent-red-600 text-red-600 mt-0.5 shrink-0" 
+                   className="w-5 h-5 rounded border-zinc-850 bg-zinc-900 accent-red-600 text-red-600 mt-0.5 shrink-0" 
                  />
                  <span className="text-xs font-bold text-red-400 leading-normal">
-                   আমি নিয়মাবলী এবং নিরাপত্তা নীতিগুলো পড়েছি এবং কোনো প্রকার অসাধু উপায় অবলম্বন করলে তার ফলাফলের দায়ভার গ্রহণ করলাম।
+                   আমি নিয়মাবলী এবং নিরাপত্তা নীতিগুলো পড়েছি এবং কোনো প্রকার অসাধু উপায় অবলম্বন করলে তার ফলাфলের দায়ভার গ্রহণ করলাম।
                  </span>
               </label>
               
@@ -531,20 +537,20 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
      );
   }
 
-  // SCREEN 2: Landing Page
+  // SCREEN 2: Landing Page (Neobrutalist styling)
   if (screen === 'LANDING') {
      return (
        <div className="flex items-center justify-center p-6 min-h-screen bg-[#121214] text-zinc-100">
-         <div className="max-w-md w-full bg-[#1c1c1f] border border-zinc-800/80 p-8 rounded-3xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] space-y-6 text-center">
+         <div className="max-w-md w-full bg-[#1c1c1f] border-4 border-zinc-900 dark:border-zinc-100 p-8 rounded-2xl shadow-[8px_8px_0px_0px_rgba(234,179,8,0.2)] space-y-6 text-center">
            <div className="space-y-2">
-             <span class="text-[10px] uppercase font-bold tracking-[0.25em] text-[#eab308]">Assessment Entry</span>
+             <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-[#eab308]">Assessment Entry</span>
              <h1 className="serif text-3xl font-medium tracking-tight text-white">{exam.title}</h1>
              <p className="text-xs text-zinc-400 leading-relaxed">{exam.examType || 'Regular Evaluation'}</p>
            </div>
 
            <div className="border-t border-b border-zinc-800/80 py-4 text-left grid grid-cols-2 gap-y-3 gap-x-4 text-xs text-zinc-400">
              <div>⏳ Time limit: <span className="font-bold text-zinc-200">{Math.floor(config.totalTime / 60)}m {config.totalTime % 60}s</span></div>
-             <div>📝 Total Qs: <span class="font-bold text-zinc-200">{questions.length}</span></div>
+             <div>📝 Total Qs: <span className="font-bold text-zinc-200">{questions.length}</span></div>
              <div>✅ Right answer: <span className="font-bold text-emerald-400">+{config.marksCorrect} marks</span></div>
              <div>❌ Penalty: <span className="font-bold text-red-400">{config.marksWrong} marks</span></div>
            </div>
@@ -558,7 +564,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
            <div className="flex gap-4">
              <button 
                onClick={startQuiz} 
-               className="flex-1 py-3.5 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 text-[11px] uppercase tracking-widest font-bold rounded-xl transition-all shadow-md border-none cursor-pointer"
+               className="flex-1 py-3.5 bg-yellow-500 hover:bg-yellow-650 text-neutral-950 text-[11px] uppercase tracking-widest font-bold rounded-xl transition-all shadow-md border-none cursor-pointer"
              >
                Begin Assessment
              </button>
@@ -574,7 +580,196 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
      );
   }
 
-  // SCREEN 3: Active Quiz Area (SSC-Style)
+  // SCREEN 4: Results & Explanations review Dashboard (Placed ABOVE the Active Quiz return to fix score display)
+  if (screen === 'RESULT') {
+     return (
+        <div className="min-h-screen bg-[#121214] text-zinc-100 flex flex-col items-center justify-start p-6 max-w-3xl mx-auto w-full py-12">
+           <style dangerouslySetInnerHTML={{__html: `
+              .serif { font-family: 'Georgia', serif; }
+           `}} />
+
+           <div className="w-full bg-[#1c1c1f] border-4 border-zinc-900 dark:border-zinc-100 p-8 rounded-2xl text-center space-y-6 shadow-[8px_8px_0px_0px_rgba(234,179,8,0.2)] mb-8 relative overflow-hidden">
+              <div className="space-y-1.5 relative z-10">
+                 <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-[#eab308]">Performance Summary</span>
+                 <h1 className="serif text-3xl font-black tracking-tight text-white uppercase">Assessment Completed</h1>
+                 <p className="text-xs text-zinc-400 font-semibold">
+                    Record generated for {(user as any)?.fullName || user?.displayName || 'Student'} on {new Date().toLocaleDateString('en-IN')}
+                 </p>
+              </div>
+
+              {/* Performative metrics grid */}
+              {resultSummary && (
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 relative z-10">
+                    <div className="text-center p-2">
+                       <span className="block text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Final Score</span>
+                       <span className="serif text-2xl font-black block mt-1 text-white">
+                          {resultSummary.score.toFixed(1)} <span className="text-sm font-bold text-zinc-500">/ {resultSummary.total.toFixed(1)}</span>
+                       </span>
+                    </div>
+                    <div className="text-center p-2 border-l border-zinc-800">
+                       <span className="block text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Accuracy</span>
+                       <span className="serif text-2xl font-black text-emerald-400 block mt-1">
+                          {questions.length > 0 ? Math.round((resultSummary.correct / questions.length) * 100) : 0}%
+                       </span>
+                    </div>
+                    <div className="text-center p-2 border-l border-zinc-800">
+                       <span className="block text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Right/Wrong/Skip</span>
+                       <span className="font-mono text-xs block mt-2 text-zinc-350">
+                          {resultSummary.correct} C / {resultSummary.wrong} W / {resultSummary.skipped} S
+                       </span>
+                    </div>
+                    <div className="text-center p-2 border-l border-zinc-800">
+                       <span className="block text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Time Spent</span>
+                       <span className="serif text-2xl font-black text-yellow-500 block mt-1">
+                          {Math.floor((config.totalTime - timeLeft) / 60)}m {(config.totalTime - timeLeft) % 60}s
+                       </span>
+                    </div>
+                 </div>
+              )}
+
+              <button 
+                onClick={onBack} 
+                className="relative z-10 px-6 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 text-[10px] uppercase tracking-widest font-black rounded-xl transition-all cursor-pointer border-none shadow-md"
+              >
+                 Return to Dashboard
+              </button>
+           </div>
+
+           {/* Review of detailed question by question solutions */}
+           <div className="w-full space-y-4 text-left">
+              <h3 className="serif text-xl italic text-white border-b border-zinc-800 pb-2 flex items-center justify-between">
+                 <span>Detailed Explanations & Review</span>
+                 <span className="text-[10px] uppercase font-sans tracking-widest font-bold text-zinc-500">Annotated Analysis</span>
+              </h3>
+
+              {/* Review Language Toggler */}
+              {isBilingual && (
+                 <div className="flex justify-end gap-2 items-center my-3 select-none bg-zinc-900/30 p-2 rounded-xl border border-zinc-800/40">
+                    <span className="text-xs text-zinc-400 font-medium font-sans">Review Language:</span>
+                    <button 
+                      onClick={() => setReviewLang('en')} 
+                      className={`px-3 py-1 text-[10px] font-bold uppercase rounded cursor-pointer border-none transition-all ${
+                         reviewLang === 'en' ? 'bg-zinc-900 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      English
+                    </button>
+                    <button 
+                      onClick={() => setReviewLang('bn')} 
+                      className={`px-3 py-1 text-[10px] font-bold uppercase rounded cursor-pointer border-none transition-all ${
+                         reviewLang === 'bn' ? 'bg-zinc-900 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      বাংলা
+                    </button>
+                 </div>
+              )}
+
+              <div className="space-y-6 w-full relative z-10">
+                 {questions.map((q: any, idx: number) => {
+                    const chosenIdx = userAnswers[idx];
+                    const correctIdx = q.correctIndex;
+                    const isCorrect = chosenIdx === correctIdx;
+                    const isSkipped = chosenIdx === undefined;
+
+                    let statusBadge = "";
+                    if (isCorrect) {
+                      statusBadge = "✅ Correct";
+                    } else if (isSkipped) {
+                      statusBadge = "◽ Skipped";
+                    } else {
+                      statusBadge = "❌ Incorrect";
+                    }
+
+                    const reviewQText = String((reviewLang === 'bn' && q?.question_bn) ? q.question_bn : (q?.question_en || q?.question || 'Question ?'));
+                    const reviewOptsRaw = (reviewLang === 'bn' && q?.options_bn && q.options_bn.length) ? q.options_bn : (q?.options_en || q?.options || []);
+                    const reviewOpts = Array.isArray(reviewOptsRaw) ? reviewOptsRaw : [];
+                    const reviewExpl = String((reviewLang === 'bn' && q?.explanation_bn) ? q.explanation_bn : (q?.explanation_en || q?.explanation || ''));
+
+                    return (
+                       <div key={`review-${idx}`} className="bg-[#1c1c1f] border border-zinc-800 rounded-2xl p-6 shadow-md space-y-4 text-left">
+                          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
+                             <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">
+                                Question {idx + 1}
+                             </span>
+                             <span className={`text-[9px] uppercase font-bold px-2.5 py-0.5 rounded-full border ${
+                                isCorrect 
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                  : isSkipped 
+                                    ? 'bg-zinc-800 text-zinc-400 border-zinc-700/30' 
+                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                             }`}>
+                                {statusBadge}
+                             </span>
+                          </div>
+
+                          <p className="text-sm text-zinc-200 font-semibold leading-relaxed whitespace-pre-wrap">
+                             {reviewQText}
+                          </p>
+
+                          {q?.sentences && typeof q.sentences === 'object' && (
+                             <div className="space-y-1 bg-[#121214] px-3 py-2 rounded-lg border border-zinc-850 text-xs text-zinc-400 font-mono mb-2">
+                                {Object.entries(q.sentences).map(([k, val]) => (
+                                   <p key={`review-s-${idx}-${k}`}>
+                                      <b className="text-yellow-650">{k}:</b> {String(val)}
+                                   </p>
+                                ))}
+                             </div>
+                          )}
+
+                          <div className="grid grid-cols-1 gap-2.5 pt-1">
+                             {reviewOpts.map((optText: string, optIdx: number) => {
+                                let cardStyle = "border rounded-xl px-4 py-2.5 text-xs transition-colors ";
+                                let pillText = "";
+
+                                if (optIdx === correctIdx) {
+                                  cardStyle += "bg-emerald-500/10 border-emerald-500 text-emerald-300 font-medium";
+                                  pillText = "Correct Answer";
+                                } else if (optIdx === chosenIdx) {
+                                  cardStyle += "bg-red-500/10 border-red-500 text-red-300 font-medium";
+                                  pillText = "Chosen Incorrect";
+                                } else {
+                                  cardStyle += "bg-[#121214]/70 border-zinc-800/80 text-zinc-400";
+                                }
+
+                                return (
+                                   <div key={`review-opt-${idx}-${optIdx}`} className={cardStyle}>
+                                      <div className="flex justify-between items-center">
+                                         <span>
+                                            <b className="mr-2">{String.fromCharCode(65 + optIdx)}.</b> 
+                                            {optText}
+                                         </span>
+                                         {pillText && (
+                                            <span className={`text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded shadow-sm ${
+                                               optIdx === correctIdx ? 'bg-emerald-500 text-zinc-950' : 'bg-red-50 text-white'
+                                            }`}>
+                                               {pillText}
+                                            </span>
+                                         )}
+                                      </div>
+                                   </div>
+                                )
+                             })}
+                          </div>
+
+                          {reviewExpl && reviewExpl.trim() && (
+                             <div className="bg-yellow-600/10 border-l-2 border-yellow-600 p-4 rounded-r-xl mt-3 text-xs text-zinc-300 leading-relaxed text-justify">
+                                <h4 className="font-bold uppercase text-[8px] tracking-wider text-yellow-500 mb-1">
+                                   Explanation / ব্যাখ্যা
+                                </h4>
+                                {reviewExpl}
+                             </div>
+                          )}
+                       </div>
+                    )
+                 })}
+              </div>
+           </div>
+        </div>
+     );
+  }
+
+  // SCREEN 3: Active Quiz Area (SSC-Style) - Returned as default
   return (
     <div className={`flex flex-col min-h-screen bg-[#121214] text-zinc-100 font-sans select-none overflow-x-hidden ${isForcedLandscape ? 'force-landscape-active' : ''}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
        <style dangerouslySetInnerHTML={{__html: `
@@ -620,13 +815,13 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-lg border border-zinc-800">
                    <button 
                      onClick={() => setLang('en')} 
-                     className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded transition-colors border-none cursor-pointer ${lang === 'en' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500'}`}
+                     className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded transition-colors border-none cursor-pointer ${lang === 'en' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-505'}`}
                    >
                      EN
                    </button>
                    <button 
                      onClick={() => setLang('bn')} 
-                     className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded transition-colors border-none cursor-pointer ${lang === 'bn' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500'}`}
+                     className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded transition-colors border-none cursor-pointer ${lang === 'bn' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-505'}`}
                    >
                      বাংলা
                    </button>
@@ -685,7 +880,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                    <div className="space-y-2 bg-[#121214] p-4 rounded-xl border border-zinc-800 text-xs text-zinc-300 leading-relaxed font-mono">
                       {Object.entries(activeQuestion.sentences).map(([key, value]) => (
                          <div key={`pj-${currentIdx}-${key}`} className="flex items-start gap-1.5 text-left">
-                            <b className="text-yellow-600 mr-1 shrink-0">{key}:</b> 
+                            <b className="text-yellow-650 mr-1 shrink-0">{key}:</b> 
                             <span>{String(value)}</span>
                          </div>
                       ))}
@@ -751,7 +946,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                    </button>
                    <button 
                      onClick={saveAndNext} 
-                     className="px-6 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-zinc-950 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border-none shadow-md"
+                     className="px-6 py-2.5 bg-yellow-500 hover:bg-yellow-650 text-zinc-950 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border-none shadow-md"
                    >
                       {currentIdx === questions.length - 1 ? 'Submit' : 'Save & Next'}
                    </button>
@@ -769,7 +964,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                    const isCurrent = idx === currentIdx;
                    const state = questionStates[idx] || 'unvisited';
                    
-                   let stateClasses = "bg-[#111113] text-zinc-500 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
+                   let stateClasses = "bg-[#111113] text-zinc-505 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
                    if (state === 'saved') {
                      stateClasses = "bg-emerald-600 text-white border-emerald-700 font-bold";
                    } else if (state === 'skipped') {
@@ -796,10 +991,10 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
 
              {/* Legends definition list */}
              <div className="space-y-2 text-[10px] text-zinc-400 pb-2">
-                <span className="block font-bold uppercase tracking-wider text-zinc-500">Legend Info</span>
+                <span className="block font-bold uppercase tracking-wider text-zinc-505">Legend Info</span>
                 <div className="grid grid-cols-2 gap-2">
                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-600"></span><span>Saved</span></div>
-                   <div className="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-850/80"></span><span>Skipped</span></div>
+                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-850/80"></span><span>Skipped</span></div>
                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-600"></span><span>Review</span></div>
                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-600"></span><span>Ans & Rev</span></div>
                    <div className="flex items-center gap-1.5 col-span-2"><span className="w-3 h-3 rounded-full bg-[#111113] border border-zinc-800"></span><span>Unvisited</span></div>
@@ -846,7 +1041,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 const isCurrent = idx === currentIdx;
                 const state = questionStates[idx] || 'unvisited';
                 
-                let stateClasses = "bg-[#111113] text-zinc-500 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
+                let stateClasses = "bg-[#111113] text-zinc-505 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
                 if (state === 'saved') {
                   stateClasses = "bg-emerald-600 text-white border-emerald-700 font-bold";
                 } else if (state === 'skipped') {
@@ -874,10 +1069,10 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              })}
           </div>
           <div className="p-4 bg-zinc-950 border-t border-zinc-850 text-[10px] text-zinc-400 space-y-2">
-             <span className="block font-bold tracking-wider uppercase text-zinc-500">Legend Info</span>
+             <span className="block font-bold tracking-wider uppercase text-zinc-505">Legend Info</span>
              <div className="grid grid-cols-2 gap-2">
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-600"></span><span>Saved</span></div>
-                <div className="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-850/80"></span><span>Skipped</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-850/80"></span><span>Skipped</span></div>
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-600"></span><span>Review</span></div>
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-600"></span><span>Ans & Rev</span></div>
              </div>
@@ -957,193 +1152,4 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
 
     </div>
   );
-
-  // SCREEN 4: Results & Explanations review Dashboard
-  if (screen === 'RESULT') {
-     return (
-        <div className="min-h-screen bg-[#121214] text-zinc-100 flex flex-col items-center justify-start p-6 max-w-3xl mx-auto w-full py-12">
-           <style dangerouslySetInnerHTML={{__html: `
-              .serif { font-family: 'Georgia', serif; }
-           `}} />
-
-           <div className="w-full bg-[#1c1c1f] border border-zinc-800 p-8 rounded-3xl text-center space-y-6 shadow-2xl mb-8 relative overflow-hidden">
-              <div className="space-y-1.5 relative z-10">
-                 <span className="text-[10px] uppercase font-bold tracking-[0.25em] text-[#eab308]">Performance Summary</span>
-                 <h1 className="serif text-3xl font-black tracking-tight text-white uppercase">Assessment Completed</h1>
-                 <p className="text-xs text-zinc-400 font-semibold">
-                    Record generated for {(user as any)?.fullName || user?.displayName || 'Student'} on {new Date().toLocaleDateString('en-IN')}
-                 </p>
-              </div>
-
-              {/* Performative metrics grid */}
-              {resultSummary && (
-                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-2xl bg-zinc-900 border border-zinc-800 relative z-10">
-                    <div className="text-center p-2">
-                       <span className="block text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Final Score</span>
-                       <span className="serif text-2xl font-black block mt-1 text-white">
-                          {resultSummary.score.toFixed(1)} <span className="text-sm font-bold text-zinc-500">/ {resultSummary.total.toFixed(1)}</span>
-                       </span>
-                    </div>
-                    <div className="text-center p-2 border-l border-zinc-800">
-                       <span className="block text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Accuracy</span>
-                       <span className="serif text-2xl font-black text-emerald-400 block mt-1">
-                          {questions.length > 0 ? Math.round((resultSummary.correct / questions.length) * 100) : 0}%
-                       </span>
-                    </div>
-                    <div className="text-center p-2 border-l border-zinc-800">
-                       <span className="block text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Right/Wrong/Skip</span>
-                       <span className="font-mono text-xs block mt-2 text-zinc-300">
-                          {resultSummary.correct} C / {resultSummary.wrong} W / {resultSummary.skipped} S
-                       </span>
-                    </div>
-                    <div className="text-center p-2 border-l border-zinc-800">
-                       <span className="block text-[8px] uppercase text-zinc-500 font-bold tracking-wider">Time Spent</span>
-                       <span className="serif text-2xl font-black text-yellow-500 block mt-1">
-                          {Math.floor((config.totalTime - timeLeft) / 60)}m {(config.totalTime - timeLeft) % 60}s
-                       </span>
-                    </div>
-                 </div>
-              )}
-
-              <button 
-                onClick={onBack} 
-                className="relative z-10 px-6 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 text-[10px] uppercase tracking-widest font-black rounded-xl transition-all cursor-pointer border-none shadow-md"
-              >
-                 Return to Dashboard
-              </button>
-           </div>
-
-           {/* Review of detailed question by question solutions */}
-           <div className="w-full space-y-4 text-left">
-              <h3 className="serif text-xl italic text-white border-b border-zinc-800 pb-2 flex items-center justify-between">
-                 <span>Detailed Explanations & Review</span>
-                 <span className="text-[10px] uppercase font-sans tracking-widest font-bold text-zinc-500">Annotated Analysis</span>
-              </h3>
-
-              {/* Review Language Toggler */}
-              {isBilingual && (
-                 <div className="flex justify-end gap-2 items-center my-3 select-none bg-zinc-900/30 p-2 rounded-xl border border-zinc-800/40">
-                    <span className="text-xs text-zinc-400 font-medium font-sans">Review Language:</span>
-                    <button 
-                      onClick={() => setReviewLang('en')} 
-                      className={`px-3 py-1 text-[10px] font-bold uppercase rounded cursor-pointer border-none transition-all ${
-                         reviewLang === 'en' ? 'bg-zinc-900 text-white shadow-sm' : 'text-zinc-500'
-                      }`}
-                    >
-                      English
-                    </button>
-                    <button 
-                      onClick={() => setReviewLang('bn')} 
-                      className={`px-3 py-1 text-[10px] font-bold uppercase rounded cursor-pointer border-none transition-all ${
-                         reviewLang === 'bn' ? 'bg-zinc-900 text-white shadow-sm' : 'text-zinc-500'
-                      }`}
-                    >
-                      বাংলা
-                    </button>
-                 </div>
-              )}
-
-              <div className="space-y-6 w-full">
-                 {questions.map((q: any, idx: number) => {
-                    const chosenIdx = userAnswers[idx];
-                    const correctIdx = q.correctIndex;
-                    const isCorrect = chosenIdx === correctIdx;
-                    const isSkipped = chosenIdx === undefined;
-
-                    let statusBadge = "";
-                    if (isCorrect) {
-                      statusBadge = "✅ Correct";
-                    } else if (isSkipped) {
-                      statusBadge = "◽ Skipped";
-                    } else {
-                      statusBadge = "❌ Incorrect";
-                    }
-
-                    const reviewQText = String((reviewLang === 'bn' && q?.question_bn) ? q.question_bn : (q?.question_en || q?.question || 'Question ?'));
-                    const reviewOptsRaw = (reviewLang === 'bn' && q?.options_bn && q.options_bn.length) ? q.options_bn : (q?.options_en || q?.options || []);
-                    const reviewOpts = Array.isArray(reviewOptsRaw) ? reviewOptsRaw : [];
-                    const reviewExpl = String((reviewLang === 'bn' && q?.explanation_bn) ? q.explanation_bn : (q?.explanation_en || q?.explanation || ''));
-
-                    return (
-                       <div key={`review-${idx}`} className="bg-[#1c1c1f] border border-zinc-800 rounded-2xl p-6 shadow-md space-y-4 text-left">
-                          <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
-                             <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">
-                                Question {idx + 1}
-                             </span>
-                             <span className={`text-[9px] uppercase font-bold px-2.5 py-0.5 rounded-full border ${
-                                isCorrect 
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                                  : isSkipped 
-                                    ? 'bg-zinc-800 text-zinc-400 border-zinc-700/30' 
-                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
-                             }`}>
-                                {statusBadge}
-                             </span>
-                          </div>
-
-                          <p className="text-sm text-zinc-200 font-semibold leading-relaxed whitespace-pre-wrap">
-                             {reviewQText}
-                          </p>
-
-                          {q?.sentences && typeof q.sentences === 'object' && (
-                             <div className="space-y-1 bg-[#121214] px-3 py-2 rounded-lg border border-zinc-850 text-xs text-zinc-400 font-mono mb-2">
-                                {Object.entries(q.sentences).map(([k, val]) => (
-                                   <p key={`review-s-${idx}-${k}`}>
-                                      <b className="text-yellow-650">{k}:</b> {String(val)}
-                                   </p>
-                                ))}
-                             </div>
-                          )}
-
-                          <div className="grid grid-cols-1 gap-2.5 pt-1">
-                             {reviewOpts.map((optText: string, optIdx: number) => {
-                                let cardStyle = "border rounded-xl px-4 py-2.5 text-xs transition-colors ";
-                                let pillText = "";
-
-                                if (optIdx === correctIdx) {
-                                  cardStyle += "bg-emerald-500/10 border-emerald-500 text-emerald-300 font-medium";
-                                  pillText = "Correct Answer";
-                                } else if (optIdx === chosenIdx) {
-                                  cardStyle += "bg-red-500/10 border-red-500 text-red-300 font-medium";
-                                  pillText = "Chosen Incorrect";
-                                } else {
-                                  cardStyle += "bg-[#121214]/70 border-zinc-800/80 text-zinc-400";
-                                }
-
-                                return (
-                                   <div key={`review-opt-${idx}-${optIdx}`} className={cardStyle}>
-                                      <div className="flex justify-between items-center">
-                                         <span>
-                                            <b className="mr-2">{String.fromCharCode(65 + optIdx)}.</b> 
-                                            {optText}
-                                         </span>
-                                         {pillText && (
-                                            <span className={`text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded shadow-sm ${
-                                               optIdx === correctIdx ? 'bg-emerald-500 text-zinc-950' : 'bg-red-500 text-white'
-                                            }`}>
-                                               {pillText}
-                                            </span>
-                                         )}
-                                      </div>
-                                   </div>
-                                )
-                             })}
-                          </div>
-
-                          {reviewExpl && reviewExpl.trim() && (
-                             <div className="bg-yellow-600/10 border-l-2 border-yellow-600 p-4 rounded-r-xl mt-3 text-xs text-zinc-300 leading-relaxed text-justify">
-                                <h4 className="font-bold uppercase text-[8px] tracking-wider text-yellow-500 mb-1">
-                                   Explanation / ব্যাখ্যা
-                                </h4>
-                                {reviewExpl}
-                             </div>
-                          )}
-                       </div>
-                    )
-                 })}
-              </div>
-           </div>
-        </div>
-     );
-  }
 }
