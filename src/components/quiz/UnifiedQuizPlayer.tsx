@@ -242,7 +242,14 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
         updatedStates[fromIdx] = 'review_unanswered';
       }
     } else if (action === 'navigate') {
-      // Do nothing: do not automatically mark as skipped when just navigating around
+      const currentState = updatedStates[fromIdx] || 'unvisited';
+      if (currentState !== 'review_answered' && currentState !== 'review_unanswered') {
+        if (chosen !== undefined) {
+          updatedStates[fromIdx] = 'saved';
+        } else {
+          updatedStates[fromIdx] = 'skipped';
+        }
+      }
     }
 
     setQuestionStates(updatedStates);
@@ -294,20 +301,45 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   const clearResponse = () => {
     const nextAnswers = { ...userAnswers };
     delete nextAnswers[currentIdx];
+    
+    let nextStates = [...questionStates];
+    const currentState = nextStates[currentIdx] || 'unvisited';
+    if (currentState === 'review_answered') {
+      nextStates[currentIdx] = 'review_unanswered';
+    } else if (currentState === 'saved') {
+      nextStates[currentIdx] = 'skipped';
+    }
+    
     setUserAnswers(nextAnswers);
-    saveStateToLocalStorage(nextAnswers, questionStates, currentIdx);
+    setQuestionStates(nextStates);
+    saveStateToLocalStorage(nextAnswers, nextStates, currentIdx);
   };
 
   // Click once to select, click second time to deselect
   const selectOption = (optIdx: number) => {
     const nextAnswers = { ...userAnswers };
+    let nextStates = [...questionStates];
+    
     if (nextAnswers[currentIdx] === optIdx) {
       delete nextAnswers[currentIdx];
+      const currentState = nextStates[currentIdx] || 'unvisited';
+      if (currentState === 'review_answered') {
+        nextStates[currentIdx] = 'review_unanswered';
+      } else if (currentState === 'saved') {
+        nextStates[currentIdx] = 'skipped';
+      }
     } else {
       nextAnswers[currentIdx] = optIdx;
+      const currentState = nextStates[currentIdx] || 'unvisited';
+      if (currentState === 'review_unanswered') {
+        nextStates[currentIdx] = 'review_answered';
+      } else if (currentState !== 'review_answered') {
+        nextStates[currentIdx] = 'saved';
+      }
     }
     setUserAnswers(nextAnswers);
-    saveStateToLocalStorage(nextAnswers, questionStates, currentIdx);
+    setQuestionStates(nextStates);
+    saveStateToLocalStorage(nextAnswers, nextStates, currentIdx);
   };
 
   const handleComplete = async (answers: Record<number, number>) => {
@@ -733,7 +765,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                                          </span>
                                          {pillText && (
                                             <span className={`text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded shadow-sm ${
-                                               optIdx === correctIdx ? 'bg-emerald-500 text-zinc-950' : 'bg-red-650 text-white font-bold'
+                                               optIdx === correctIdx ? 'bg-emerald-500 text-zinc-950' : 'bg-red-600 text-white font-bold'
                                             }`}>
                                                {pillText}
                                             </span>
