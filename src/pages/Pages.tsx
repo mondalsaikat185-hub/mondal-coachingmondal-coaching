@@ -6,6 +6,77 @@ import { api } from '../lib/api';
 import { AppUser, useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { getAllAttendanceForBatch } from '../lib/exam-session-utils';
+import { formatDateOnlySafe } from '../lib/utils';
+
+const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+export function getMonthOptions(): string[] {
+  const currentYear = new Date().getFullYear();
+  return [
+    ...monthNames.map(m => `${m} ${currentYear - 1}`),
+    ...monthNames.map(m => `${m} ${currentYear}`),
+    ...monthNames.map(m => `${m} ${currentYear + 1}`),
+    ...monthNames.map(m => `${m} ${currentYear + 2}`)
+  ];
+}
+
+export function formatDateTimeSafe(timestamp: any): string {
+  if (!timestamp) return "N/A";
+  let d: Date | null = null;
+  if (timestamp instanceof Date) {
+    d = timestamp;
+  } else if (typeof timestamp === 'number') {
+    d = new Date(timestamp);
+  } else if (typeof timestamp === 'string') {
+    d = new Date(timestamp);
+    if (isNaN(d.getTime())) {
+      d = new Date(timestamp.replace(' ', 'T'));
+    }
+  } else if (typeof timestamp === 'object') {
+    if (timestamp.seconds) {
+      d = new Date(timestamp.seconds * 1000);
+    } else if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+      d = timestamp.toDate();
+    }
+  }
+
+  if (!d || isNaN(d.getTime())) {
+    return "N/A";
+  }
+
+  const dateStr = d.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+  const timeStr = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return `${dateStr} at ${timeStr}`;
+}
+
+export function getDueMonths(pendingMonthsCount: number, studentPayments: any[]): string {
+  if (!pendingMonthsCount || pendingMonthsCount <= 0) return "";
+  
+  const monthOptions = getMonthOptions();
+
+  // Find all paid/approved/pending months
+  const paidMonths = studentPayments
+    .filter(p => p.status === 'paid' || p.status === 'approved' || p.status === 'pending')
+    .flatMap(p => p.month.split(',').map((m: string) => m.trim()));
+    
+  const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
+  const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
+
+  const dueMonths: string[] = [];
+  // Next month after the last paid month
+  let startIndex = maxPaidIndex !== -1 ? maxPaidIndex + 1 : monthOptions.findIndex(m => m.startsWith(monthNames[new Date().getMonth()]));
+  if (startIndex === -1) startIndex = 12; // Fallback to current year start (January)
+
+  for (let i = 0; i < pendingMonthsCount; i++) {
+    const idx = startIndex + i;
+    if (idx < monthOptions.length) {
+      dueMonths.push(monthOptions[idx]);
+    }
+  }
+
+  if (dueMonths.length === 0) return `${pendingMonthsCount} month(s)`;
+  return dueMonths.join(', ');
+}
 
 export function PageHeader({ title, backTo, description, onBack }: { title: string, backTo?: string, description?: string, onBack?: () => void }) {
   const navigate = useNavigate();
@@ -49,7 +120,6 @@ export function AdminStudents() {
   const [studentTab, setStudentTab] = useState<string>('pending');
   const [selectedStudentForModal, setSelectedStudentForModal] = useState<AppUser | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [displayLimit, setDisplayLimit] = useState(50);
 
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -123,6 +193,10 @@ export function AdminStudents() {
         students.forEach(s => {
           newAbsentCount[s.uid] = 0;
           
+          if (s.exemptReason && s.exemptReason.length > 0) {
+             return;
+          }
+          
           // Calculate absent count
           const sBatchAtt = attendanceData[s.batchId!] || [];
           let recentAbsences = 0;
@@ -138,10 +212,13 @@ export function AdminStudents() {
              }
 
              validExamsChecked++;
-             if (!sBatchAtt[i].presentStudentIds.includes(s.uid)) {
+             const studentExcusedDates = s.excusedDates ? s.excusedDates.split(',').filter(Boolean) : [];
+             const isExcused = studentExcusedDates.includes(sBatchAtt[i].date);
+             
+             if (!sBatchAtt[i].presentStudentIds.includes(s.uid) && !isExcused) {
                 recentAbsences++;
              } else {
-                break; // they were present recently
+                break; // they were present or excused recently
              }
           }
           newAbsentCount[s.uid] = recentAbsences;
@@ -181,6 +258,7 @@ export function AdminStudents() {
         reapplyReason: profile.reapplyReason,
         exemptReason: profile.exemptReason,
         showPaymentNudge: profile.showPaymentNudge,
+        excusedDates: profile.excusedDates || '',
       };
     };
 
@@ -331,7 +409,7 @@ export function AdminStudents() {
                
                {selectedStudentForModal.joinDate && (
                  <div className="text-xs font-bold uppercase text-zinc-500 text-right mt-2">
-                   Joined Date: {selectedStudentForModal.joinDate}
+                   Joined Date: {formatDateOnlySafe(selectedStudentForModal.joinDate)}
                  </div>
                )}
             </div>
@@ -504,6 +582,7 @@ export function AdminStudents() {
                         return (
                           <tr key={student.uid} className={i % 2 === 0 ? "bg-white dark:bg-zinc-900" : "bg-zinc-50 dark:bg-zinc-800"}>
                             <td className="border-r-2 border-b border-zinc-200 dark:border-zinc-700 border-l border-zinc-200 px-3 py-2 font-bold whitespace-nowrap overflow-hidden text-ellipsis w-48 max-w-[192px]">
+                              {student.exemptReason && student.exemptReason.length > 0 ? '❌ ' : ''}
                               {student.fullName || student.email}
                             </td>
                             {filteredRecords.map((r) => {
@@ -543,7 +622,7 @@ export function AdminStudents() {
           <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] overflow-x-auto w-full mt-8">
             <div className="mb-6 flex overflow-x-auto border-b-4 border-black scrollbar-hide">
               <button
-                onClick={() => { setStudentTab('pending'); setDisplayLimit(50); }}
+                onClick={() => setStudentTab('pending')}
                 className={`px-4 py-3 font-bold text-sm uppercase whitespace-nowrap border-r-4 border-black transition-colors ${
                   studentTab === 'pending' ? 'bg-yellow-300 text-black' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
                 }`}
@@ -553,7 +632,7 @@ export function AdminStudents() {
               {batches.map(batch => (
                 <button
                   key={batch.id}
-                  onClick={() => { setStudentTab(batch.id); setDisplayLimit(50); }}
+                  onClick={() => setStudentTab(batch.id)}
                   className={`px-4 py-3 font-bold text-sm uppercase whitespace-nowrap border-r-4 border-black transition-colors ${
                     studentTab === batch.id ? 'bg-blue-300 text-black' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
                   }`}
@@ -562,7 +641,7 @@ export function AdminStudents() {
                 </button>
               ))}
               <button
-                onClick={() => { setStudentTab('at_risk'); setDisplayLimit(50); }}
+                onClick={() => setStudentTab('at_risk')}
                 className={`px-4 py-3 font-bold text-sm uppercase whitespace-nowrap border-r-4 border-black transition-colors ${
                   studentTab === 'at_risk' ? 'bg-red-500 text-white' : 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
                 }`}
@@ -571,7 +650,7 @@ export function AdminStudents() {
                 No Exams (3+ Days) ⚠️ ({atRiskCount})
               </button>
               <button
-                onClick={() => { setStudentTab('all'); setDisplayLimit(50); }}
+                onClick={() => setStudentTab('all')}
                 className={`px-4 py-3 font-bold text-sm uppercase whitespace-nowrap border-r-4 border-black transition-colors ${
                   studentTab === 'all' ? 'bg-purple-300 text-black' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
                 }`}
@@ -583,8 +662,7 @@ export function AdminStudents() {
             {loading ? (
               <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8" /></div>
             ) : (
-              <>
-                <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b-2 border-zinc-900 dark:border-zinc-100 text-zinc-900 dark:text-zinc-100">
                     <th className="p-2 font-bold uppercase text-xs">Profile</th>
@@ -602,7 +680,7 @@ export function AdminStudents() {
                       <td colSpan={7} className="p-4 text-center text-zinc-500 font-medium">No students found in this category.</td>
                     </tr>
                   )}
-                  {displayStudents.slice(0, displayLimit).map((student) => {
+                  {displayStudents.map((student) => {
                     const absentDays = studentAbsentCount[student.uid] || 0;
                     return (
                     <tr key={student.uid} className="border-b border-zinc-200 dark:border-zinc-800">
@@ -616,8 +694,18 @@ export function AdminStudents() {
                         )}
                       </td>
                       <td className="p-2">
-                        <div className="font-bold cursor-pointer hover:underline text-blue-600 dark:text-blue-400" onClick={() => setSelectedStudentForModal(student)}>
+                        <div className="font-bold cursor-pointer hover:underline text-blue-600 dark:text-blue-400 flex items-center gap-2" onClick={() => setSelectedStudentForModal(student)}>
+                          {student.exemptReason && student.exemptReason.length > 0 ? '❌ ' : ''}
                           {student.fullName || student.displayName || 'Unknown'}
+                          {Number(student.pendingMonths) > 0 && (
+                            <span className={`text-[9px] px-1.5 py-0.5 font-black uppercase rounded ${
+                              Number(student.pendingMonths) >= 2 
+                                ? 'bg-red-500 text-white animate-pulse' 
+                                : 'bg-yellow-300 text-black border border-yellow-400'
+                            }`} title="Overdue alert">
+                              {student.pendingMonths}M Due
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-zinc-500">{student.email}</div>
                       </td>
@@ -637,7 +725,7 @@ export function AdminStudents() {
                   <td className="p-2 hidden md:table-cell text-sm">
                     {student.phone ? <div className="font-bold">{student.phone}</div> : null}
                     {student.address ? <div className="text-xs text-zinc-500 line-clamp-1">{student.address}</div> : null}
-                    {student.joinDate ? <div className="text-[10px] text-zinc-400 uppercase mt-1">Joined: {student.joinDate}</div> : null}
+                    {student.joinDate ? <div className="text-[10px] text-zinc-400 uppercase mt-1">Joined: {formatDateOnlySafe(student.joinDate)}</div> : null}
                   </td>
                   <td className="p-2">
                     <select
@@ -682,17 +770,6 @@ export function AdminStudents() {
                   )})}
                 </tbody>
               </table>
-              {displayLimit < displayStudents.length && (
-                <div className="w-full flex justify-center p-4 border-t border-zinc-200 dark:border-zinc-800">
-                  <button 
-                    onClick={() => setDisplayLimit(displayLimit + 50)}
-                    className="px-6 py-2 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 font-bold uppercase text-sm hover:opacity-90"
-                  >
-                    Load More ({displayStudents.length - displayLimit} remaining)
-                  </button>
-                </div>
-              )}
-            </>
             )}
           </div>
         );
@@ -938,6 +1015,9 @@ export interface Payment {
   month: string;
   status: 'pending' | 'approved' | 'rejected';
   remarks?: string;
+  transactionId?: string;
+  proofImage?: string;
+  paymentMode?: 'manual' | 'proof_upload' | 'gateway';
   createdAt?: any;
 }
 
@@ -953,6 +1033,7 @@ export function AdminPayments() {
 
   const [rejectingPaymentId, setRejectingPaymentId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [viewingProofPayment, setViewingProofPayment] = useState<Payment | null>(null);
   
   const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState('');
@@ -962,14 +1043,7 @@ export function AdminPayments() {
   const [offlineAmount, setOfflineAmount] = useState('');
   const [offlineSubmitting, setOfflineSubmitting] = useState(false);
   
-  const currentYear = new Date().getFullYear();
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const monthOptions = [
-    ...monthNames.map(m => `${m} ${currentYear - 1}`),
-    ...monthNames.map(m => `${m} ${currentYear}`),
-    ...monthNames.map(m => `${m} ${currentYear + 1}`),
-    ...monthNames.map(m => `${m} ${currentYear + 2}`)
-  ];
+  const monthOptions = getMonthOptions();
 
   const fetchAll = async () => {
     try {
@@ -994,6 +1068,9 @@ export function AdminPayments() {
           month: p.month,
           status: p.status as any,
           remarks: (p as any).remarks || '',
+          transactionId: (p as any).transactionId || '',
+          proofImage: (p as any).proofImage || '',
+          paymentMode: (p as any).paymentMode || 'manual',
           createdAt: p.createdAt
         };
       });
@@ -1076,7 +1153,7 @@ export function AdminPayments() {
         }
       }
 
-      await api.updatePaymentStatus(id, status as any);
+      await api.updatePaymentStatus(id, status as any, remarks);
       setPayments(payments.map(p => p.id === id ? { ...p, status, remarks } : p));
       
       if (status === 'rejected') {
@@ -1192,6 +1269,40 @@ export function AdminPayments() {
     </div>
   ) : null;
 
+  const proofViewerModal = viewingProofPayment ? (
+    <div className="fixed inset-0 bg-black/90 flex justify-center items-center z-[100] p-4" onClick={() => setViewingProofPayment(null)}>
+      <div className="bg-white dark:bg-zinc-900 border-4 border-blue-500 w-full max-w-lg p-4 transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(59,130,246,1)] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-3">
+           <h3 className="font-black text-lg text-blue-600 uppercase">📸 Payment Proof</h3>
+           <button onClick={() => setViewingProofPayment(null)} className="p-1.5 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 font-bold">
+              <X className="w-4 h-4" />
+           </button>
+        </div>
+        <div className="space-y-3">
+           <div className="text-xs space-y-1">
+              <div><span className="font-bold uppercase text-zinc-500">Month:</span> <span className="font-black">{viewingProofPayment.month}</span></div>
+              <div><span className="font-bold uppercase text-zinc-500">Amount:</span> <span className="font-black font-mono">₹{viewingProofPayment.amount}</span></div>
+              {(viewingProofPayment as any).transactionId && (
+                 <div><span className="font-bold uppercase text-zinc-500">TXN ID:</span> <span className="font-black font-mono text-blue-600 dark:text-blue-400">{(viewingProofPayment as any).transactionId}</span></div>
+              )}
+              <div><span className="font-bold uppercase text-zinc-500">Status:</span> <span className={`font-black uppercase ${viewingProofPayment.status === 'pending' ? 'text-yellow-600' : viewingProofPayment.status === 'approved' ? 'text-emerald-600' : 'text-red-600'}`}>{viewingProofPayment.status}</span></div>
+           </div>
+           {(viewingProofPayment as any).proofImage ? (
+              <img src={(viewingProofPayment as any).proofImage} alt="Payment proof screenshot" className="w-full border-2 border-zinc-300 dark:border-zinc-600" />
+           ) : (
+              <div className="text-center py-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 font-bold text-sm">No screenshot attached</div>
+           )}
+           {viewingProofPayment.status === 'pending' && (
+              <div className="flex gap-2 pt-2 border-t-2 border-zinc-200 dark:border-zinc-700">
+                 <button onClick={() => { updatePaymentStatus(viewingProofPayment.id, 'approved'); setViewingProofPayment(null); }} className="flex-1 bg-emerald-500 text-white font-bold uppercase text-xs py-3 hover:-translate-y-0.5 transition-transform shadow-[3px_3px_0px_0px_#064e3b] flex items-center justify-center gap-1"><Check className="w-4 h-4" />Approve</button>
+                 <button onClick={() => { setRejectingPaymentId(viewingProofPayment.id); setViewingProofPayment(null); }} className="flex-1 bg-red-500 text-white font-bold uppercase text-xs py-3 hover:-translate-y-0.5 transition-transform shadow-[3px_3px_0px_0px_#450a0a] flex items-center justify-center gap-1"><X className="w-4 h-4" />Reject</button>
+              </div>
+           )}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin w-8 h-8" /></div>;
 
   if (selectedStudentId) {
@@ -1202,6 +1313,7 @@ export function AdminPayments() {
      return (
        <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full space-y-6 relative">
           {rejectModal}
+          {proofViewerModal}
 
           <div className="flex items-center gap-4">
              <button onClick={() => setSelectedStudentId(null)} className="px-3 py-1.5 bg-zinc-200 dark:bg-zinc-800 font-bold uppercase text-xs hover:-translate-y-0.5 border-2 border-zinc-900 dark:border-zinc-100 flex items-center gap-1"><ArrowLeft className="w-3.5 h-3.5"/> Back</button>
@@ -1306,6 +1418,9 @@ export function AdminPayments() {
                                     <span className="font-mono font-bold hover:underline cursor-pointer" onClick={() => {setEditingAmountId(p.id); setEditingAmount(p.amount.toString());}}>₹{p.amount} ✎</span>
                                  )}
                               </div>
+                              <div className="text-[10px] text-zinc-500 mb-2 font-bold font-mono">
+                                 Submitted: {formatDateTimeSafe(p.createdAt)}
+                              </div>
                               <div className="flex justify-between items-center">
                                  <span className={`text-[10px] font-bold text-black uppercase px-2 py-0.5 ${p.status === 'pending' ? 'bg-yellow-300' : p.status === 'approved' ? 'bg-emerald-300' : 'bg-red-300'}`}>{p.status}</span>
                                  {p.status === 'pending' && (
@@ -1315,7 +1430,13 @@ export function AdminPayments() {
                                     </div>
                                  )}
                               </div>
-                              {p.remarks && <div className="text-[10px] text-zinc-500 mt-2 italic border-t border-zinc-200 dark:border-zinc-800 pt-1">Remark: {p.remarks}</div>}
+                              {p.remarks && <div className="text-[10px] text-zinc-500 mt-2 italic border-t border-zinc-200 dark:border-zinc-800 pt-1">Reason: {p.remarks}</div>}
+                              {(p as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">TXN ID: {(p as any).transactionId}</div>}
+                              {(p as any).proofImage && (
+                                 <button onClick={() => setViewingProofPayment(p)} className="mt-2 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold uppercase px-2 py-1 hover:bg-blue-200 dark:hover:bg-blue-800/30 transition-colors border border-blue-300 dark:border-blue-700 flex items-center gap-1">
+                                    📸 View Proof
+                                 </button>
+                              )}
                            </div>
                         ))}
                      </div>
@@ -1348,7 +1469,18 @@ export function AdminPayments() {
                    const pendingCount = payments.filter(p => p.studentId === s.id && p.status === 'pending').length;
                    return (
                      <button key={s.id} onClick={() => setSelectedStudentId(s.id)} className="w-full text-left p-4 border-2 border-zinc-200 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-zinc-100 flex flex-col items-start gap-1">
-                       <span className="font-bold">{s.fullName || s.email}</span>
+                        <span className="font-bold flex items-center justify-between w-full">
+                           <span>{s.fullName || s.email}</span>
+                           {Number(s.pendingMonths) > 0 && (
+                              <span className={`text-[9px] px-1.5 py-0.5 font-black uppercase rounded ${
+                                 Number(s.pendingMonths) >= 2 
+                                   ? 'bg-red-500 text-white animate-pulse' 
+                                   : 'bg-yellow-300 text-black border border-yellow-400'
+                              }`} title="Overdue alert">
+                                 {s.pendingMonths}M Due
+                              </span>
+                           )}
+                        </span>
                        {s.monthlyFee > 0 ? (
                           <span className="text-xs font-mono text-zinc-500">Fee: ₹{s.monthlyFee}</span>
                        ) : (
@@ -1428,8 +1560,81 @@ export function StudentPayments() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [proofImage, setProofImage] = useState<string>('');
+  const [transactionId, setTransactionId] = useState('');
+  const [imagePreview, setImagePreview] = useState<string>('');
+
+  // Image compression utility — compress screenshot to max ~200KB Base64
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { reject('Canvas context failed'); return; }
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Compress to JPEG at 60% quality
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+          resolve(compressedBase64);
+        };
+        img.onerror = () => reject('Image load failed');
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject('File read failed');
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file (JPG, PNG, etc.)');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File too large. Maximum 10MB allowed.');
+      return;
+    }
+    try {
+      const compressed = await compressImage(file);
+      setProofImage(compressed);
+      setImagePreview(compressed);
+    } catch (err) {
+      console.error('Image compression failed:', err);
+      alert('Failed to process image. Please try again.');
+    }
+  };
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
-  const [settings, setSettings] = useState({ adminUpiId: '', enablePaymentSystem: true });
+  const [settings, setSettings] = useState({
+    adminUpiId: '',
+    enablePaymentSystem: true,
+    paymentMethod: 'manual',
+    razorpayKeyId: '',
+    razorpayKeySecret: ''
+  });
 
   const monthlyFeeAmount = Number(user?.monthlyFee) || 0;
   const isFeeWaived = user?.monthlyFee === 0 || user?.monthlyFee === "0";
@@ -1439,10 +1644,19 @@ export function StudentPayments() {
   useEffect(() => {
      if (!user) return;
      
+     // Dynamically load Razorpay standard script for safe, smooth checkout
+     const rzpScript = document.createElement("script");
+     rzpScript.src = "https://checkout.razorpay.com/v1/checkout.js";
+     rzpScript.async = true;
+     document.body.appendChild(rzpScript);
+     
      const loadSettings = async () => {
        try {
          let adminUpiId = 'mondal.saikat185@okaxis';
          let enablePaymentSystem = true;
+         let paymentMethod = 'manual';
+         let razorpayKeyId = '';
+         let razorpayKeySecret = '';
 
          const cached = localStorage.getItem("mc_settings_general");
          if (cached) {
@@ -1450,6 +1664,9 @@ export function StudentPayments() {
              const data = JSON.parse(cached);
              adminUpiId = data.adminUpiId || adminUpiId;
              enablePaymentSystem = data.enablePaymentSystem !== false;
+             paymentMethod = data.paymentMethod || 'manual';
+             razorpayKeyId = data.razorpayKeyId || '';
+             razorpayKeySecret = data.razorpayKeySecret || '';
            } catch (e) {}
          }
 
@@ -1468,6 +1685,9 @@ export function StudentPayments() {
                if (gasSettings) {
                  adminUpiId = gasSettings.adminUpiId || adminUpiId;
                  enablePaymentSystem = gasSettings.enablePaymentSystem !== false;
+                 paymentMethod = gasSettings.paymentMethod || 'manual';
+                 razorpayKeyId = gasSettings.razorpayKeyId || '';
+                 razorpayKeySecret = gasSettings.razorpayKeySecret || '';
                }
              }
            } catch (err) {
@@ -1477,7 +1697,10 @@ export function StudentPayments() {
 
          setSettings({
            adminUpiId,
-           enablePaymentSystem
+           enablePaymentSystem,
+           paymentMethod,
+           razorpayKeyId,
+           razorpayKeySecret
          });
        } catch (err) {
          console.error("Failed to load settings:", err);
@@ -1498,6 +1721,9 @@ export function StudentPayments() {
            month: p.month,
            status: p.status as any,
            remarks: (p as any).remarks || '',
+           transactionId: (p as any).transactionId || '',
+           proofImage: (p as any).proofImage || '',
+           paymentMode: (p as any).paymentMode || 'manual',
            createdAt: p.createdAt
          }));
          const getMs = (t: any) => new Date(t).getTime() || 0;
@@ -1511,22 +1737,128 @@ export function StudentPayments() {
      };
 
      fetchPayments();
+
+     return () => {
+       try {
+         document.body.removeChild(rzpScript);
+       } catch (e) {}
+     };
   }, [user?.uid]);
 
-  const currentYear = new Date().getFullYear();
-  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  const monthOptions = [
-    ...monthNames.map(m => `${m} ${currentYear - 1}`),
-    ...monthNames.map(m => `${m} ${currentYear}`),
-    ...monthNames.map(m => `${m} ${currentYear + 1}`),
-    ...monthNames.map(m => `${m} ${currentYear + 2}`)
-  ];
+  const monthOptions = getMonthOptions();
 
   const toggleMonth = (m: string) => {
     if (selectedMonths.includes(m)) {
       setSelectedMonths(selectedMonths.filter(x => x !== m));
     } else {
       setSelectedMonths([...selectedMonths, m]);
+    }
+  };
+
+  const handleRazorpayCheckout = async () => {
+    if (selectedMonths.length === 0 || !user) {
+      alert("Please select at least one month.");
+      return;
+    }
+
+    if (isFeeWaived) {
+      alert("আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।");
+      return;
+    }
+
+    // Reuse consecutive month validations:
+    const paidMonths = payments
+      .filter(p => p.status !== 'rejected')
+      .flatMap(p => p.month.split(',').map(m => m.trim()));
+    const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
+    const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
+    const selectedIndices = selectedMonths.map(m => monthOptions.indexOf(m)).sort((a, b) => a - b);
+    
+    for (let i = 1; i < selectedIndices.length; i++) {
+       if (selectedIndices[i] !== selectedIndices[i-1] + 1) {
+          alert("Please select strictly consecutive months.");
+          return;
+       }
+    }
+    
+    if (maxPaidIndex !== -1) {
+       const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
+       if (alreadyPaid) {
+          alert("You have already submitted a payment for one or more of the selected months.");
+          return;
+       }
+       if (selectedIndices[0] !== maxPaidIndex + 1) {
+          alert(`You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.`);
+          return;
+       }
+    }
+
+    if ((user as any).isSimulatedAdmin) {
+       const isRealStudent = localStorage.getItem('simulatedStudentId');
+       if (!isRealStudent) {
+         alert("Please select a real student from the dropdown above to test the payment gateway checkout flow.");
+         return;
+       }
+    }
+
+    // Default test key ID if admin has not configured their own
+    const keyId = settings.razorpayKeyId || 'rzp_test_mX3qXFv3Xv9Xv9'; 
+
+    setSubmitting(true);
+    try {
+      const options = {
+        key: keyId,
+        amount: calculatedAmount * 100, // Amount in paise
+        currency: "INR",
+        name: "M-C Tuition Classes",
+        description: `Tuition Fees for ${selectedMonths.join(', ')}`,
+        image: user.profilePhotoUrl || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=200&auto=format&fit=crop",
+        handler: async function (response: any) {
+          try {
+            setSubmitting(true);
+            const verifyRes = await api.verifyGatewayPayment(
+              response.razorpay_payment_id,
+              selectedMonths.join(', '),
+              calculatedAmount,
+              user.uid
+            );
+
+            if (verifyRes.success) {
+              alert("পেমেন্ট সফল এবং অনুমোদিত হয়েছে! (Payment Successful and Instantly Approved!)");
+              setSelectedMonths([]);
+              setPaymentSuccess(true);
+              setTimeout(() => setPaymentSuccess(false), 3000);
+              
+              // Force local cache invalidation & reload to fetch updated user profile (pendingMonths etc.)
+              window.location.reload(); 
+            } else {
+              alert("Verification failed: " + (verifyRes.error || "Unknown Error"));
+            }
+          } catch (err) {
+            console.error("Verification error:", err);
+            alert("Payment verification failed, please contact administrator with Payment ID: " + response.razorpay_payment_id);
+          } finally {
+            setSubmitting(false);
+          }
+        },
+        prefill: {
+          name: user.fullName || user.displayName || "",
+          email: user.email || "",
+          contact: user.phone || ""
+        },
+        theme: {
+          color: "#eab308" // Yellow Neo-Brutalist Theme
+        }
+      };
+
+      // @ts-ignore
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      console.error("Razorpay Checkout failed to open:", err);
+      alert("Failed to initialize Razorpay payment. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1584,15 +1916,37 @@ export function StudentPayments() {
     
     try {
       setSubmitting(true);
-      await api.addPayment({
+      const paymentData: any = {
         studentId: user.uid,
         studentName: user.fullName || user.displayName || 'Unknown Student',
         studentEmail: user.email || '',
         month: selectedMonths.join(', '),
         amount: calculatedAmount,
-        status: 'pending'
-      } as any);
+        status: 'pending',
+        paymentMode: settings.paymentMethod || 'manual',
+      };
+      
+      // Attach proof data if using proof_upload mode
+      if (settings.paymentMethod === 'proof_upload') {
+        if (!proofImage) {
+          alert('Please upload a payment screenshot as proof.');
+          setSubmitting(false);
+          return;
+        }
+        if (!transactionId.trim()) {
+          alert('Please enter the Transaction ID / UTR Number.');
+          setSubmitting(false);
+          return;
+        }
+        paymentData.proofImage = proofImage;
+        paymentData.transactionId = transactionId.trim();
+      }
+      
+      await api.addPayment(paymentData);
       setSelectedMonths([]);
+      setProofImage('');
+      setImagePreview('');
+      setTransactionId('');
       setPaymentSuccess(true);
       setTimeout(() => setPaymentSuccess(false), 3000);
 
@@ -1608,6 +1962,9 @@ export function StudentPayments() {
         month: p.month,
         status: p.status as any,
         remarks: (p as any).remarks || '',
+        transactionId: (p as any).transactionId || '',
+        proofImage: (p as any).proofImage || '',
+        paymentMode: (p as any).paymentMode || 'manual',
         createdAt: p.createdAt
       }));
       const getMs = (t: any) => new Date(t).getTime() || 0;
@@ -1629,7 +1986,7 @@ export function StudentPayments() {
          <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/30 border-2 border-red-600 dark:border-red-500 flex flex-col sm:flex-row justify-between items-center gap-4 shadow-[4px_4px_0px_0px_rgba(220,38,38,1)]">
             <div>
                <h3 className="font-black text-red-800 dark:text-red-400 uppercase">Payment Pending</h3>
-               <p className="text-sm font-bold text-red-700 dark:text-red-300">You have {(user as any).pendingMonths} month{((user as any).pendingMonths || 1) > 1 ? 's' : ''} of fees pending. Please clear them as soon as possible.</p>
+               <p className="text-sm font-bold text-red-700 dark:text-red-300">You have fees pending for: <span className="underline">{getDueMonths((user as any).pendingMonths, payments)}</span>. Please clear them as soon as possible.</p>
             </div>
          </div>
       )}
@@ -1654,62 +2011,135 @@ export function StudentPayments() {
              </div>
           ) : (
           <>
-          <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
-             <div className="text-xs font-bold uppercase mb-2 dark:text-yellow-100">Scan to Pay via UPI</div>
-             {settings.adminUpiId ? (
-                (() => {
-                   const upiId = (settings.adminUpiId || '').trim();
-                   const am = Number(calculatedAmount || 500).toFixed(2);
-                   const tn = encodeURIComponent(`Tuition Fee`);
-                   const pn = encodeURIComponent('Tutor');
-                   const genericUpi = `upi://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`;
-                   return (
-                      <>
-                         <div className="bg-white p-2 border-2 border-zinc-900 inline-block mb-2">
-                            <QRCodeSVG value={genericUpi} size={120} />
-                          </div>
-                          <div className="text-[10px] font-bold opacity-70 dark:text-yellow-100 mb-2">{settings.adminUpiId}</div>
-                          
-                          <p className="text-xs font-bold text-zinc-500 mt-2 mb-2">OR PAY USING APP</p>
-                          <div className="flex flex-wrap justify-center gap-2 mb-2 w-full">
-                             <a href={genericUpi} className="px-3 py-1.5 bg-purple-600 text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">PhonePe / App</a>
-                             <a href={`tez://upi/pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-white text-zinc-900 border-2 border-zinc-200 font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1"><span className="text-blue-500 font-black">G</span>Pay</a>
-                             <a href={`paytmmp://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-[#00b9f1] text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">Paytm</a>
-                             <a href={genericUpi} className="px-3 py-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold text-xs hover:-translate-y-0.5 transition-transform">Any UPI</a>
-                          </div>
-                          
-                          {!settings.adminUpiId.includes('@') && (
-                             <div className="mt-2 text-red-600 dark:text-red-400 text-[10px] bg-red-100 dark:bg-red-900/30 p-2 font-bold text-justify">
-                                Warning: The configured UPI ID "{settings.adminUpiId}" appears to be a regular phone number. It MUST include an "@" suffix (e.g. @ybl, @okaxis) for direct payment links to work. If apps crash, this is why!
-                             </div>
-                          )}
-                          
-                          <div className="mt-4 border-t-2 border-zinc-200 dark:border-zinc-800 pt-4 w-full">
-                             <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">UPI links not working or failing?</p>
-                             <p className="text-[10px] mt-1 text-zinc-500">You can copy the UPI ID below and paste it directly into your UPI app (like GPay, PhonePe, or Paytm):</p>
-                             <div className="flex items-center justify-center gap-2 mt-2">
-                                <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 select-all">{upiId}</div>
-                                <button 
-                                  onClick={(e) => {
-                                     e.preventDefault();
-                                     navigator.clipboard.writeText(upiId);
-                                     alert('UPI ID copied to clipboard!');
-                                  }}
-                                  className="p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold text-xs uppercase"
-                                >
-                                  Copy ID
-                                </button>
-                             </div>
-                          </div>
-                      </>
-                   );
-                })()
-             ) : (
-                <div className="text-red-500 font-bold text-sm bg-red-100 p-3 w-full border border-red-500">
-                   ⚠️ Setup Required: Admin UPI ID is not configured.
+          {settings.paymentMethod === 'gateway' ? (
+             <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-950/20 border-2 border-yellow-600 flex flex-col justify-center items-center gap-3 text-center mt-2 w-full text-zinc-900 dark:text-yellow-100">
+                <h4 className="font-black text-yellow-800 dark:text-yellow-400 uppercase text-sm tracking-wide">Automated Gateway Checkout</h4>
+                <p className="text-xs font-bold text-yellow-700 dark:text-yellow-300">Fast & Secure Payments via Cards, UPI (GPay, PhonePe, Paytm), Netbanking, and Wallets. Instantly unlocks features!</p>
+                <div className="mt-2 text-[10px] font-bold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-2 py-1 uppercase tracking-widest animate-pulse">
+                   ⚡ Instant Auto-Approval
                 </div>
-             )}
-          </div>
+             </div>
+          ) : settings.paymentMethod === 'proof_upload' ? (
+              <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
+                 <div className="text-xs font-bold uppercase mb-3 dark:text-yellow-100">📸 Upload Payment Screenshot</div>
+                 
+                 {settings.adminUpiId && (
+                    <div className="mb-3 w-full">
+                       <div className="text-[10px] text-zinc-500 mb-1">Pay to this UPI ID first:</div>
+                       <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 dark:border-zinc-600 select-all bg-zinc-50 dark:bg-zinc-800">{settings.adminUpiId}</div>
+                       <button 
+                         type="button"
+                         onClick={() => {
+                            navigator.clipboard.writeText(settings.adminUpiId);
+                            alert('UPI ID copied!');
+                         }}
+                         className="mt-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                       >
+                         📋 Copy UPI ID
+                       </button>
+                    </div>
+                 )}
+
+                 <div className="w-full border-t-2 border-zinc-200 dark:border-zinc-700 pt-3 mt-1">
+                    {imagePreview ? (
+                       <div className="relative mb-3">
+                          <img src={imagePreview} alt="Payment proof" className="max-h-48 mx-auto border-2 border-emerald-500 shadow-[3px_3px_0px_0px_rgba(16,185,129,1)]" />
+                          <button
+                            type="button"
+                            onClick={() => { setProofImage(''); setImagePreview(''); }}
+                            className="absolute top-1 right-1 bg-red-500 text-white p-1 text-xs font-bold hover:bg-red-600"
+                          >
+                            ✕ Remove
+                          </button>
+                          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">✅ Screenshot attached</div>
+                       </div>
+                    ) : (
+                       <label className="cursor-pointer block">
+                          <div className="border-2 border-dashed border-zinc-400 dark:border-zinc-600 p-6 hover:border-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-colors">
+                             <div className="text-3xl mb-2">📷</div>
+                             <div className="text-xs font-bold text-zinc-600 dark:text-zinc-400">Tap to upload payment screenshot</div>
+                             <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">JPG, PNG — Max 10MB</div>
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                          />
+                       </label>
+                    )}
+                 </div>
+
+                 <div className="w-full mt-3">
+                    <label className="block text-[10px] font-bold uppercase text-left mb-1 dark:text-yellow-100">Transaction ID / UTR Number</label>
+                    <input
+                       type="text"
+                       value={transactionId}
+                       onChange={e => setTransactionId(e.target.value)}
+                       placeholder="e.g. 412345678901 or UPI Ref No."
+                       className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-mono dark:text-white"
+                    />
+                 </div>
+              </div>
+           ) : (
+             <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
+                <div className="text-xs font-bold uppercase mb-2 dark:text-yellow-100">Scan to Pay via UPI</div>
+                {settings.adminUpiId ? (
+                   (() => {
+                      const upiId = (settings.adminUpiId || '').trim();
+                      const am = Number(calculatedAmount || 500).toFixed(2);
+                      const tn = encodeURIComponent(`Tuition Fee`);
+                      const pn = encodeURIComponent('Tutor');
+                      const genericUpi = `upi://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`;
+                      return (
+                         <>
+                            <div className="bg-white p-2 border-2 border-zinc-900 inline-block mb-2">
+                               <QRCodeSVG value={genericUpi} size={120} />
+                             </div>
+                             <div className="text-[10px] font-bold opacity-70 dark:text-yellow-100 mb-2">{settings.adminUpiId}</div>
+                             
+                             <p className="text-xs font-bold text-zinc-500 mt-2 mb-2">OR PAY USING APP</p>
+                             <div className="flex flex-wrap justify-center gap-2 mb-2 w-full">
+                                <a href={genericUpi} className="px-3 py-1.5 bg-purple-600 text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">PhonePe / App</a>
+                                <a href={`tez://upi/pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-white text-zinc-900 border-2 border-zinc-200 font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1"><span className="text-blue-500 font-black">G</span>Pay</a>
+                                <a href={`paytmmp://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-[#00b9f1] text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">Paytm</a>
+                                <a href={genericUpi} className="px-3 py-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold text-xs hover:-translate-y-0.5 transition-transform">Any UPI</a>
+                             </div>
+                             
+                             {!settings.adminUpiId.includes('@') && (
+                                <div className="mt-2 text-red-600 dark:text-red-400 text-[10px] bg-red-100 dark:bg-red-900/30 p-2 font-bold text-justify">
+                                   Warning: The configured UPI ID "{settings.adminUpiId}" appears to be a regular phone number. It MUST include an "@" suffix (e.g. @ybl, @okaxis) for direct payment links to work. If apps crash, this is why!
+                                </div>
+                             )}
+                             
+                             <div className="mt-4 border-t-2 border-zinc-200 dark:border-zinc-800 pt-4 w-full">
+                                <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">UPI links not working or failing?</p>
+                                <p className="text-[10px] mt-1 text-zinc-500">You can copy the UPI ID below and paste it directly into your UPI app (like GPay, PhonePe, or Paytm):</p>
+                                <div className="flex items-center justify-center gap-2 mt-2">
+                                   <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 select-all">{upiId}</div>
+                                   <button 
+                                     onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(upiId);
+                                        alert('UPI ID copied to clipboard!');
+                                     }}
+                                     className="p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold text-xs uppercase"
+                                   >
+                                     Copy ID
+                                   </button>
+                                </div>
+                             </div>
+                         </>
+                      );
+                   })()
+                ) : (
+                   <div className="text-red-500 font-bold text-sm bg-red-100 p-3 w-full border border-red-500">
+                      ⚠️ Setup Required: Admin UPI ID is not configured.
+                   </div>
+                )}
+             </div>
+          )}
 
           <p className="text-sm font-medium mb-6 dark:text-yellow-100 text-center px-2">After completing the payment via UPI, explicitly select your paid month(s) and submit details to notify the administrator.</p>
           
@@ -1747,16 +2177,64 @@ export function StudentPayments() {
                  ₹{calculatedAmount}
                </div>
             </div>
-            <button
-              type="submit"
-              disabled={submitting || selectedMonths.length === 0}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase py-3 border-2 border-emerald-800 shadow-[4px_4px_0px_0px_rgba(6,78,59,1)] hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(6,78,59,1)] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {submitting ? 'Saving...' : `Record Payment (${selectedMonths.length} month${selectedMonths.length !== 1 ? 's' : ''})`}
-            </button>
+            
+            {settings.paymentMethod === 'gateway' ? (
+              <button 
+                type="button" 
+                onClick={handleRazorpayCheckout}
+                disabled={submitting || selectedMonths.length === 0} 
+                className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2"
+              >
+                {submitting ? 'Initializing Checkout...' : `Pay ₹${calculatedAmount} via Razorpay`}
+              </button>
+            ) : settings.paymentMethod === 'proof_upload' ? (
+               <button type="submit" disabled={submitting || selectedMonths.length === 0 || !proofImage || !transactionId.trim()} className="mt-2 bg-emerald-600 text-white font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-emerald-800 disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2">
+                 {submitting ? 'Uploading Proof...' : `📸 Submit Proof for ₹${calculatedAmount}`}
+               </button>
+             ) : (
+               <button type="submit" disabled={submitting || selectedMonths.length === 0} className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0">
+                 {submitting ? 'Submitting...' : 'Submit to Admin'}
+               </button>
+             )}
           </form>
           </>
+          )}
+        </div>
+        
+        <div className="md:col-span-2 bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)]">
+          <h3 className="font-black text-xl uppercase mb-6 flex gap-2 items-center">
+            Payment History
+          </h3>
+          
+          {loading ? (
+            <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-yellow-500" /></div>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {payments.length === 0 && (
+                <div className="p-6 border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-center text-zinc-500 font-medium">
+                  No payment history found.
+                </div>
+              )}
+              {payments.map((payment, idx) => (
+                <div key={payment.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 border-2 border-zinc-200 dark:border-zinc-800 gap-4">
+                  <div>
+                    <h4 className="font-black text-lg uppercase text-zinc-900 dark:text-zinc-100">Fee for {payment.month}</h4>
+                    <div className="text-zinc-600 dark:text-zinc-400 font-bold text-xs mt-1">
+                      Received on: {formatDateTimeSafe(payment.createdAt)}
+                    </div>
+                    <div className="text-zinc-500 font-bold font-mono mt-1 text-sm">Amount: ₹{payment.amount}</div>
+                    {(payment as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">TXN ID: {(payment as any).transactionId}</div>}
+                    {(payment as any).paymentMode === 'proof_upload' && <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">📸 Proof Uploaded</div>}
+                  </div>
+                  <div>
+                    {payment.status === 'pending' && <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold uppercase rounded-full border-2 border-yellow-200">Pending Review</span>}
+                    {payment.status === 'approved' && <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold uppercase rounded-full border-2 border-emerald-200">Approved</span>}
+                    {payment.status === 'rejected' && <span className="px-3 py-1 bg-red-100 text-red-800 text-xs font-bold uppercase rounded-full border-2 border-red-200">Rejected</span>}
+                    {payment.remarks && <div className="text-[10px] text-red-600 dark:text-red-400 mt-2 font-black italic flex justify-end">Reason: {payment.remarks}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>

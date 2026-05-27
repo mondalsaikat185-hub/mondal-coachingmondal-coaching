@@ -72,6 +72,9 @@ export interface PaymentRecord {
   status: 'paid' | 'unpaid' | 'pending';
   transactionId?: string;
   paidDate?: string;
+  remarks?: string;
+  proofImage?: string;
+  paymentMode?: 'manual' | 'proof_upload' | 'gateway';
   createdAt: string;
 }
 
@@ -118,7 +121,13 @@ export interface ExamResult {
 
 export function cleanPhone(p: any): string {
   if (p === undefined || p === null) return "";
-  let s = String(p);
+  let s = String(p).trim();
+  if (s.toLowerCase().indexOf('e') !== -1) {
+    const num = Number(p);
+    if (!isNaN(num)) {
+      s = num.toFixed(0);
+    }
+  }
   if (s.indexOf('.') !== -1) {
     s = s.split('.')[0];
   }
@@ -614,17 +623,105 @@ export const api = {
 
   // --- 💳 PAYMENTS ---
 
-  getPayments: async (): Promise<PaymentRecord[]> => {
-    if (USE_REAL_API) {
-      return runGasMethod<PaymentRecord[]>("apiGetPayments");
-    } else {
-      return getMockDB().payments;
+  cleanPaymentMonth: (monthStr: string): string => {
+    if (!monthStr) return "";
+    
+    if (monthStr.includes(',')) {
+      return monthStr.split(',').map(m => api.cleanPaymentMonth(m.trim())).filter(Boolean).join(', ');
     }
+
+    // If already clean (e.g. "May 2026"), return it
+    if (/^[a-zA-Z]+\s+\d{4}$/.test(monthStr)) {
+      return monthStr;
+    }
+
+    // Check for the corrupted date string e.g. "10-06-2026-07-0000-0000-0000-0000-0000-Z"
+    // DD-MM-YYYY-something or DD-MM-YYYY
+    const corruptedMatch = monthStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (corruptedMatch) {
+      const monthNum = parseInt(corruptedMatch[2], 10); // 1-12
+      const year = parseInt(corruptedMatch[3], 10);
+      
+      if (monthNum >= 1 && monthNum <= 12) {
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June', 
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        // Shift month down by 1 month to correct Google Sheets timezone/index offset
+        let actualMonthNum = monthNum - 1;
+        let actualYear = year;
+        if (actualMonthNum === 0) {
+          actualMonthNum = 12;
+          actualYear = year - 1;
+        }
+        return `${monthNames[actualMonthNum - 1]} ${actualYear}`;
+      }
+    }
+
+    // Check for standard ISO Date: "2026-05-01T00:00:00.000Z" or "2026-05-01"
+    const isoMatch = monthStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+      const year = parseInt(isoMatch[1], 10);
+      const monthNum = parseInt(isoMatch[2], 10); // 1-12
+      if (monthNum >= 1 && monthNum <= 12) {
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June', 
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        const day = parseInt(isoMatch[3], 10);
+        let actualMonthNum = monthNum;
+        let actualYear = year;
+        if (day > 1) {
+          actualMonthNum = monthNum - 1;
+          if (actualMonthNum === 0) {
+            actualMonthNum = 12;
+            actualYear = year - 1;
+          }
+        }
+        return `${monthNames[actualMonthNum - 1]} ${actualYear}`;
+      }
+    }
+
+    // Fallback to JS Date parsing
+    const parsed = new Date(monthStr);
+    if (!isNaN(parsed.getTime()) && monthStr.length > 8) {
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June', 
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
+      const day = parsed.getDate();
+      let monthIdx = parsed.getMonth(); // 0-11
+      let year = parsed.getFullYear();
+      if (day > 1) {
+        monthIdx = monthIdx - 1;
+        if (monthIdx === -1) {
+          monthIdx = 11;
+          year = year - 1;
+        }
+      }
+      return `${monthNames[monthIdx]} ${year}`;
+    }
+
+    return monthStr;
+  },
+
+  getPayments: async (): Promise<PaymentRecord[]> => {
+    let payments: PaymentRecord[];
+    if (USE_REAL_API) {
+      payments = await runGasMethod<PaymentRecord[]>("apiGetPayments");
+    } else {
+      payments = getMockDB().payments;
+    }
+    return (payments || []).map(p => ({
+      ...p,
+      month: api.cleanPaymentMonth(p.month)
+    }));
   },
 
   addPayment: async (payment: Omit<PaymentRecord, 'id' | 'createdAt'>): Promise<PaymentRecord> => {
+    let savedPayment: PaymentRecord;
     if (USE_REAL_API) {
-      return runGasMethod<PaymentRecord>("apiAddPayment", payment);
+      savedPayment = await runGasMethod<PaymentRecord>("apiAddPayment", payment);
     } else {
       const db = getMockDB();
       const newPay: PaymentRecord = {
@@ -641,18 +738,26 @@ export const api = {
       }
       
       saveMockDB(db);
-      return newPay;
+      savedPayment = newPay;
     }
+    return {
+      ...savedPayment,
+      month: api.cleanPaymentMonth(savedPayment.month)
+    };
   },
 
-  updatePaymentStatus: async (paymentId: string, status: PaymentRecord['status']): Promise<PaymentRecord> => {
+  updatePaymentStatus: async (paymentId: string, status: PaymentRecord['status'], remarks: string = ''): Promise<PaymentRecord> => {
+    let updatedPayment: PaymentRecord;
     if (USE_REAL_API) {
-      return runGasMethod<PaymentRecord>("apiUpdatePaymentStatus", paymentId, status);
+      updatedPayment = await runGasMethod<PaymentRecord>("apiUpdatePaymentStatus", paymentId, status, remarks);
     } else {
       const db = getMockDB();
       const idx = db.payments.findIndex(p => p.id === paymentId);
       if (idx === -1) throw new Error("Payment record not found");
       db.payments[idx].status = status;
+      if (remarks) {
+        db.payments[idx].remarks = remarks;
+      }
       
       // Update user global status
       const userIdx = db.users.findIndex(u => u.id === db.payments[idx].studentId);
@@ -661,8 +766,12 @@ export const api = {
       }
 
       saveMockDB(db);
-      return db.payments[idx];
+      updatedPayment = db.payments[idx];
     }
+    return {
+      ...updatedPayment,
+      month: api.cleanPaymentMonth(updatedPayment.month)
+    };
   },
 
   // --- 📢 NOTIFICATIONS ---
@@ -929,6 +1038,35 @@ export const api = {
           });
         }, 1500);
       });
+    }
+  },
+
+  verifyGatewayPayment: async (paymentId: string, month: string, amount: number, studentId: string): Promise<{ success: boolean; error?: string }> => {
+    if (USE_REAL_API) {
+      return runGasMethod<{ success: boolean; error?: string }>("apiVerifyGatewayPayment", paymentId, month, amount, studentId);
+    } else {
+      // Mock gateway verification for local testing
+      const db = getMockDB();
+      const user = db.users.find(u => u.id === studentId);
+      const newPay = {
+        id: "pay_" + Math.random().toString(36).substr(2, 9),
+        studentId: studentId,
+        month: month,
+        amount: amount,
+        status: "approved" as any,
+        transactionId: paymentId,
+        paidDate: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      };
+      db.payments.push(newPay);
+      
+      // Update student's pendingMonths in local storage
+      if (user) {
+        const count = month.split(',').length;
+        (user as any).pendingMonths = Math.max(0, ((user as any).pendingMonths || 0) - count);
+      }
+      saveMockDB(db);
+      return { success: true };
     }
   }
 };
