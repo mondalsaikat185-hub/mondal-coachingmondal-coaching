@@ -718,10 +718,10 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                              </span>
                              <span className={`text-[9px] uppercase font-bold px-2.5 py-0.5 rounded-full border ${
                                 isCorrect 
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                  ? 'bg-emerald-500 text-white border-emerald-600' 
                                   : isSkipped 
                                     ? 'bg-zinc-800 text-zinc-400 border-zinc-700/30' 
-                                    : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                    : 'bg-red-500 text-white border-red-600'
                              }`}>
                                 {statusBadge}
                              </span>
@@ -765,7 +765,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                                          </span>
                                          {pillText && (
                                             <span className={`text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded shadow-sm ${
-                                               optIdx === correctIdx ? 'bg-emerald-500 text-zinc-950' : 'bg-red-600 text-white font-bold'
+                                               optIdx === correctIdx ? 'bg-emerald-500 text-zinc-950' : 'bg-red-500 text-white font-bold'
                                             }`}>
                                                {pillText}
                                             </span>
@@ -988,11 +988,11 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                    const isCurrent = idx === currentIdx;
                    const state = questionStates[idx] || 'unvisited';
                    
-                   let stateClasses = "bg-[#111113] text-zinc-505 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
+                   let stateClasses = "bg-[#111113] text-zinc-500 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
                    if (state === 'saved') {
                      stateClasses = "bg-emerald-600 text-white border-emerald-700 font-bold";
                    } else if (state === 'skipped') {
-                     stateClasses = "bg-red-850/80 text-white border-red-900 font-bold";
+                     stateClasses = "bg-red-500 text-white border-red-600 font-bold";
                    } else if (state === 'review_unanswered') {
                      stateClasses = "bg-orange-600 text-white border-orange-700 font-bold";
                    } else if (state === 'review_answered') {
@@ -1018,7 +1018,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 <span className="block font-bold uppercase tracking-wider text-zinc-505">Legend Info</span>
                 <div className="grid grid-cols-2 gap-2">
                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-600"></span><span>Saved</span></div>
-                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-850/80"></span><span>Skipped</span></div>
+                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-500"></span><span>Skipped</span></div>
                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-600"></span><span>Review</span></div>
                    <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-600"></span><span>Ans & Rev</span></div>
                    <div className="flex items-center gap-1.5 col-span-2"><span className="w-3 h-3 rounded-full bg-[#111113] border border-zinc-800"></span><span>Unvisited</span></div>
@@ -1065,11 +1065,11 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 const isCurrent = idx === currentIdx;
                 const state = questionStates[idx] || 'unvisited';
                 
-                let stateClasses = "bg-[#111113] text-zinc-505 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
+                let stateClasses = "bg-[#111113] text-zinc-500 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
                 if (state === 'saved') {
                   stateClasses = "bg-emerald-600 text-white border-emerald-700 font-bold";
                 } else if (state === 'skipped') {
-                  stateClasses = "bg-red-850/80 text-white border-red-900 font-bold";
+                  stateClasses = "bg-red-500 text-white border-red-600 font-bold";
                 } else if (state === 'review_unanswered') {
                   stateClasses = "bg-orange-600 text-white border-orange-700 font-bold";
                 } else if (state === 'review_answered') {
@@ -1096,7 +1096,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              <span className="block font-bold tracking-wider uppercase text-zinc-505">Legend Info</span>
              <div className="grid grid-cols-2 gap-2">
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-600"></span><span>Saved</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-850/80"></span><span>Skipped</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-500"></span><span>Skipped</span></div>
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-600"></span><span>Review</span></div>
                 <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-600"></span><span>Ans & Rev</span></div>
              </div>

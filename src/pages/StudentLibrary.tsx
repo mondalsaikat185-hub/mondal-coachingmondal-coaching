@@ -710,12 +710,30 @@ export function StudentLibrary() {
                 </button>
               )}
               {downloadMessage.fallbackUrl && downloadMessage.item && (
+                <>
                 <button
                   onClick={() => handleSecureFormDownload(downloadMessage.item!)}
-                  className="w-full bg-yellow-500 hover:bg-yellow-600 text-zinc-950 px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-yellow-700 shadow-[3px_3px_0px_0px_rgba(113,63,18,1)] text-center font-bold border-none cursor-pointer"
+                  className="w-full bg-yellow-500 hover:bg-yellow-600 text-zinc-950 px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-yellow-700 shadow-[3px_3px_0px_0px_rgba(113,63,18,1)] text-center font-bold border-none cursor-pointer mb-3"
                 >
                   📥 নিরাপদ ডাউনলোড শুরু করুন
                 </button>
+                <button
+                  onClick={() => {
+                    const fileIdMatch = downloadMessage.item!.contentUrl?.match(/[-\w]{25,}/);
+                    const fileId = fileIdMatch ? fileIdMatch[0] : null;
+                    const studentName = (user as any)?.fullName || user?.displayName || user?.email || 'Student';
+                    const rawPhone = (user as any)?.phone || '0000000000';
+                    const phone = rawPhone.replace(/^\+91/, '').replace(/\s+/g, '').trim();
+                    const fileName = `${downloadMessage.item!.title || 'document'}.pdf`;
+                    const directLink = `${ORACLE_SERVER_URL}/download?key=${ORACLE_API_KEY}&fileId=${fileId}&name=${encodeURIComponent(studentName)}&phone=${encodeURIComponent(phone)}&fileName=${encodeURIComponent(fileName)}`;
+                    const text = `M-C Tuition Note: *${downloadMessage.item!.title}*\nPassword to open: *${phone}*\nDownload link: ${directLink}`;
+                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                  }}
+                  className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-green-800 shadow-[3px_3px_0px_0px_rgba(20,83,45,1)] cursor-pointer"
+                >
+                  💬 WhatsApp-এ ডাউনলোড লিংক শেয়ার করুন
+                </button>
+                </>
               )}
               {downloadMessage.isWarning && (
                 <>
