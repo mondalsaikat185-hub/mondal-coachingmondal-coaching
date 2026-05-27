@@ -710,6 +710,16 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                     const reviewOpts = Array.isArray(reviewOptsRaw) ? reviewOptsRaw : [];
                     const reviewExpl = String((reviewLang === 'bn' && q?.explanation_bn) ? q.explanation_bn : (q?.explanation_en || q?.explanation || ''));
 
+                    // Check if a question-specific passage or global passage is present for comprehension/cloze tests
+                    const reviewPassage = q?.passage || q?.passage_en || q?.passage_bn || (
+                      (exam.examType?.toLowerCase().includes('comprehension') || 
+                       exam.examType?.toLowerCase().includes('cloze') || 
+                       q?.type === 'comprehension' || 
+                       q?.type === 'cloze') ? passage : ''
+                    );
+
+                    const correctOptionText = reviewOpts[correctIdx] || '';
+
                     return (
                        <div key={`review-${idx}`} className="bg-[#1c1c1f] border border-zinc-800 rounded-2xl p-6 shadow-md space-y-4 text-left">
                           <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
@@ -727,10 +737,19 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                              </span>
                           </div>
 
+                          {/* Render passage if applicable for comprehension, cloze tests, or passage-based items */}
+                          {reviewPassage && reviewPassage.trim() && (
+                             <div className="bg-[#121214] border border-zinc-850 p-4 rounded-xl space-y-2 mb-3 max-h-60 overflow-y-auto">
+                                <span className="text-[9px] uppercase font-bold text-yellow-500 tracking-widest block mb-1">Passage / অনুচ্ছেদ</span>
+                                <p className="serif text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap text-justify">{reviewPassage}</p>
+                             </div>
+                          )}
+
                           <p className="text-sm text-zinc-200 font-semibold leading-relaxed whitespace-pre-wrap">
                              {reviewQText}
                           </p>
 
+                          {/* Jumbled sentences list for Sentence Rearrangement */}
                           {q?.sentences && typeof q.sentences === 'object' && (
                              <div className="space-y-1 bg-[#121214] px-3 py-2 rounded-lg border border-zinc-850 text-xs text-zinc-400 font-mono mb-2">
                                 {Object.entries(q.sentences).map(([k, val]) => (
@@ -741,6 +760,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                              </div>
                           )}
 
+                          {/* Render multiple choice options with correctness/incorrectness indicators */}
                           <div className="grid grid-cols-1 gap-2.5 pt-1">
                              {reviewOpts.map((optText: string, optIdx: number) => {
                                 let cardStyle = "border rounded-xl px-4 py-2.5 text-xs transition-colors ";
@@ -776,6 +796,15 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                              })}
                           </div>
 
+                          {/* Indication of the correct sequence for sentence rearrangement */}
+                          {q?.sentences && correctOptionText && (
+                             <div className="mt-3 bg-emerald-500/10 border-l-2 border-emerald-500 p-3 rounded-r-xl text-xs">
+                                <span className="font-bold text-[9px] uppercase tracking-wider text-emerald-400 block mb-0.5">Correct Sequence / সঠিক ক্রম</span>
+                                <p className="font-mono text-zinc-200 font-bold">{correctOptionText}</p>
+                             </div>
+                          )}
+
+                          {/* Render detailed explanation */}
                           {reviewExpl && reviewExpl.trim() && (
                              <div className="bg-yellow-600/10 border-l-2 border-yellow-600 p-4 rounded-r-xl mt-3 text-xs text-zinc-300 leading-relaxed text-justify">
                                 <h4 className="font-bold uppercase text-[8px] tracking-wider text-yellow-500 mb-1">
