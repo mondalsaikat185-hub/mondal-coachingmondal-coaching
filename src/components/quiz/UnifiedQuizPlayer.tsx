@@ -208,7 +208,6 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     }
     
     const initialStates = Array(questions.length).fill('unvisited');
-    initialStates[0] = 'skipped'; // First question is visited/skipped initially
     
     setUserAnswers({});
     setQuestionStates(initialStates);
@@ -219,7 +218,6 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   const transitionState = (fromIdx: number, action: 'saveAndNext' | 'nextAndReview' | 'navigate') => {
     const chosen = userAnswers[fromIdx];
     let updatedStates = [...questionStates];
-    const oldState = updatedStates[fromIdx];
 
     if (action === 'saveAndNext') {
       if (chosen !== undefined) {
@@ -234,9 +232,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
         updatedStates[fromIdx] = 'review_unanswered';
       }
     } else if (action === 'navigate') {
-      if (oldState !== 'saved' && oldState !== 'review_answered' && oldState !== 'review_unanswered') {
-        updatedStates[fromIdx] = 'skipped';
-      }
+      // Do nothing: do not automatically mark as skipped when just navigating around
     }
 
     setQuestionStates(updatedStates);
@@ -250,28 +246,18 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     // 1. Transition state for the old question index
     const updatedStates = transitionState(currentIdx, 'navigate');
     
-    // 2. Mark the destination question as visited (skipped) if it was unvisited
-    const finalStates = [...updatedStates];
-    if (finalStates[newIdx] === 'unvisited') {
-      finalStates[newIdx] = 'skipped';
-    }
-    
-    setQuestionStates(finalStates);
+    setQuestionStates(updatedStates);
     setCurrentIdx(newIdx);
-    saveStateToLocalStorage(userAnswers, finalStates, newIdx);
+    saveStateToLocalStorage(userAnswers, updatedStates, newIdx);
   };
 
   const saveAndNext = () => {
     const updatedStates = transitionState(currentIdx, 'saveAndNext');
     if (currentIdx < questions.length - 1) {
       const nextIdx = currentIdx + 1;
-      const finalStates = [...updatedStates];
-      if (finalStates[nextIdx] === 'unvisited') {
-        finalStates[nextIdx] = 'skipped';
-      }
-      setQuestionStates(finalStates);
+      setQuestionStates(updatedStates);
       setCurrentIdx(nextIdx);
-      saveStateToLocalStorage(userAnswers, finalStates, nextIdx);
+      saveStateToLocalStorage(userAnswers, updatedStates, nextIdx);
     } else {
       setShowSubmitConfirm(true);
     }
@@ -281,13 +267,9 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     const updatedStates = transitionState(currentIdx, 'nextAndReview');
     if (currentIdx < questions.length - 1) {
       const nextIdx = currentIdx + 1;
-      const finalStates = [...updatedStates];
-      if (finalStates[nextIdx] === 'unvisited') {
-        finalStates[nextIdx] = 'skipped';
-      }
-      setQuestionStates(finalStates);
+      setQuestionStates(updatedStates);
       setCurrentIdx(nextIdx);
-      saveStateToLocalStorage(userAnswers, finalStates, nextIdx);
+      saveStateToLocalStorage(userAnswers, updatedStates, nextIdx);
     } else {
       setShowSubmitConfirm(true);
     }

@@ -42,7 +42,7 @@ export function StudentLibrary() {
   };
   
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [downloadMessage, setDownloadMessage] = useState<{title: string; body: string; isWarning?: boolean} | null>(null);
+  const [downloadMessage, setDownloadMessage] = useState<{title: string; body: string; isWarning?: boolean; fallbackUrl?: string} | null>(null);
   const [activeDownloadFile, setActiveDownloadFile] = useState<{ blob: Blob; fileName: string; title: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -222,8 +222,9 @@ export function StudentLibrary() {
     } catch (error: any) {
       setDownloadMessage({ 
         title: '❌ Connection Error', 
-        body: `Download করা যাচ্ছে না। (ত্রুটি: ${error.message || error})`, 
-        isWarning: true 
+        body: `পিডিএফ ওয়াটারমার্কিং সার্ভারের সাথে সংযোগ করা যাচ্ছে না (সম্ভবত আপনার মোবাইল নেটওয়ার্ক বা ইন্টারনেট সেবাদাতা সংযোগটি ব্লক করেছে)।\n\nআপনি কি পাসওয়ার্ড ছাড়া সরাসরি গুগল ড্রাইভ থেকে ফাইলটি ডাউনলোড/ওপেন করতে চান?`, 
+        isWarning: true,
+        fallbackUrl: item.contentUrl || undefined
       });
       console.error(error);
     } finally {
@@ -670,6 +671,20 @@ export function StudentLibrary() {
                 >
                   📲 Share / WhatsApp-এ পাঠান
                 </button>
+              )}
+              {downloadMessage.fallbackUrl && (
+                <a
+                  href={downloadMessage.fallbackUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full bg-yellow-500 hover:bg-yellow-600 text-zinc-950 px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-yellow-700 shadow-[3px_3px_0px_0px_rgba(113,63,18,1)] text-center no-underline font-bold"
+                  onClick={() => {
+                     setDownloadMessage(null);
+                     setActiveDownloadFile(null);
+                  }}
+                >
+                  🔓 Google Drive থেকে সরাসরি খুলুন
+                </a>
               )}
               <button
                  onClick={() => { setDownloadMessage(null); setActiveDownloadFile(null); }}
