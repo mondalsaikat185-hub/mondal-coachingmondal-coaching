@@ -82,7 +82,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
 
   // Restore states from local storage for auto-resume
   useEffect(() => {
-     if (questions.length === 0) return;
+     if (questions.length === 0 || checkingResult) return;
      
      const initialStates = Array(questions.length).fill('unvisited');
      
@@ -118,13 +118,23 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              try { setCurrentIdx(parseInt(savedIdx)); } catch (e) {}
            }
         } else {
-           clearQuizStorage();
-           setQuestionStates(initialStates);
+           // Auto-submit the saved answers!
+           if (!alreadySubmitted) {
+              const savedAnswers = localStorage.getItem(`quiz_answers_${exam.id}`);
+              let parsedAnswers = {};
+              if (savedAnswers) {
+                try { parsedAnswers = JSON.parse(savedAnswers); } catch (e) {}
+              }
+              handleComplete(parsedAnswers);
+           } else {
+              clearQuizStorage();
+              setQuestionStates(initialStates);
+           }
         }
      } else {
         setQuestionStates(initialStates);
      }
-  }, [exam.id, isPreview, questions.length]);
+  }, [exam.id, isPreview, questions.length, checkingResult, alreadySubmitted]);
 
   const clearQuizStorage = () => {
     localStorage.removeItem(`quiz_endtime_${exam.id}`);
@@ -706,10 +716,10 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
 
                                 if (optIdx === correctIdx) {
                                   cardStyle += "bg-emerald-500/10 border-emerald-500 text-emerald-300 font-medium";
-                                  pillText = "Correct Answer";
+                                  pillText = reviewLang === 'bn' ? "সঠিক উত্তর" : "Correct Answer";
                                 } else if (optIdx === chosenIdx) {
                                   cardStyle += "bg-red-500/10 border-red-500 text-red-300 font-medium";
-                                  pillText = "Chosen Incorrect";
+                                  pillText = reviewLang === 'bn' ? "আপনার উত্তরটি ভুল" : "Chosen Incorrect";
                                 } else {
                                   cardStyle += "bg-[#121214]/70 border-zinc-800/80 text-zinc-400";
                                 }
@@ -723,7 +733,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                                          </span>
                                          {pillText && (
                                             <span className={`text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded shadow-sm ${
-                                               optIdx === correctIdx ? 'bg-emerald-500 text-zinc-950' : 'bg-red-50 text-white'
+                                               optIdx === correctIdx ? 'bg-emerald-500 text-zinc-950' : 'bg-red-650 text-white font-bold'
                                             }`}>
                                                {pillText}
                                             </span>

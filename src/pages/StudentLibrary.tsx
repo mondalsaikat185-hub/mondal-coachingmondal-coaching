@@ -7,6 +7,8 @@ import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { verifyAndJoinSession, joinSessionWithoutCode } from '../lib/exam-session-utils';
 import { useSearchParams } from 'react-router-dom';
 import { safeToDate } from '../lib/utils';
+const ORACLE_SERVER_URL = 'https://saikat-tuition.duckdns.org';
+const ORACLE_API_KEY = import.meta.env.VITE_ORACLE_API_KEY || 'tuition-secret-2026-change-this';
 
 export function StudentLibrary() {
   const { user } = useAuth();
@@ -42,7 +44,7 @@ export function StudentLibrary() {
   };
   
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
-  const [downloadMessage, setDownloadMessage] = useState<{title: string; body: string; isWarning?: boolean; fallbackUrl?: string} | null>(null);
+  const [downloadMessage, setDownloadMessage] = useState<{title: string; body: string; isWarning?: boolean; fallbackUrl?: string; item?: LibraryItem} | null>(null);
   const [activeDownloadFile, setActiveDownloadFile] = useState<{ blob: Blob; fileName: string; title: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -133,8 +135,42 @@ export function StudentLibrary() {
       setCurrentFolderId(folderId);
   };
 
-  const ORACLE_SERVER_URL = 'https://saikat-tuition.duckdns.org';
-  const ORACLE_API_KEY = import.meta.env.VITE_ORACLE_API_KEY || 'tuition-secret-2026-change-this';
+  const handleSecureFormDownload = (item: LibraryItem) => {
+    const fileIdMatch = item.contentUrl?.match(/[-\w]{25,}/);
+    const fileId = fileIdMatch ? fileIdMatch[0] : null;
+    if (!fileId) { alert('Invalid file link.'); return; }
+
+    const studentName = (user as any)?.fullName || user?.displayName || user?.email || 'Student';
+    const rawPhone = (user as any)?.phone || '0000000000';
+    const phone = cleanPhone(rawPhone);
+    const fileName = `${item.title || 'document'}.pdf`;
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `${ORACLE_SERVER_URL}/download`;
+    form.target = '_blank';
+
+    const addInput = (name: string, value: string) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+
+    addInput('key', ORACLE_API_KEY);
+    addInput('fileId', fileId);
+    addInput('name', studentName);
+    addInput('phone', phone);
+    addInput('fileName', fileName);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+    
+    setDownloadMessage(null);
+    setActiveDownloadFile(null);
+  };
 
   const handleDownloadUrl = async (item: LibraryItem) => {
     try {
@@ -222,9 +258,10 @@ export function StudentLibrary() {
     } catch (error: any) {
       setDownloadMessage({ 
         title: '❌ Connection Error', 
-        body: `পিডিএফ ওয়াটারমার্কিং সার্ভারের সাথে সংযোগ করা যাচ্ছে না (সম্ভবত আপনার মোবাইল নেটওয়ার্ক বা ইন্টারনেট সেবাদাতা সংযোগটি ব্লক করেছে)।\n\nআপনি কি পাসওয়ার্ড ছাড়া সরাসরি গুগল ড্রাইভ থেকে ফাইলটি ডাউনলোড/ওপেন করতে চান?`, 
+        body: `পিডিএফ ওয়াটারমার্কিং সার্ভারের সাথে সংযোগ করা যাচ্ছে না (সম্ভবত আপনার মোবাইল নেটওয়ার্ক বা ইন্টারনেট সেবাদাতা সংযোগটি ব্লক করেছে)।\n\nপাসওয়ার্ড ও ওয়াটারমার্কসহ ফাইলটি নিরাপদে ডাউনলোড করতে নিচের 'নিরাপদ ডাউনলোড' বাটনটি ক্লিক করুন।`, 
         isWarning: true,
-        fallbackUrl: item.contentUrl || undefined
+        fallbackUrl: item.contentUrl || undefined,
+        item: item
       });
       console.error(error);
     } finally {
@@ -672,19 +709,37 @@ export function StudentLibrary() {
                   📲 Share / WhatsApp-এ পাঠান
                 </button>
               )}
-              {downloadMessage.fallbackUrl && (
-                <a
-                  href={downloadMessage.fallbackUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full bg-yellow-500 hover:bg-yellow-600 text-zinc-950 px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-yellow-700 shadow-[3px_3px_0px_0px_rgba(113,63,18,1)] text-center no-underline font-bold"
-                  onClick={() => {
-                     setDownloadMessage(null);
-                     setActiveDownloadFile(null);
-                  }}
+              {downloadMessage.fallbackUrl && downloadMessage.item && (
+                <button
+                  onClick={() => handleSecureFormDownload(downloadMessage.item!)}
+                  className="w-full bg-yellow-500 hover:bg-yellow-600 text-zinc-950 px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-yellow-700 shadow-[3px_3px_0px_0px_rgba(113,63,18,1)] text-center font-bold border-none cursor-pointer"
                 >
-                  🔓 Google Drive থেকে সরাসরি খুলুন
-                </a>
+                  📥 নিরাপদ ডাউনলোড শুরু করুন
+                </button>
+              )}
+              {downloadMessage.isWarning && (
+                <>
+                  <button
+                    onClick={() => {
+                      const appUrl = window.location.origin + window.location.pathname;
+                      navigator.clipboard.writeText(appUrl);
+                      alert("লিংক কপি করা হয়েছে! দয়া করে Google Chrome বা Safari ব্রাউজারে পেস্ট করে ওপেন করুন এবং পিডিএফ ডাউনলোড করুন।");
+                    }}
+                    className="w-full bg-zinc-150 hover:bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-zinc-400 dark:border-zinc-700 shadow-[3px_3px_0px_0px_rgba(161,161,170,0.5)] cursor-pointer"
+                  >
+                    📋 অ্যাপের লিংক কপি করুন
+                  </button>
+                  <button
+                    onClick={() => {
+                      const appUrl = window.location.origin + window.location.pathname;
+                      const text = `Mondal Coaching tuition app link. Please open this link in Google Chrome or Safari to download PDFs successfully!\n\n👉 ${appUrl}`;
+                      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                    }}
+                    className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-green-800 shadow-[3px_3px_0px_0px_rgba(20,83,45,1)] cursor-pointer"
+                  >
+                    💬 WhatsApp-এ অ্যাপ লিংক পাঠান
+                  </button>
+                </>
               )}
               <button
                  onClick={() => { setDownloadMessage(null); setActiveDownloadFile(null); }}
