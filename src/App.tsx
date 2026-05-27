@@ -24,6 +24,7 @@ import {
   Edit,
   X,
   Bell,
+  RefreshCw,
 } from "lucide-react";
 import { api } from "./lib/api";
 import { safeToDate, formatDateOnlySafe } from "./lib/utils";
@@ -636,6 +637,62 @@ function TopNav() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // Auto PWA Cache Buster on Startup
+  useEffect(() => {
+    const CURRENT_VERSION = "v1.5.0";
+    const savedVersion = localStorage.getItem("app_version");
+    if (savedVersion !== CURRENT_VERSION) {
+      const runAutoBuster = async () => {
+        if ('serviceWorker' in navigator) {
+          try {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const r of regs) {
+              await r.unregister();
+            }
+          } catch (_) {}
+        }
+        if ('caches' in window) {
+          try {
+            const keys = await caches.keys();
+            for (const k of keys) {
+              await caches.delete(k);
+            }
+          } catch (_) {}
+        }
+        localStorage.setItem("app_version", CURRENT_VERSION);
+        window.location.reload();
+      };
+      runAutoBuster();
+    }
+  }, []);
+
+  const handleForceClearPwaCache = async () => {
+    if (confirm("ক্যাশ রিসেট করতে চান? এটি প্রোজেক্টের নতুন আপডেট ডাউনলোড করতে সাহায্য করবে।")) {
+      setShowDropdown(false);
+      if ('serviceWorker' in navigator) {
+        try {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (const registration of registrations) {
+            await registration.unregister();
+          }
+        } catch (e) {
+          console.error("SW unregister failed:", e);
+        }
+      }
+      if ('caches' in window) {
+        try {
+          const keys = await caches.keys();
+          for (const key of keys) {
+            await caches.delete(key);
+          }
+        } catch (e) {
+          console.error("Cache clear failed:", e);
+        }
+      }
+      window.location.href = window.location.pathname + "?update=" + Date.now() + window.location.hash;
+    }
+  };
   const [editAddress, setEditAddress] = useState("");
   const [editName, setEditName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
@@ -755,7 +812,7 @@ function TopNav() {
 
   return (
     <nav className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b-2 border-zinc-900 dark:border-zinc-100 p-4 sticky top-0 z-10">
-      <div className="font-black italic uppercase">Tuition Portal</div>
+      <div className="font-black italic uppercase text-xs sm:text-base shrink-0">Tuition Portal</div>
       <div className="flex items-center gap-4">
         {user && (
           <div className="text-xs font-mono hidden sm:flex items-center gap-2">
@@ -825,6 +882,12 @@ function TopNav() {
                       className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2 font-bold text-sm uppercase"
                     >
                       <Edit className="w-4 h-4" /> Edit Profile
+                    </button>
+                    <button
+                      onClick={handleForceClearPwaCache}
+                      className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2 font-bold text-sm uppercase text-orange-600 dark:text-orange-400 border-t border-b border-zinc-100 dark:border-zinc-800"
+                    >
+                      <RefreshCw className="w-4 h-4 animate-spin" /> Reset Cache
                     </button>
                     <button
                       onClick={() => {
