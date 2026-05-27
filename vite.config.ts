@@ -13,7 +13,8 @@ export default defineConfig(({mode}) => {
       tailwindcss(),
       viteSingleFile(),
       VitePWA({
-        registerType: 'prompt',
+        selfDestroying: true,
+        registerType: 'autoUpdate',
         injectRegister: 'auto',
         manifest: {
           name: 'Mondal Coaching',
