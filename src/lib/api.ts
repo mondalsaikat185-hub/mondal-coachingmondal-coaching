@@ -30,6 +30,8 @@ export interface UserProfile {
   joinDate?: string;
   monthlyFee?: number;
   pendingMonths?: number;
+  excusedDates?: string;
+  exemptReason?: string;
 }
 
 export interface Batch {

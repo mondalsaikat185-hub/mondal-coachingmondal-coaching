@@ -43,6 +43,7 @@ export function StudentLibrary() {
   
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadMessage, setDownloadMessage] = useState<{title: string; body: string; isWarning?: boolean} | null>(null);
+  const [activeDownloadFile, setActiveDownloadFile] = useState<{ blob: Blob; fileName: string; title: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Exam session
@@ -172,6 +173,7 @@ export function StudentLibrary() {
 
       const blob = await response.blob();
       const blobUrl = URL.createObjectURL(blob);
+      setActiveDownloadFile({ blob, fileName, title: item.title || 'document' });
 
       const ua = navigator.userAgent;
       const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
@@ -287,7 +289,9 @@ export function StudentLibrary() {
         
         const blob = new Blob([byteArray], { type: 'application/pdf' });
         const blobUrl = URL.createObjectURL(blob);
+        const fileName = item.fileName || `${item.title || 'note'}.pdf`;
         const password = (user?.phone || '').replace(/^\+91/, '').replace(/\s+/g, '').trim();
+        setActiveDownloadFile({ blob, fileName, title: item.title || 'document' });
 
         const ua = navigator.userAgent;
         const isIOS = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
@@ -319,10 +323,9 @@ export function StudentLibrary() {
           return;
         }
 
-        const fileName = item.fileName || 'note.pdf';
         const link = document.createElement('a');
         link.href = blobUrl;
-        link.download = fileName;
+        link.download = fileName; // declared above (line ~292)
         document.body.appendChild(link); 
         link.click(); 
         document.body.removeChild(link); 
@@ -337,6 +340,37 @@ export function StudentLibrary() {
         console.error('Download failed:', err);
      } finally {
         setDownloadingId(null);
+     }
+  };
+
+  const handleShareFile = async () => {
+     if (!activeDownloadFile) return;
+     try {
+       const file = new File([activeDownloadFile.blob], activeDownloadFile.fileName, { type: 'application/pdf' });
+       if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+         await navigator.share({
+           files: [file],
+           title: activeDownloadFile.title,
+           text: 'M-C Tuition Portal PDF Notes'
+         });
+         // Share সফল হলে modal বন্ধ করো
+         setDownloadMessage(null);
+         setActiveDownloadFile(null);
+       } else {
+         // Web Share API সমর্থন করে না → WhatsApp fallback
+         const phone = cleanPhone(user?.phone || '0000000000');
+         const text = `M-C Tuition Note: *${activeDownloadFile.title}*\nPassword to open: *${phone}*\n(Note: Please use Chrome/Safari to download directly.)`;
+         window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+       }
+     } catch (err: any) {
+       if ((err as any)?.name === 'AbortError') return; // User cancelled share — ignore
+       console.error("Share failed:", err);
+       // alert() ব্যবহার না করে modal message দেখাও (iOS-এ alert block হয়)
+       setDownloadMessage({
+         title: '❌ Share ব্যর্থ হয়েছে',
+         body: `শেয়ার করা যায়নি। সরাসরি Chrome বা Safari-এ অ্যাপ খুলুন।\n\nত্রুটি: ${err.message || err}`,
+         isWarning: true
+       });
      }
   };
 
@@ -624,12 +658,23 @@ export function StudentLibrary() {
             <p className="text-sm font-bold text-zinc-600 dark:text-zinc-400 whitespace-pre-line mb-6">
                {downloadMessage.body}
             </p>
-            <button
-               onClick={() => setDownloadMessage(null)}
-               className="w-full bg-black text-white hover:bg-zinc-800 px-4 py-3 font-bold text-sm uppercase transition-colors"
-            >
-               OK
-            </button>
+            <div className="flex flex-col gap-3">
+              {/* Share বাটন — শুধু তখনই দেখাবে যখন blob মেমরিতে আছে */}
+              {activeDownloadFile && (
+                <button
+                  onClick={handleShareFile}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-green-800 shadow-[3px_3px_0px_0px_rgba(20,83,45,1)]"
+                >
+                  📲 Share / WhatsApp-এ পাঠান
+                </button>
+              )}
+              <button
+                 onClick={() => { setDownloadMessage(null); setActiveDownloadFile(null); }}
+                 className="w-full bg-black text-white hover:bg-zinc-800 px-4 py-3 font-bold text-sm uppercase transition-colors"
+              >
+                 OK / বন্ধ করুন
+              </button>
+            </div>
           </div>
         </div>
       )}

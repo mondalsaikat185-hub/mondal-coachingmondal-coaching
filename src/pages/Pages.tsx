@@ -1749,11 +1749,11 @@ export function StudentPayments() {
             </div>
             <button
               type="submit"
-              disabled={saving || selectedMonths.length === 0}
+              disabled={submitting || selectedMonths.length === 0}
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase py-3 border-2 border-emerald-800 shadow-[4px_4px_0px_0px_rgba(6,78,59,1)] hover:translate-y-0.5 hover:shadow-[2px_2px_0px_0px_rgba(6,78,59,1)] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {saving ? 'Saving...' : `Record Payment (${selectedMonths.length} month${selectedMonths.length !== 1 ? 's' : ''})`}
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              {submitting ? 'Saving...' : `Record Payment (${selectedMonths.length} month${selectedMonths.length !== 1 ? 's' : ''})`}
             </button>
           </form>
           </>

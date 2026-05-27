@@ -516,11 +516,44 @@ function apiDeleteUser(userId) {
     // ৩. স্টুডেন্টের সমস্ত পরীক্ষার রেজাল্ট ডিলিট করো
     deleteMultipleRows("examResults", "studentId", userId);
     
-    // ৪. ফাইনালি ইউজার শিট থেকে স্টুডেন্টকে ডিলিট করো
+    // ৪. ExamSessions থেকে participantUids array-এ userId সরিয়ে দাও
+    removeUserFromExamSessions(userId);
+    
+    // ৫. ফাইনালি ইউজার শিট থেকে স্টুডেন্টকে ডিলিট করো
     var success = deleteRow("users", userId);
     return { success: success };
   } catch (err) {
     return { success: false, error: err.toString() };
+  }
+}
+
+// ExamSessions-এর participantUids array থেকে একটি userId সরিয়ে দেওয়ার helper
+function removeUserFromExamSessions(userId) {
+  try {
+    var sheet = getSheet("examSessions");
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var uidColIdx = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "participantuids"; });
+    if (uidColIdx === -1) return;
+    var dirty = false;
+    for (var r = 0; r < values.length; r++) {
+      var raw = values[r][uidColIdx];
+      var uids = [];
+      try { uids = JSON.parse(raw || "[]"); } catch(e) { continue; }
+      if (!Array.isArray(uids)) continue;
+      var before = uids.length;
+      uids = uids.filter(function(uid) { return String(uid) !== String(userId); });
+      if (uids.length !== before) {
+        sheet.getRange(r + 2, uidColIdx + 1).setValue(JSON.stringify(uids));
+        dirty = true;
+      }
+    }
+    if (dirty) SpreadsheetApp.flush();
+  } catch(e) {
+    Logger.log("removeUserFromExamSessions error: " + e.toString());
   }
 }
 function apiUpdateUserStatus(userId, status, rejectReason) {
@@ -803,8 +836,10 @@ function apiDeleteBatch(batchId) {
   try {
     // ব্যাচ ডিলিট করার আগে সেই ব্যাচের সমস্ত স্টুডেন্ট এবং তাদের সমস্ত রেকর্ড ফিজিক্যালি ডিলিট করো
     var users = readSheet("users");
+    var batchStudentIds = [];
     users.forEach(function(u) {
-      if (u.batchId === batchId) {
+      if (String(u.batchId) === String(batchId)) {
+        batchStudentIds.push(u.id);
         // ১. স্টুডেন্টের সমস্ত পেমেন্ট রেকর্ড ডিলিট করো
         deleteMultipleRows("payments", "studentId", u.id);
         
@@ -814,12 +849,18 @@ function apiDeleteBatch(batchId) {
         // ৩. স্টুডেন্টের সমস্ত পরীক্ষার রেজাল্ট ডিলিট করো
         deleteMultipleRows("examResults", "studentId", u.id);
         
-        // ৪. ইউজার শিট থেকে স্টুডেন্টকে ডিলিট করো
+        // ৪. ExamSessions participantUids থেকে student সরাও
+        removeUserFromExamSessions(u.id);
+        
+        // ৫. ইউজার শিট থেকে স্টুডেন্টকে ডিলিট করো
         deleteRow("users", u.id);
       }
     });
     
-    // ৫. সবশেষে ব্যাচ শিট থেকে ব্যাচটিকে ডিলিট করো
+    // ৬. এই ব্যাচের সমস্ত ExamSession ডিলিট করো
+    deleteMultipleRows("examSessions", "batchId", batchId);
+    
+    // ৭. সবশেষে ব্যাচ শিট থেকে ব্যাচটিকে ডিলিট করো
     var success = deleteRow("batches", batchId);
     return { success: success };
   } catch (err) {
@@ -1052,278 +1093,3 @@ function apiCreateExamSession(sessionData) {
   }
 }
 
-function apiEndExamSession(sessionId) {
-  try {
-    var updated = updateRow("examSessions", sessionId, { isActive: false });
-    return { success: true, data: updated };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiJoinExamSession(sessionId, userId, studentName, studentPhone, enteredCode) {
-  try {
-    var sessionsResponse = apiGetExamSessions();
-    if (!sessionsResponse.success) return sessionsResponse;
-    var session = sessionsResponse.data.find(function(s) { return s.id === sessionId; });
-    
-    if (!session) return { success: false, error: "সেশন পাওয়া যায়নি (Session not found)" };
-    if (!session.isActive) return { success: false, error: "সেশন সক্রিয় নয় (Session is inactive)" };
-    
-    // চেক কোড যদি এনাবেল থাকে — দুদিকেই normalize করা (trim + uppercase)
-    var storedCode = String(session.code || "").trim().toUpperCase();
-    var givenCode  = String(enteredCode || "").trim().toUpperCase();
-    if (session.codeEnabled && storedCode !== givenCode) {
-      return { success: false, error: "wrong_code" };
-    }
-    
-    // সেশনে ইউজার যুক্ত করা
-    var uids = session.participantUids || [];
-    if (uids.indexOf(userId) === -1) {
-      uids.push(userId);
-            updateRow("examSessions", sessionId, { participantUids: JSON.stringify(uids) });
-    }
-
-    var attendanceEntry = {
-      sessionId: sessionId,
-      studentId: userId,
-      studentName: studentName || "Student",
-      studentPhone: studentPhone || "0000000000",
-      joinedTime: new Date().toISOString()
-    };
-    saveRow("attendance", attendanceEntry);
-
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiSubmitExamResult(resultData) {
-  try {
-    var saved = saveRow("examResults", resultData);
-    return { success: true, data: saved };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiGetExamResults() {
-  try {
-    return { success: true, data: readSheet("examResults") };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiDeleteExamResult(resultId) {
-  try {
-    var success = deleteRow("examResults", resultId);
-    return { success: success };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiGetAttendance() {
-  try {
-    return { success: true, data: readSheet("attendance") };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiGetAnnouncement() {
-  try {
-    var props = PropertiesService.getScriptProperties();
-    var msg = props.getProperty("announcement") || "";
-    return { success: true, data: msg };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiSaveAnnouncement(message) {
-  try {
-    var props = PropertiesService.getScriptProperties();
-    props.setProperty("announcement", message || "");
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiGetSettings() {
-  try {
-    var props = PropertiesService.getScriptProperties();
-    var saved = props.getProperty("appSettings");
-    if (saved) {
-      return { success: true, data: JSON.parse(saved) };
-    }
-    return { success: true, data: { adminUpiId: "mondal.saikat185@okaxis", enablePaymentSystem: true } };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiSaveSettings(settings) {
-  try {
-    var props = PropertiesService.getScriptProperties();
-    props.setProperty("appSettings", JSON.stringify(settings));
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiVerifyGatewayPayment(paymentId, months, amount, studentId) {
-  try {
-    var props = PropertiesService.getScriptProperties();
-    var savedSettings = props.getProperty("appSettings");
-    var keyId = "";
-    var keySecret = "";
-    if (savedSettings) {
-      var parsed = JSON.parse(savedSettings);
-      keyId = parsed.razorpayKeyId || "";
-      keySecret = parsed.razorpayKeySecret || "";
-    }
-
-    // Default standard Sandbox key if admin has not configured their own keys
-    if (!keyId) {
-      keyId = "rzp_test_mX3qXFv3Xv9Xv9";
-    }
-
-    var isVerified = false;
-    if (keySecret) {
-      try {
-        var authString = keyId + ":" + keySecret;
-        var headers = {
-          "Authorization": "Basic " + Utilities.base64Encode(authString)
-        };
-        var options = {
-          "method": "get",
-          "headers": headers,
-          "muteHttpExceptions": true
-        };
-        var response = UrlFetchApp.fetch("https://api.razorpay.com/v1/payments/" + paymentId, options);
-        var responseCode = response.getResponseCode();
-        var responseBody = response.getContentText();
-        
-        if (responseCode === 200) {
-          var paymentData = JSON.parse(responseBody);
-          if (paymentData.status === 'captured' || paymentData.status === 'authorized') {
-            isVerified = true;
-          }
-        }
-      } catch (e) {
-        Logger.log("Razorpay fetch error: " + e.toString());
-      }
-    } else {
-      // Sandbox/Test mode fallback: if no keySecret is configured, approve the mock checkout instantly
-      isVerified = true;
-    }
-
-    if (!isVerified) {
-      return { success: false, error: "Razorpay verification failed (Payment not captured or unauthorized)" };
-    }
-
-    // 1. Create approved payment record in the sheet
-    var paymentRecord = {
-      id: "pay_" + Utilities.getUuid().substring(0, 8),
-      studentId: studentId,
-      month: months,
-      amount: Number(amount) || 0,
-      status: "approved",
-      transactionId: paymentId,
-      paidDate: new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    };
-    saveRow("payments", paymentRecord);
-
-    // 2. Fetch student details and decrement pendingMonths
-    var users = readSheet("users");
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (String(users[i].id) === String(studentId)) {
-        user = users[i];
-        break;
-      }
-    }
-
-    if (user) {
-      var count = months.split(',').length;
-      var currentPending = Number(user.pendingMonths) || 0;
-      var newPending = Math.max(0, currentPending - count);
-      
-      updateRow("users", studentId, {
-        paymentStatus: "approved",
-        pendingMonths: newPending,
-        updatedAt: new Date().toISOString()
-      });
-    }
-
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiUploadFileToDrive(base64Data, fileName, folderId) {
-  try {
-    var bytes = Utilities.base64Decode(base64Data);
-    var blob = Utilities.newBlob(bytes, MimeType.PDF, fileName);
-
-    var folder;
-    if (folderId) {
-      try {
-        folder = DriveApp.getFolderById(folderId);
-      } catch(e) {
-        folder = DriveApp.getRootFolder();
-      }
-    } else {
-      folder = DriveApp.getRootFolder();
-    }
-
-    var file = folder.createFile(blob);
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-
-    var fileId = file.getId();
-    var downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
-    var viewUrl = "https://drive.google.com/file/d/" + fileId + "/view";
-
-    return { success: true, fileId: fileId, downloadUrl: downloadUrl, viewUrl: viewUrl };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-// =========================================================================
-// API ENDPOINT FOR VERCEL (doPost)
-// =========================================================================
-function doPost(e) {
-  try {
-    if (!e || !e.postData || !e.postData.contents) {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'No data provided' }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    var requestData = JSON.parse(e.postData.contents);
-    var action = requestData.action;
-    var args = requestData.args || [];
-
-    if (!action || typeof this[action] !== 'function') {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Invalid action: ' + action }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // Dynamically call the requested function
-    var result = this[action].apply(this, args);
-
-    return ContentService.createTextOutput(JSON.stringify({ success: true, data: result }))
-      .setMimeType(ContentService.MimeType.JSON);
-
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-}
