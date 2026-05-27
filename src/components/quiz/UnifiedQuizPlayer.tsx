@@ -5,6 +5,22 @@ import { useAuth } from '../AuthProvider';
 import { api } from '../../lib/api';
 import { clearCache } from '../../lib/cache';
 
+// Helper function to format passages and cloze texts coherently
+export function formatPassageText(text: string): string[] {
+  if (!text) return [];
+  // Split by double newlines to detect paragraphs
+  const paragraphs = text.split(/\n\s*\n|\r\n\s*\r\n/);
+  return paragraphs
+    .map(p => {
+      // Replace single newlines or carriage returns with spaces to join split lines
+      let clean = p.replace(/[\r\n]+/g, ' ');
+      // Replace multiple spaces with a single space
+      clean = clean.replace(/\s+/g, ' ');
+      return clean.trim();
+    })
+    .filter(Boolean);
+}
+
 export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: Exam, onBack: () => void, isPreview?: boolean }) {
   const { user } = useAuth();
   
@@ -741,7 +757,13 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                           {reviewPassage && reviewPassage.trim() && (
                              <div className="bg-[#121214] border border-zinc-850 p-4 rounded-xl space-y-2 mb-3 max-h-60 overflow-y-auto">
                                 <span className="text-[9px] uppercase font-bold text-yellow-500 tracking-widest block mb-1">Passage / অনুচ্ছেদ</span>
-                                <p className="serif text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap text-justify">{reviewPassage}</p>
+                                 <div className="space-y-3">
+                                    {formatPassageText(reviewPassage).map((para, pIdx) => (
+                                       <p key={pIdx} className="serif text-xs text-zinc-300 leading-relaxed text-justify indent-6">
+                                          {para}
+                                       </p>
+                                    ))}
+                                 </div>
                              </div>
                           )}
 
@@ -900,7 +922,13 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           {passage && (
              <div className="lg:col-span-4 bg-[#1c1c1f] border border-zinc-800/80 p-6 rounded-2xl shadow-lg overflow-y-auto max-h-[250px] lg:max-h-[calc(100vh-160px)]">
                 <span className="text-[9px] uppercase tracking-widest text-[#eab308] font-black block mb-2">Comprehension Text</span>
-                <p className="serif text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap text-justify">{passage}</p>
+                 <div className="space-y-4">
+                    {formatPassageText(passage).map((para, pIdx) => (
+                       <p key={pIdx} className="serif text-sm text-zinc-300 leading-relaxed text-justify indent-6">
+                          {para}
+                       </p>
+                    ))}
+                 </div>
              </div>
           )}
 
