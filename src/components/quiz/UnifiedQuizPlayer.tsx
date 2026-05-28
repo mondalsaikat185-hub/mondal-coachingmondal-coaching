@@ -726,13 +726,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                     const reviewOpts = Array.isArray(reviewOptsRaw) ? reviewOptsRaw : [];
                     const reviewExpl = String((reviewLang === 'bn' && q?.explanation_bn) ? q.explanation_bn : (q?.explanation_en || q?.explanation || ''));
 
-                    // Check if a question-specific passage or global passage is present for comprehension/cloze tests
-                    const reviewPassage = q?.passage || q?.passage_en || q?.passage_bn || (
-                      (exam.examType?.toLowerCase().includes('comprehension') || 
-                       exam.examType?.toLowerCase().includes('cloze') || 
-                       q?.type === 'comprehension' || 
-                       q?.type === 'cloze') ? passage : ''
-                    );
+                    const reviewPassage = q?.passage || q?.passage_en || q?.passage_bn || passage || '';
 
                     const correctOptionText = reviewOpts[correctIdx] || '';
 
@@ -1005,7 +999,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                    <button 
                      onClick={prevQuestion} 
                      disabled={currentIdx === 0}
-                     className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs uppercase tracking-widest font-bold rounded-xl transition-all border-none cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                     className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs uppercase tracking-widest font-bold rounded-xl transition-all border border-red-400 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                    >
                       Previous
                    </button>
@@ -1021,13 +1015,13 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 <div className="flex flex-wrap gap-2">
                    <button 
                      onClick={nextAndReview} 
-                     className="px-4 py-2.5 bg-sky-950/40 border border-sky-900/50 hover:bg-sky-900/40 text-sky-400 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer"
+                     className="px-4 py-2.5 bg-zinc-900 border border-violet-400 hover:bg-zinc-800 text-violet-400 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer"
                    >
-                      Review & Next
+                      Next & Preview
                    </button>
                    <button 
                      onClick={saveAndNext} 
-                     className="px-6 py-2.5 bg-yellow-500 hover:bg-yellow-650 text-zinc-950 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border-none shadow-md"
+                     className="px-6 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-green-400 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border border-green-500 shadow-md"
                    >
                       {currentIdx === questions.length - 1 ? 'Submit' : 'Save & Next'}
                    </button>
@@ -1047,13 +1041,13 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                    
                    let stateClasses = "bg-[#111113] text-zinc-500 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
                    if (state === 'saved') {
-                     stateClasses = "bg-emerald-600 text-white border-emerald-700 font-bold";
+                     stateClasses = "bg-green-700 text-white border-green-800 font-bold";
                    } else if (state === 'skipped') {
-                     stateClasses = "bg-red-500 text-white border-red-600 font-bold";
+                     stateClasses = "bg-red-700 text-white border-red-800 font-bold";
                    } else if (state === 'review_unanswered') {
-                     stateClasses = "bg-orange-600 text-white border-orange-700 font-bold";
+                     stateClasses = "bg-orange-500 text-white border-orange-600 font-bold";
                    } else if (state === 'review_answered') {
-                     stateClasses = "bg-blue-600 text-white border-blue-700 font-bold";
+                     stateClasses = "bg-violet-700 text-white border-violet-800 font-bold";
                    }
 
                    const ringClass = isCurrent ? "ring-2 ring-offset-2 ring-offset-[#1c1c1f] ring-yellow-500 text-white scale-105 font-black" : "";
@@ -1074,10 +1068,10 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              <div className="space-y-2 text-[10px] text-zinc-400 pb-2">
                 <span className="block font-bold uppercase tracking-wider text-zinc-505">Legend Info</span>
                 <div className="grid grid-cols-2 gap-2">
-                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-600"></span><span>Saved</span></div>
-                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-500"></span><span>Skipped</span></div>
-                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-600"></span><span>Review</span></div>
-                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-600"></span><span>Ans & Rev</span></div>
+                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-green-700"></span><span>Saved</span></div>
+                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-700"></span><span>Skipped</span></div>
+                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-500"></span><span>Review</span></div>
+                   <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-violet-700"></span><span>Ans & Rev</span></div>
                    <div className="flex items-center gap-1.5 col-span-2"><span className="w-3 h-3 rounded-full bg-[#111113] border border-zinc-800"></span><span>Unvisited</span></div>
                 </div>
              </div>
@@ -1124,13 +1118,13 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 
                 let stateClasses = "bg-[#111113] text-zinc-500 border border-zinc-800 hover:border-zinc-700 hover:text-zinc-200";
                 if (state === 'saved') {
-                  stateClasses = "bg-emerald-600 text-white border-emerald-700 font-bold";
+                  stateClasses = "bg-green-700 text-white border-green-800 font-bold";
                 } else if (state === 'skipped') {
-                  stateClasses = "bg-red-500 text-white border-red-600 font-bold";
+                  stateClasses = "bg-red-700 text-white border-red-800 font-bold";
                 } else if (state === 'review_unanswered') {
-                  stateClasses = "bg-orange-600 text-white border-orange-700 font-bold";
+                  stateClasses = "bg-orange-500 text-white border-orange-600 font-bold";
                 } else if (state === 'review_answered') {
-                  stateClasses = "bg-blue-600 text-white border-blue-700 font-bold";
+                  stateClasses = "bg-violet-700 text-white border-violet-800 font-bold";
                 }
 
                 const ringClass = isCurrent ? "ring-2 ring-offset-2 ring-offset-[#1c1c1f] ring-yellow-500 text-white scale-105 font-black" : "";
@@ -1152,10 +1146,10 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           <div className="p-4 bg-zinc-950 border-t border-zinc-850 text-[10px] text-zinc-400 space-y-2">
              <span className="block font-bold tracking-wider uppercase text-zinc-505">Legend Info</span>
              <div className="grid grid-cols-2 gap-2">
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-emerald-600"></span><span>Saved</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-500"></span><span>Skipped</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-600"></span><span>Review</span></div>
-                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-blue-600"></span><span>Ans & Rev</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-green-700"></span><span>Saved</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-700"></span><span>Skipped</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-orange-500"></span><span>Review</span></div>
+                <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-violet-700"></span><span>Ans & Rev</span></div>
              </div>
           </div>
           <div className="p-4 bg-zinc-950 border-t border-zinc-850">
