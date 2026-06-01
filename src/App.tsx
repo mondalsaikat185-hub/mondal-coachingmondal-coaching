@@ -935,7 +935,10 @@ function TopNav() {
                 Cancel
               </button>
               <button
-                onClick={logout}
+                onClick={() => {
+                  logout();
+                  setShowLogoutConfirm(false);
+                }}
                 className="flex-1 bg-red-600 text-white font-black uppercase py-2 hover:-translate-y-0.5 transition-transform border-2 border-red-800 shadow-[2px_2px_0px_0px_rgba(153,27,27,1)]"
               >
                 Log out

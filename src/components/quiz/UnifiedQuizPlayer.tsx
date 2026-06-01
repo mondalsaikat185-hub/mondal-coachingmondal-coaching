@@ -362,6 +362,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     if (hasSubmittedRef.current) return;
     hasSubmittedRef.current = true;
 
+    setMobileDrawerOpen(false);
     setScreen('RESULT');
     clearQuizStorage();
     
