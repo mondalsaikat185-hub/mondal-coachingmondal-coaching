@@ -25,6 +25,8 @@ import {
   X,
   Bell,
   RefreshCw,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { api } from "./lib/api";
 import { safeToDate, formatDateOnlySafe } from "./lib/utils";
@@ -504,6 +506,7 @@ function Login() {
   const [showForgot, setShowForgot] = useState(false);
   const [showNewJoinerFlow, setShowNewJoinerFlow] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (setError) setError(null);
@@ -582,13 +585,22 @@ function Login() {
                 Forgot Passcode?
               </button>
             </div>
-            <input
-              type="password" required
-              placeholder="����"
-              value={passcode}
-              onChange={(e) => setPasscode(e.target.value)}
-              className="w-full border-2 border-zinc-300 dark:border-zinc-700 rounded-xl p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-base focus:outline-none focus:border-zinc-900 dark:focus:border-zinc-100 transition-colors"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"} required
+                placeholder="••••"
+                value={passcode}
+                onChange={(e) => setPasscode(e.target.value)}
+                className="w-full border-2 border-zinc-300 dark:border-zinc-700 rounded-xl p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-white font-mono text-base focus:outline-none focus:border-zinc-900 dark:focus:border-zinc-100 transition-colors pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 focus:outline-none"
+              >
+                {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
           </div>
 
           <button
