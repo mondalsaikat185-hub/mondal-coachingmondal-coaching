@@ -201,6 +201,7 @@ export function AdminSettings() {
         <h3 className="font-black uppercase border-b-2 border-zinc-200 dark:border-zinc-800 pb-2 text-yellow-600 dark:text-yellow-400">Database Repair & ID Alignment Tools</h3>
         <p className="text-xs font-bold text-zinc-500 mt-2 mb-4">
           If student names, emails, or payment details are showing incorrectly (clashed/merged due to duplicate historic IDs), run this tool to align all student IDs to be unique and update their references.
+          <span className="block mt-2 text-red-600 dark:text-red-400 font-extrabold uppercase">⚠️ গুরুত্বপূর্ণ সতর্কতা: আইডি এলাইনমেন্ট সফল হওয়ার পর সকল স্টুডেন্টদের তাদের অ্যাপ থেকে Logout করে আবার Login করতে হবে, অন্যথায় ব্রাউজারে থাকা পুরনো সেশন আইডির কারণে পেমেন্ট ও পরীক্ষার তথ্য ভুল দেখাতে পারে।</span>
         </p>
 
         <button

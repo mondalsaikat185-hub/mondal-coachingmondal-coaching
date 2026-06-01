@@ -335,7 +335,12 @@ export function AdminStudents() {
     if (!confirmDeleteStudentId) return;
     const uid = confirmDeleteStudentId;
     try {
-      await api.deleteUser(uid);
+      const success = await api.deleteUser(uid);
+      if (success === false || success === null || success === undefined) {
+        alert("ডিলিট হয়নি! Student Database-এ খুঁজে পাওয়া যায়নি। পেজ Refresh করুন।");
+        setConfirmDeleteStudentId(null);
+        return;
+      }
       globalStudentsCache = null;
       setStudents(students.filter(s => getStudentId(s) !== uid));
     } catch (error) {

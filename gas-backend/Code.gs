@@ -118,7 +118,7 @@ function seedAdminIfNeeded() {
     
     // Check if headers exist, if not, write them
     if (lastRow === 0) {
-      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason"];
+      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason"];
       sheet.appendRow(headers);
     }
     
@@ -203,7 +203,7 @@ function ensureSheetHeaders(sheetName, requiredHeaders) {
 function readSheet(sheetName) {
   if (sheetName === "users") {
     seedAdminIfNeeded();
-    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason"]);
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason"]);
   } else if (sheetName === "payments") {
     ensureSheetHeaders("payments", ["id", "studentId", "month", "amount", "status", "transactionId", "paidDate", "proofImage", "paymentMode", "remarks", "createdAt"]);
   }
@@ -474,7 +474,7 @@ function apiHealStudentIds() {
       }
 
       if (needsNewId) {
-        var newId = "id_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
+        var newId = Utilities.getUuid();
         if (oldId && oldId !== "" && oldId !== "undefined" && oldId !== "null") {
           idMap[oldId] = newId;
         }
@@ -695,6 +695,7 @@ function apiUpdateUserStatus(userId, status, rejectReason) {
     }
     if (rejectReason) {
       updates.reapplyReason = rejectReason;
+      updates.rejectReason = rejectReason;
     }
     var updated = updateRow("users", userId, updates);
     return { success: true, data: updated };
