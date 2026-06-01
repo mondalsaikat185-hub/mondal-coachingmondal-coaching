@@ -38,6 +38,7 @@ export interface Batch {
   id: string;
   name: string;
   assignedItemsMap: Record<string, string>; // itemId -> assignedAtISO
+  scheduledStartTimeMap?: Record<string, string>; // itemId -> scheduledStartTimeISO
   createdAt: string;
 }
 
@@ -645,16 +646,25 @@ export const api = {
     }
   },
 
-  shareLibraryItem: async (itemId: string, batchIdsMap: Record<string, boolean>): Promise<boolean> => {
+  shareLibraryItem: async (itemId: string, batchIdsMap: Record<string, boolean>, scheduledStartTimeMap?: Record<string, string>): Promise<boolean> => {
     if (USE_REAL_API) {
-      return runGasMethod<boolean>("apiShareLibraryItem", itemId, batchIdsMap);
+      return runGasMethod<boolean>("apiShareLibraryItem", itemId, batchIdsMap, scheduledStartTimeMap || {});
     } else {
       const db = getMockDB();
       db.batches.forEach(b => {
+        if (!b.scheduledStartTimeMap) {
+          b.scheduledStartTimeMap = {};
+        }
         if (batchIdsMap[b.id]) {
           b.assignedItemsMap[itemId] = new Date().toISOString();
+          if (scheduledStartTimeMap && scheduledStartTimeMap[b.id]) {
+            b.scheduledStartTimeMap[itemId] = scheduledStartTimeMap[b.id];
+          } else {
+            delete b.scheduledStartTimeMap[itemId];
+          }
         } else {
           delete b.assignedItemsMap[itemId];
+          delete b.scheduledStartTimeMap[itemId];
         }
       });
       saveMockDB(db);

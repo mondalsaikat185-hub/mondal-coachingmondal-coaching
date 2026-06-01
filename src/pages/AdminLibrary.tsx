@@ -27,6 +27,21 @@ export interface LibraryItem {
   chunkCount?: number;
 }
 
+function formatToDatetimeLocal(dateStr: string | undefined): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const year = d.getFullYear();
+  const month = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
 export function AdminLibrary() {
   const { user } = useAuth();
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -606,7 +621,7 @@ export function AdminLibrary() {
             id: b.id + "_" + item.id,
             libraryItemId: item.id,
             batchId: b.id,
-            scheduledStartTime: b.assignedItemsMap[item.id]
+            scheduledStartTime: b.scheduledStartTimeMap?.[item.id] || ''
          }));
          
          setItemAssignments(alreadyAssigned);
@@ -647,11 +662,22 @@ export function AdminLibrary() {
         setSubmitting(true);
         
         const batchIdsMap: Record<string, boolean> = {};
+        const scheduledStartTimeMap: Record<string, string> = {};
+        
         batches.forEach(b => {
-           batchIdsMap[b.id] = currentSharedBatchIds.includes(b.id);
+           const isShared = currentSharedBatchIds.includes(b.id);
+           batchIdsMap[b.id] = isShared;
+           
+           if (isShared && shareBatchSettings[b.id]?.scheduledStartTime) {
+              const localTimeStr = shareBatchSettings[b.id].scheduledStartTime;
+              if (localTimeStr) {
+                 // Convert the local picker time back to ISO string for storage
+                 scheduledStartTimeMap[b.id] = new Date(localTimeStr).toISOString();
+              }
+           }
         });
 
-        await api.shareLibraryItem(selectedItem.id, batchIdsMap);
+        await api.shareLibraryItem(selectedItem.id, batchIdsMap, scheduledStartTimeMap);
         await fetchBatches();
 
         setIsShareModalOpen(false);
@@ -1155,7 +1181,7 @@ export function AdminLibrary() {
                               <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Scheduled Start Time</label>
                               <input 
                                  type="datetime-local" 
-                                 value={shareBatchSettings[b.id]?.scheduledStartTime || ''} 
+                                 value={formatToDatetimeLocal(shareBatchSettings[b.id]?.scheduledStartTime) || ''} 
                                  onChange={e => updateShareSetting(b.id, e.target.value)} 
                                  className="w-full text-xs p-1 border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900"
                               />

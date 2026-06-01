@@ -10,11 +10,80 @@ import { safeToDate } from '../lib/utils';
 const ORACLE_SERVER_URL = 'https://saikat-tuition.duckdns.org';
 const ORACLE_API_KEY = import.meta.env.VITE_ORACLE_API_KEY || 'tuition-secret-2026-change-this';
 
+function CountdownTimer({ targetDate, onComplete }: { targetDate: Date; onComplete: () => void }) {
+  const [countdown, setCountdown] = useState('');
+  
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      const diff = targetDate.getTime() - now.getTime();
+      
+      if (diff <= 0) {
+        setCountdown('');
+        onComplete();
+        return;
+      }
+      
+      const hours = Math.floor(diff / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      
+      let str = '';
+      if (hours > 0) {
+        str += `${hours} ঘণ্টা `;
+      }
+      if (minutes > 0 || hours > 0) {
+        str += `${minutes} মিনিট `;
+      }
+      str += `${seconds} সেকেন্ড`;
+      
+      setCountdown(str);
+    };
+    
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [targetDate, onComplete]);
+
+  return (
+    <div className="mb-6 bg-zinc-50 border-4 border-black p-4 text-center">
+      <p className="text-xs font-bold text-zinc-500 uppercase mb-1">পরীক্ষা শুরুর সময় (Starts At):</p>
+      <p className="text-lg font-black text-black">
+        {targetDate.toLocaleString('bn-BD', {
+           weekday: 'long',
+           year: 'numeric',
+           month: 'long',
+           day: 'numeric',
+           hour: 'numeric',
+           minute: 'numeric',
+           hour12: true
+        })}
+      </p>
+      <p className="text-xs font-bold text-zinc-500 mt-2">
+        ({targetDate.toLocaleString('en-US', {
+           weekday: 'short',
+           month: 'short',
+           day: 'numeric',
+           hour: 'numeric',
+           minute: 'numeric',
+           hour12: true
+        })})
+      </p>
+      <hr className="my-3 border-zinc-300" />
+      <p className="text-xs font-bold text-zinc-500 uppercase mb-1">অবশিষ্ট সময় (Remaining):</p>
+      <p className="text-2xl font-black text-emerald-600 animate-pulse">
+        {countdown || 'লোড হচ্ছে...'}
+      </p>
+    </div>
+  );
+}
+
 export function StudentLibrary() {
   const { user } = useAuth();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [allItems, setAllItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [studentBatch, setStudentBatch] = useState<any>(null);
   
   // Navigation
   const [searchParams, setSearchParams] = useSearchParams();
@@ -72,6 +141,7 @@ export function StudentLibrary() {
         setLoading(false);
         return;
       }
+      setStudentBatch(studentBatch);
 
       // 2. Get assigned items mapping from batch
       const assignedItemsMap = studentBatch.assignedItemsMap || {};
@@ -426,6 +496,16 @@ export function StudentLibrary() {
             return;
          }
 
+         // Check for scheduled opening time lock (Library Exam scheduled access restriction)
+         const scheduledTimeStr = studentBatch?.scheduledStartTimeMap?.[item.id];
+         if (scheduledTimeStr) {
+            const scheduledTime = new Date(scheduledTimeStr);
+            if (scheduledTime.getTime() > Date.now()) {
+               // Exam is locked! Prevent entrance and show lock modal
+               return;
+            }
+         }
+
          // check sessionStorage cache
          const alreadyJoinedKey = `joined_exam_${item.id}_${(user as any).batchId}`;
          const alreadyJoined = sessionStorage.getItem(alreadyJoinedKey);
@@ -666,6 +746,43 @@ export function StudentLibrary() {
            </div>
          );
       }
+
+      // Check scheduled opening time lock in render path (to secure manual deep links or refresh)
+      const scheduledTimeStr = studentBatch?.scheduledStartTimeMap?.[previewItem.id];
+      if (scheduledTimeStr) {
+         const scheduledTime = new Date(scheduledTimeStr);
+         if (scheduledTime.getTime() > Date.now()) {
+            return (
+              <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+                <div className="bg-white border-4 border-black shadow-[8px_8px_0px_black] p-8 max-w-sm w-full text-center">
+                  <div className="w-16 h-16 bg-red-100 border-4 border-black rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Clock className="w-8 h-8 text-black animate-pulse" />
+                  </div>
+                  <h2 className="text-xl font-black mb-1 text-black">{previewItem.title}</h2>
+                  <p className="text-sm font-bold text-red-600 uppercase tracking-wider mb-4">
+                    🔒 পরীক্ষাটি লক করা আছে (Locked)
+                  </p>
+                  
+                  <CountdownTimer 
+                     targetDate={scheduledTime} 
+                     onComplete={() => {
+                        // Force state refresh
+                        setPreviewItem(previewItem);
+                     }} 
+                  />
+
+                  <button
+                    onClick={() => setPreviewItem(null)}
+                    className="w-full py-3 bg-yellow-300 border-4 border-black font-black text-black shadow-[4px_4px_0px_black] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+                  >
+                    ফিরে যান (Go Back)
+                  </button>
+                </div>
+              </div>
+            );
+         }
+      }
+
       return <UnifiedQuizPlayer exam={previewItem as any} onBack={() => setPreviewItem(null)} />;
   }
 
@@ -852,7 +969,7 @@ export function StudentLibrary() {
                      ))}
                      
                      {files.map((item, index) => (
-                        <FileCard key={item.id} item={item} onPreview={() => handleItemClick(item)} formatDate={formatDate} onDownloadChunked={() => handleDownloadChunked(item)} onDownloadUrl={() => handleDownloadUrl(item)} downloadingId={downloadingId} showPath={!!searchQuery} items={items} />
+                        <FileCard key={item.id} item={item} onPreview={() => handleItemClick(item)} formatDate={formatDate} onDownloadChunked={() => handleDownloadChunked(item)} onDownloadUrl={() => handleDownloadUrl(item)} downloadingId={downloadingId} showPath={!!searchQuery} items={items} scheduledStartTimeMap={studentBatch?.scheduledStartTimeMap} />
                      ))}
                   </>
               )}
@@ -885,7 +1002,7 @@ export function StudentLibrary() {
                         <h3 className="font-black text-xl uppercase mb-4 text-zinc-900 dark:text-zinc-100 border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">{dateLabel}</h3>
                         <div className="grid grid-cols-1 gap-4">
                            {itemsInDate.map((item: any, idx: number) => (
-                              <FileCard key={item.id} item={item} onPreview={() => handleItemClick(item)} formatDate={formatDate} showPath items={items} onDownloadChunked={() => handleDownloadChunked(item)} onDownloadUrl={() => handleDownloadUrl(item)} downloadingId={downloadingId} />
+                              <FileCard key={item.id} item={item} onPreview={() => handleItemClick(item)} formatDate={formatDate} showPath items={items} onDownloadChunked={() => handleDownloadChunked(item)} onDownloadUrl={() => handleDownloadUrl(item)} downloadingId={downloadingId} scheduledStartTimeMap={studentBatch?.scheduledStartTimeMap} />
                            ))}
                         </div>
                      </div>
@@ -950,7 +1067,7 @@ export function StudentLibrary() {
   );
 }
 
-function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChunked, onDownloadUrl, downloadingId }: { key?: React.Key, item: LibraryItem, onPreview: () => void, formatDate: (ts: any) => string, showPath?: boolean, items?: LibraryItem[], onDownloadChunked?: () => void, onDownloadUrl?: () => void, downloadingId?: string | null }) {
+function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChunked, onDownloadUrl, downloadingId, scheduledStartTimeMap }: { key?: React.Key, item: LibraryItem, onPreview: () => void, formatDate: (ts: any) => string, showPath?: boolean, items?: LibraryItem[], onDownloadChunked?: () => void, onDownloadUrl?: () => void, downloadingId?: string | null, scheduledStartTimeMap?: Record<string, string> }) {
    const renderPath = () => {
       if (!showPath || !items || !item.parentId) return null;
       const getPathStr = (id: string, visited: Set<string> = new Set()): string => {
@@ -965,20 +1082,35 @@ function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChun
       return <div className="text-[10px] uppercase font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 mt-2 inline-block">📁 {pstr}</div>;
    };
 
+   const scheduledTimeStr = scheduledStartTimeMap?.[item.id];
+   const scheduledTime = scheduledTimeStr ? new Date(scheduledTimeStr) : null;
+   const isLocked = item.type === 'exam' && scheduledTime && scheduledTime.getTime() > Date.now();
+
    return (
       <div className={`bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`}>
          <div>
             <div className="flex items-center gap-2 mb-1">
-              <h4 className="font-black text-lg text-zinc-900 dark:text-zinc-100">{item.title}</h4>
-              <span className="text-[10px] bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 font-bold uppercase text-zinc-700 dark:text-zinc-300">
-                {item.type === 'exam' ? item.examType : 'PDF Note'}
-              </span>
+               <h4 className="font-black text-lg text-zinc-900 dark:text-zinc-100">{item.title}</h4>
+               <span className={`text-[10px] px-2 py-0.5 font-bold uppercase ${isLocked ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'}`}>
+                 {isLocked ? '🔒 Locked' : item.type === 'exam' ? item.examType : 'PDF Note'}
+               </span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-1">
                <span className="text-xs text-zinc-500 font-bold flex items-center gap-1">
                  <Clock className="w-3.5 h-3.5" /> 
                  {formatDate(item.createdAt)}
                </span>
+               {isLocked && scheduledTime && (
+                  <span className="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
+                    🕒 Opens: {scheduledTime.toLocaleString('en-IN', {
+                       month: 'short',
+                       day: 'numeric',
+                       hour: 'numeric',
+                       minute: 'numeric',
+                       hour12: true
+                    })}
+                  </span>
+               )}
             </div>
             {renderPath()}
          </div>
@@ -1004,18 +1136,24 @@ function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChun
            {item.type === 'exam' && item.examType === 'Online Link' && item.contentUrl ? (
               <button 
                  onClick={() => {
-                    window.open(item.contentUrl, '_blank');
+                    if (!isLocked) {
+                       window.open(item.contentUrl, '_blank');
+                    } else {
+                       onPreview();
+                    }
                  }}
-                 className='flex items-center gap-1 bg-blue-100 text-blue-900 px-4 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold text-xs hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] whitespace-nowrap'
+                 className={`flex items-center gap-1 px-4 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold text-xs hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] whitespace-nowrap ${isLocked ? 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-500' : 'bg-blue-100 text-blue-900'}`}
               >
-                 <BookOpen className="w-3.5 h-3.5" /> Take Exam
+                 {isLocked ? '🔒 Locked' : <BookOpen className="w-3.5 h-3.5" />} 
+                 {isLocked ? 'Locked' : 'Take Exam'}
               </button>
            ) : item.type === 'exam' ? (
               <button
                 onClick={onPreview}
-                className='flex items-center gap-1 bg-blue-100 text-blue-900 hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] px-4 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold text-xs whitespace-nowrap'
+                className={`flex items-center gap-1 hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] px-4 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold text-xs whitespace-nowrap ${isLocked ? 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-500' : 'bg-blue-100 text-blue-900'}`}
               >
-                 <BookOpen className="w-3.5 h-3.5" /> Take Exam
+                 {isLocked ? '🔒 Locked' : <BookOpen className="w-3.5 h-3.5" />} 
+                 {isLocked ? 'Locked' : 'Take Exam'}
               </button>
            ) : null}
          </div>

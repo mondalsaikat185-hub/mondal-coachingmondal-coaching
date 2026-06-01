@@ -926,8 +926,9 @@ function apiLoginUser(phone, passcode) {
 
 function apiGetBatches() {
   try {
+    ensureSheetHeaders("batches", ["id", "name", "assignedItemsMap", "scheduledStartTimeMap", "createdAt"]);
     var list = readSheet("batches");
-    // αª£αºçαª╕αª¿ αª╕αºìαªƒαºìαª░αª┐αªé αªíαª┐αªòαºïαªí αªòαª░αª╛
+    // decode JSON strings
     list.forEach(function(item) {
       if (item.assignedItemsMap) {
         try {
@@ -937,6 +938,16 @@ function apiGetBatches() {
         }
       } else {
         item.assignedItemsMap = {};
+      }
+      
+      if (item.scheduledStartTimeMap) {
+        try {
+          item.scheduledStartTimeMap = JSON.parse(item.scheduledStartTimeMap);
+        } catch(e) {
+          item.scheduledStartTimeMap = {};
+        }
+      } else {
+        item.scheduledStartTimeMap = {};
       }
     });
     return { success: true, data: list };
@@ -1030,15 +1041,29 @@ function apiSaveLibraryItem(itemData) {
 
 function apiDeleteLibraryItem(itemId) {
   try {
+    ensureSheetHeaders("batches", ["id", "name", "assignedItemsMap", "scheduledStartTimeMap", "createdAt"]);
     var success = deleteRow("library", itemId);
     // If shared to batches, clean it up
     var batches = readSheet("batches");
     batches.forEach(function(b) {
       var assigned = {};
+      var scheduled = {};
       try { assigned = JSON.parse(b.assignedItemsMap || "{}"); } catch(e) {}
+      try { scheduled = JSON.parse(b.scheduledStartTimeMap || "{}"); } catch(e) {}
+      var changed = false;
       if (assigned[itemId]) {
         delete assigned[itemId];
-        updateRow("batches", b.id, { assignedItemsMap: JSON.stringify(assigned) });
+        changed = true;
+      }
+      if (scheduled[itemId]) {
+        delete scheduled[itemId];
+        changed = true;
+      }
+      if (changed) {
+        updateRow("batches", b.id, { 
+          assignedItemsMap: JSON.stringify(assigned),
+          scheduledStartTimeMap: JSON.stringify(scheduled)
+        });
       }
     });
     return { success: success };
@@ -1080,6 +1105,7 @@ function apiDeleteMultipleLibraryItems(itemIds) {
     }
     
     // Clean up batch assignments in one go
+    ensureSheetHeaders("batches", ["id", "name", "assignedItemsMap", "scheduledStartTimeMap", "createdAt"]);
     var batchSheet = getSheet("batches");
     var batchLastRow = batchSheet.getLastRow();
     if (batchLastRow >= 2) {
@@ -1089,26 +1115,34 @@ function apiDeleteMultipleLibraryItems(itemIds) {
       
       var bIdColIdx = batchHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "id"; });
       var assignedColIdx = batchHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "assigneditemsmap"; });
+      var scheduledColIdx = batchHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "scheduledstarttimemap"; });
       
-      if (bIdColIdx !== -1 && assignedColIdx !== -1) {
+      if (bIdColIdx !== -1 && assignedColIdx !== -1 && scheduledColIdx !== -1) {
         var batchDirty = false;
         for (var b = 0; b < batchValues.length; b++) {
           var bId = String(batchValues[b][bIdColIdx]);
           var assignedStr = batchValues[b][assignedColIdx];
+          var scheduledStr = batchValues[b][scheduledColIdx];
           var assigned = {};
+          var scheduled = {};
           try { assigned = JSON.parse(assignedStr || "{}"); } catch(e) {}
+          try { scheduled = JSON.parse(scheduledStr || "{}"); } catch(e) {}
           
-          var originalStr = JSON.stringify(assigned);
           var itemCleaned = false;
           for (var i = 0; i < itemIds.length; i++) {
             if (assigned[itemIds[i]]) {
               delete assigned[itemIds[i]];
               itemCleaned = true;
             }
+            if (scheduled[itemIds[i]]) {
+              delete scheduled[itemIds[i]];
+              itemCleaned = true;
+            }
           }
           
           if (itemCleaned) {
             batchSheet.getRange(b + 2, assignedColIdx + 1).setValue(JSON.stringify(assigned));
+            batchSheet.getRange(b + 2, scheduledColIdx + 1).setValue(JSON.stringify(scheduled));
             batchDirty = true;
           }
         }
@@ -1124,8 +1158,11 @@ function apiDeleteMultipleLibraryItems(itemIds) {
   }
 }
 
-function apiShareLibraryItem(itemId, batchIdsMap) {
+function apiShareLibraryItem(itemId, batchIdsMap, scheduledStartTimeMap) {
   try {
+    ensureSheetHeaders("batches", ["id", "name", "assignedItemsMap", "scheduledStartTimeMap", "createdAt"]);
+    scheduledStartTimeMap = scheduledStartTimeMap || {};
+    
     var sheet = getSheet("batches");
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return { success: true };
@@ -1136,31 +1173,47 @@ function apiShareLibraryItem(itemId, batchIdsMap) {
     
     var idColIdx = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "id"; });
     var assignedColIdx = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "assigneditemsmap"; });
+    var scheduledColIdx = headers.findIndex(function(h) { return String(h).trim().toLowerCase() === "scheduledstarttimemap"; });
     
-    if (idColIdx === -1 || assignedColIdx === -1) return { success: false, error: "Missing columns" };
+    if (idColIdx === -1 || assignedColIdx === -1 || scheduledColIdx === -1) return { success: false, error: "Missing columns" };
     
     var dirty = false;
     
     for (var r = 0; r < values.length; r++) {
       var bId = String(values[r][idColIdx]);
       var assignedStr = values[r][assignedColIdx];
+      var scheduledStr = values[r][scheduledColIdx];
+      
       var assigned = {};
       try { assigned = JSON.parse(assignedStr || "{}"); } catch(e) {}
       
-      var originalStr = JSON.stringify(assigned);
+      var scheduled = {};
+      try { scheduled = JSON.parse(scheduledStr || "{}"); } catch(e) {}
+      
+      var originalAssignedStr = JSON.stringify(assigned);
+      var originalScheduledStr = JSON.stringify(scheduled);
       
       if (batchIdsMap.hasOwnProperty(bId)) {
         if (batchIdsMap[bId] === true) {
           if (!assigned[itemId]) {
             assigned[itemId] = new Date().toISOString();
           }
+          if (scheduledStartTimeMap && scheduledStartTimeMap[bId]) {
+            scheduled[itemId] = scheduledStartTimeMap[bId];
+          } else {
+            delete scheduled[itemId];
+          }
         } else {
           delete assigned[itemId];
+          delete scheduled[itemId];
         }
         
-        var newStr = JSON.stringify(assigned);
-        if (originalStr !== newStr) {
-          values[r][assignedColIdx] = newStr;
+        var newAssignedStr = JSON.stringify(assigned);
+        var newScheduledStr = JSON.stringify(scheduled);
+        
+        if (originalAssignedStr !== newAssignedStr || originalScheduledStr !== newScheduledStr) {
+          values[r][assignedColIdx] = newAssignedStr;
+          values[r][scheduledColIdx] = newScheduledStr;
           dirty = true;
         }
       }

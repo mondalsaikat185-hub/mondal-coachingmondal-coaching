@@ -1,0 +1,399 @@
+================================================================================
+      Scheduled Exam Feature — Deep Analysis Report
+      Gemini-র Plan কি কাজ করবে? কোথায় সমস্যা? কী করা উচিত?
+      তারিখ: ১ জুন ২০২৬ | প্রস্তুতকারী: Claude (Anthropic)
+================================================================================
+
+সংক্ষিপ্ত উত্তর:
+─────────────────
+Gemini-র plan-এর CONCEPT সঠিক। কিন্তু data model implementation-এ
+একটি critical ভুল আছে যা সরাসরি বিদ্যমান সব batch assignment ভেঙে দেবে।
+Feature-টি আমার নিচের পরিমার্জিত plan অনুযায়ী করলে নিরাপদ ও bug-free হবে।
+
+================================================================================
+               ভাগ ১: বর্তমান Data Architecture (বোঝা দরকার)
+================================================================================
+
+Google Sheet-এ "batches" শিটে একটি কলাম আছে: `assignedItemsMap`
+
+এটি একটি JSON string হিসেবে store হয়:
+    { "itemId_abc": "2025-05-01T10:00:00Z", "itemId_xyz": "2025-05-15T08:00:00Z" }
+    key   = Library item-এর id
+    value = কখন শেয়ার করা হয়েছে (assigned timestamp, ISO string)
+
+GAS `apiShareLibraryItem(itemId, batchIdsMap)` ফাংশনটি:
+    - batchIdsMap[batchId] === true  → assigned[itemId] = new Date().toISOString()
+    - batchIdsMap[batchId] === false → delete assigned[itemId]
+
+Student Library পড়ার সময়:
+    const assignedItemsMap = studentBatch.assignedItemsMap || {};
+    const assignedIds = Object.keys(assignedItemsMap); // শুধু keys নেয়, value ব্যবহার হয় না
+
+মূল পয়েন্ট: value হিসেবে যে ISO string আছে, সেটা StudentLibrary.tsx-এ
+আদৌ ব্যবহার হয় না — শুধু key (itemId) গুলো দরকার।
+
+================================================================================
+               ভাগ ২: Gemini-র Plan-এর কোথায় সমস্যা আছে
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+সমস্যা #1 ⚠️ [CRITICAL] — Data Format Breaking Change
+────────────────────────────────────────────────────────────────────────────────
+Gemini বলেছে: "assignedItemsMap-এর ভেতর scheduled time store করা হবে।"
+
+এর মানে হলো value-টি পরিবর্তন করা:
+    BEFORE: "itemId_abc" → "2025-05-01T10:00:00Z"   (simple string)
+    AFTER:  "itemId_abc" → { assignedAt: "...", scheduledStartTime: "..." }  (object)
+
+    অথবা: "itemId_abc" → "2025-06-14T08:00:00Z||2025-05-01T10:00:00Z"  (concatenated)
+
+এই পরিবর্তনে কী ভাঙবে?
+
+Google Sheet-এ এখন যে batches আছে, তাদের `assignedItemsMap` cell-এ পুরনো
+format-এর data আছে (simple string value)। নতুন code যদি object/JSON
+format expect করে কিন্তু পুরনো string পায়, তখন:
+
+    var scheduled = assigned[itemId].scheduledStartTime;
+    // ❌ TypeError: Cannot read property 'scheduledStartTime' of string
+
+ফলে সব batch-এর সব পুরনো assignment crash করবে।
+StudentLibrary সম্পূর্ণ blank হয়ে যাবে।
+সব ছাত্র-ছাত্রী কিছুই দেখতে পাবে না।
+
+Gemini পুরনো data handle করার কোনো mention করেনি। এটাই সবচেয়ে বড় ঝুঁকি।
+
+────────────────────────────────────────────────────────────────────────────────
+সমস্যা #2 ⚠️ [High] — GAS Header Missing
+────────────────────────────────────────────────────────────────────────────────
+Gemini বলেছে GAS-এ `apiShareLibraryItem` update করা হবে।
+কিন্তু `batches` sheet-এর header array-তে নতুন column যোগ করার কথা
+কোথাও উল্লেখ নেই।
+
+যদি `scheduledStartTimeMap` নামে নতুন column store করতে হয়, তাহলে
+GAS-এর ensureSheetHeaders()-এ এই column name যোগ করতে হবে।
+নাহলে `updateRow()` এই field আপডেট করতে পারবে না।
+
+────────────────────────────────────────────────────────────────────────────────
+সমস্যা #3 ℹ️ [Medium] — URL Bypass "সমস্যা" এই App-এ নেই
+────────────────────────────────────────────────────────────────────────────────
+Gemini বলেছে: "URL-এ exam ID বসিয়ে bypass করা যাবে না।"
+
+কিন্তু এই application-এ exam URL-based route নেই। Exam খোলে
+`setPreviewItem(item)` React state দিয়ে — URL পরিবর্তন হয় না।
+তাই এই "bypass" আসলে এই app-এ possible-ই নয়।
+
+এটা Gemini-র ভুল assumption। এই অংশ implement করতে গেলে সময় নষ্ট।
+যদি করতেই হয়, React component-এর lock check যথেষ্ট।
+
+────────────────────────────────────────────────────────────────────────────────
+সমস্যা #4 ℹ️ [Low] — Countdown Timer এর setInterval cleanup
+────────────────────────────────────────────────────────────────────────────────
+Gemini countdown timer-এর কথা বলেছে। ঠিকঠাকভাবে করতে হলে:
+
+    useEffect(() => {
+      const interval = setInterval(() => {
+        // check করুন new Date() >= scheduledTime
+      }, 1000);
+      return () => clearInterval(interval); // ← এটা MUST থাকতে হবে
+    }, []);
+
+যদি clearInterval না থাকে:
+- Component unmount হওয়ার পরও interval চলতে থাকবে
+- Memory leak হবে
+- Console-এ "Can't update state on unmounted component" error আসবে
+
+Gemini এটা mention করেনি। Implement করার সময় মাথায় রাখতে হবে।
+
+────────────────────────────────────────────────────────────────────────────────
+সমস্যা #5 ℹ️ [Low] — Live Exam vs Library Exam confusion
+────────────────────────────────────────────────────────────────────────────────
+এই app-এ দুই ধরনের exam আছে:
+
+Type 1 (Live Exam): Admin 5-char code দিয়ে session শুরু করে।
+                   Student code দিয়ে join করে। Real-time attendance।
+                   এর নিজস্ব time control আছে (session active/inactive)।
+
+Type 2 (Library Exam): Student নিজে যখন খুশি library থেকে খুলে দেয়।
+                      এটাই scheduled lock দরকার।
+
+Scheduled time lock শুধু Type 2-এ apply করতে হবে।
+Type 1 Live Exam-এ এই lock apply করলে admin-এর live session
+control-এর সাথে conflict হবে।
+
+StudentLibrary.tsx-এ exam click করলে প্রথমে live session check হয়,
+তারপর quiz player খোলে। Scheduled lock টি live session check-এর
+আগে দিতে হবে।
+
+================================================================================
+               ভাগ ৩: নিরাপদ Implementation Plan (আমার প্রস্তাব)
+================================================================================
+
+মূল নীতি: assignedItemsMap-এ হাত দেওয়া যাবে না।
+           একটি সম্পূর্ণ নতুন field ব্যবহার করতে হবে।
+
+────────────────────────────────────────────────────────────────────────────────
+Step 1: Batch Interface-এ নতুন field (src/lib/api.ts)
+────────────────────────────────────────────────────────────────────────────────
+    export interface Batch {
+      id: string;
+      name: string;
+      assignedItemsMap: Record<string, string>;    // ← একটুও পরিবর্তন নয়
+      scheduledStartTimeMap: Record<string, string>; // ← নতুন field যোগ
+      createdAt: string;
+    }
+
+    scheduledStartTimeMap:
+      key   = itemId (পরীক্ষার id)
+      value = ISO string (যেমন "2025-06-14T08:00:00Z")
+              অর্থাৎ এই batch-এর জন্য এই exam কখন open হবে
+
+    কোনো scheduled time না থাকলে key-ই থাকবে না।
+    তখন exam immediately accessible।
+
+────────────────────────────────────────────────────────────────────────────────
+Step 2: GAS Backend (gas-backend/Code.gs)
+────────────────────────────────────────────────────────────────────────────────
+
+2a. batches sheet header-এ নতুন column যোগ করুন:
+    ensureSheetHeaders("batches", [
+      "id", "name", "assignedItemsMap", "scheduledStartTimeMap", "createdAt"
+    ]);
+
+2b. apiGetBatches()-এ parse করুন:
+    if (item.scheduledStartTimeMap) {
+      try { item.scheduledStartTimeMap = JSON.parse(item.scheduledStartTimeMap); }
+      catch(e) { item.scheduledStartTimeMap = {}; }
+    } else {
+      item.scheduledStartTimeMap = {};
+    }
+
+2c. apiShareLibraryItem() function signature পরিবর্তন:
+    BEFORE: function apiShareLibraryItem(itemId, batchIdsMap)
+    AFTER:  function apiShareLibraryItem(itemId, batchIdsMap, scheduledTimeMap)
+
+    scheduledTimeMap = { batchId1: "2025-06-14T08:00:00Z", batchId2: "2025-06-14T14:00:00Z" }
+    যে batch-এ time নেই, সেটার entry থাকবে না।
+
+    নতুন logic:
+    for each batch row:
+      1. Read assignedItemsMap (unchanged as before)
+      2. Read scheduledStartTimeMap
+      3. If batchIdsMap[bId] === true:
+           assigned[itemId] = new Date().toISOString();  // unchanged
+           if (scheduledTimeMap && scheduledTimeMap[bId]) {
+             scheduled[itemId] = scheduledTimeMap[bId];
+           } else {
+             delete scheduled[itemId]; // no lock = immediate access
+           }
+      4. If batchIdsMap[bId] === false:
+           delete assigned[itemId];   // unchanged
+           delete scheduled[itemId];  // also clear the scheduled time
+      5. Save both maps back to sheet
+
+────────────────────────────────────────────────────────────────────────────────
+Step 3: Admin Library UI (src/pages/AdminLibrary.tsx)
+────────────────────────────────────────────────────────────────────────────────
+Share modal-এ প্রতিটি batch-এর checkbox-এর পাশে datetime picker:
+
+    Checkbox [Morning Batch] ✓  |  Start: [📅 2025-06-14  🕗 08:00]
+    Checkbox [Evening Batch] ✓  |  Start: [📅 2025-06-14  🕑 14:00]
+    Checkbox [Weekend Batch]    |  (unchecked, no picker)
+
+    <input type="datetime-local" /> HTML input ব্যবহার করুন।
+
+    স্থানীয় সময়ে input নেওয়া হবে, save করার সময় UTC ISO string-এ
+    convert করুন:
+    new Date(dateTimeLocalValue).toISOString()
+
+    যদি datetime picker empty থাকে → এই batch-এ কোনো scheduled lock নেই
+    → exam immediately accessible হবে।
+
+api.shareLibraryItem() call পরিবর্তন:
+    BEFORE: api.shareLibraryItem(itemId, batchIdsMap)
+    AFTER:  api.shareLibraryItem(itemId, batchIdsMap, scheduledTimeMap)
+
+    scheduledTimeMap = { batchId1: "ISO_string", batchId2: "ISO_string" }
+
+────────────────────────────────────────────────────────────────────────────────
+Step 4: Student Library Lock Check (src/pages/StudentLibrary.tsx)
+────────────────────────────────────────────────────────────────────────────────
+fetchAll()-এ studentBatch থেকে scheduledStartTimeMap-ও নিন:
+
+    const assignedItemsMap = studentBatch.assignedItemsMap || {};
+    const scheduledStartTimeMap = studentBatch.scheduledStartTimeMap || {};
+
+Item render করার সময় lock status check:
+
+    function getExamLockStatus(item: LibraryItem): { locked: boolean, scheduledTime: Date | null } {
+      if (item.type !== 'exam') return { locked: false, scheduledTime: null };
+      const timeStr = scheduledStartTimeMap[item.id];
+      if (!timeStr) return { locked: false, scheduledTime: null };
+      const scheduledTime = new Date(timeStr);
+      return {
+        locked: new Date() < scheduledTime,
+        scheduledTime
+      };
+    }
+
+Library list-এ প্রতিটি exam-এর কাছে lock icon দেখান:
+    - যদি locked: 🔒 এবং "Opens June 14, 8:00 AM" দেখান
+    - যদি unlocked বা no schedule: স্বাভাবিক
+
+Student যখন exam click করে:
+    const lockStatus = getExamLockStatus(item);
+    if (lockStatus.locked) {
+      setLockedExamItem(item);        // modal দেখানোর জন্য state
+      setLockedExamTime(lockStatus.scheduledTime);
+      return; // ← exam player খুলবে না
+    }
+    // এরপর স্বাভাবিক exam flow চলবে
+
+────────────────────────────────────────────────────────────────────────────────
+Step 5: Lock Screen Modal (StudentLibrary.tsx)
+────────────────────────────────────────────────────────────────────────────────
+React state:
+    const [lockedExamItem, setLockedExamItem] = useState<LibraryItem | null>(null);
+    const [lockedExamTime, setLockedExamTime] = useState<Date | null>(null);
+    const [countdown, setCountdown] = useState('');
+
+Countdown effect:
+    useEffect(() => {
+      if (!lockedExamTime) return;
+
+      const tick = () => {
+        const now = new Date();
+        const diff = lockedExamTime.getTime() - now.getTime();
+
+        if (diff <= 0) {
+          // Exam unlocked! Modal বন্ধ করুন, exam খুলুন
+          setLockedExamItem(null);
+          setLockedExamTime(null);
+          setCountdown('');
+          // তারপর স্বাভাবিক exam open করুন
+          return;
+        }
+
+        const h = Math.floor(diff / 3600000);
+        const m = Math.floor((diff % 3600000) / 60000);
+        const s = Math.floor((diff % 60000) / 1000);
+        setCountdown(`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`);
+      };
+
+      tick(); // সাথে সাথে একবার চালান
+      const interval = setInterval(tick, 1000);
+      return () => clearInterval(interval); // ← অবশ্যই cleanup
+    }, [lockedExamTime]);
+
+Modal UI (Neo-Brutalist theme):
+    🔒 [পরীক্ষার নাম]
+    এই পরীক্ষা এখনো শুরু হয়নি
+    শুরুর সময়: ১৪ জুন ২০২৫, রাত ৮:০০ টা
+    (June 14, 2025 at 8:00 PM)
+
+    অবশিষ্ট সময়:  [02:45:33]  ← live countdown
+
+    [বন্ধ করুন]
+
+================================================================================
+               ভাগ ৪: Gemini-র Plan বনাম আমার Plan — পার্থক্য
+================================================================================
+
+┌──────────────────────────────┬──────────────────────┬────────────────────────┐
+│ বিষয়                         │ Gemini-র Plan        │ আমার Plan              │
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ Scheduled time কোথায় রাখবে  │ assignedItemsMap-এর  │ নতুন আলাদা field:     │
+│                              │ value পরিবর্তন করে   │ scheduledStartTimeMap  │
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ Backward compatibility       │ ❌ পুরনো data ভাঙবে  │ ✅ পুরনো data অক্ষত   │
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ GAS header update            │ ❌ mention নেই       │ ✅ explicitly করতে হবে│
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ URL bypass protection        │ ❌ এই app-এ irrelevant│ ✅ not needed, skip   │
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ setInterval cleanup          │ ❌ mention নেই       │ ✅ clearInterval       │
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ Live Exam vs Library Exam    │ ❌ distinction নেই   │ ✅ শুধু library exam  │
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ No scheduled time = ?        │ ❌ বলা নেই           │ ✅ immediately open    │
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ Countdown logic              │ ✅ সঠিক concept      │ ✅ proper Date diff    │
+├──────────────────────────────┼──────────────────────┼────────────────────────┤
+│ Admin datetime picker        │ ✅ সঠিক concept      │ ✅ per-batch picker    │
+└──────────────────────────────┴──────────────────────┴────────────────────────┘
+
+================================================================================
+               ভাগ ৫: এটা করা উচিত কিনা? Pros ও Cons
+================================================================================
+
+PROS ✅ (কেন করবেন):
+─────────────────────
+1. একটি exam upload করে সব batch-কে আলাদা time-এ দেওয়া যাবে।
+   Admin-এর অনেক সময় বাঁচবে।
+
+2. Student প্রশ্ন দেখতে পাবে না time-এর আগে। Fair exam নিশ্চিত হবে।
+
+3. Countdown timer দেখে student জানতে পারবে কখন exam শুরু হবে।
+   Confusion কমবে।
+
+4. Data model change minimal (নতুন একটা field মাত্র)।
+   Quota impact: শূন্য — বিদ্যমান getBatches() read-এ এই field-ও আসে।
+
+5. Feature remove করা সহজ — scheduledStartTimeMap empty রাখলেই হয়।
+
+CONS ❌ (ঝুঁকি ও সীমাবদ্ধতা):
+───────────────────────────────
+1. Client-side enforcement only:
+   একজন tech-savvy ছাত্র browser dev tools খুলে JavaScript modify করে
+   বা device clock change করে bypass করতে পারে। সার্ভার-সাইড lock নেই।
+   ➤ কিন্তু এটা private tuition (২০-৫০ জন trusted student), তাই acceptable।
+
+2. Device time mismatch:
+   যদি student-এর phone-এর time ভুল থাকে, exam আগেই বা পরেই unlock হবে।
+   ➤ Solution: Countdown শুধু দেখানোর জন্য। Actual check server timestamp-এ
+     করা ideal, কিন্তু এই app-এ GAS server call avoid করা উচিত (quota)।
+     Client-side time-ই use করতে হবে।
+
+3. Implementation complexity:
+   Admin Library share modal-এ datetime picker যোগ করলে UI জটিল হবে।
+   ভুলভাবে করলে datetime local timezone conversion-এ bug আসতে পারে।
+   ➤ datetime-local input সবসময় local time দেয়। UTC-তে convert করে
+     save করতে হবে: `new Date(input.value).toISOString()`
+
+4. Existing shared exams-এ scheduled time থাকবে না:
+   আগে থেকে batch-এ assign করা exams-এ scheduledStartTimeMap-এ কিছু
+   নেই, তাই সেগুলো immediately accessible থাকবে। এটা correct behavior।
+   কিন্তু admin-কে জানাতে হবে যে পুরনো exams-এ time add করতে হলে
+   আবার share করতে হবে।
+
+================================================================================
+               ভাগ ৬: চূড়ান্ত রায়
+================================================================================
+
+প্রশ্ন ছিল: "Gemini-র plan কি কাজ করবে?"
+
+উত্তর: CONCEPT কাজ করবে, কিন্তু data model implementation ভুল।
+       assignedItemsMap-এর value format পরিবর্তন করলে বিদ্যমান সব
+       batch assignment break হবে এবং StudentLibrary blank হয়ে যাবে।
+
+       আমার plan অনুযায়ী করলে (আলাদা scheduledStartTimeMap field):
+       → কোনো existing data ভাঙবে না ✅
+       → Feature সঠিকভাবে কাজ করবে ✅
+       → Quota impact শূন্য ✅
+       → iOS-compatible (setInterval + React state, no alert/confirm) ✅
+
+সুপারিশ:
+─────────
+Gemini-কে এই report দিন এবং বলুন:
+  1. assignedItemsMap-এ হাত দিও না
+  2. নতুন `scheduledStartTimeMap` field ব্যবহার করো
+  3. GAS batches sheet-এ এই column header যোগ করো
+  4. apiShareLibraryItem-এ 3rd parameter নাও
+  5. setInterval-এ clearInterval cleanup করো
+  6. Live Exam session-এ এই lock apply করো না
+
+Feature টি সম্পূর্ণ implement করা সম্ভব এবং উচিত।
+উপরের সতর্কতাগুলো মানলে কোনো bug হবে না।
+
+================================================================================
+                              রিপোর্ট শেষ
+================================================================================
