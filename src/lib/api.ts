@@ -169,15 +169,25 @@ export function cleanPhone(p: any): string {
   
       const response = json.data;
   
-      if (response && response.success === false) {
-        throw new Error(response.error || "GAS server-side error");
-      } else if (response && response.success === true && response.data !== undefined) {
-        return response.data as T;
-      } else if (response && response.success === true && response.payload !== undefined) {
-        return response as T;
-      } else {
-        return response as T;
+      if (response && typeof response === "object") {
+        if (response.success === false) {
+          if (response.error) {
+            throw new Error(response.error);
+          } else if (Object.keys(response).length === 1) {
+            return false as T;
+          }
+        } else if (response.success === true) {
+          if (response.data !== undefined) {
+            return response.data as T;
+          } else if (response.payload !== undefined) {
+            return response as T;
+          } else if (Object.keys(response).length === 1) {
+            return true as T;
+          }
+        }
       }
+      
+      return response as T;
     } catch (err: any) {
       console.error("API Call Failed:", methodName, err);
       throw err;
@@ -336,6 +346,14 @@ export const api = {
       return runGasMethod<UserProfile[]>("apiGetUsers");
     } else {
       return getMockDB().users;
+    }
+  },
+
+  healStudentIds: async (): Promise<{ success: boolean; healedCount: number; updatedRows: number; idMap: Record<string, string> }> => {
+    if (USE_REAL_API) {
+      return runGasMethod<{ success: boolean; healedCount: number; updatedRows: number; idMap: Record<string, string> }>("apiHealStudentIds");
+    } else {
+      return { success: true, healedCount: 0, updatedRows: 0, idMap: {} };
     }
   },
 

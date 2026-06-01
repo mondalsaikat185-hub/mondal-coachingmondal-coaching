@@ -445,6 +445,126 @@ function apiGetUsers() {
   }
 }
 
+function apiHealStudentIds() {
+  try {
+    var usersSheet = getSheet("users");
+    var usersLastRow = usersSheet.getLastRow();
+    if (usersLastRow < 2) return { success: true, message: "No users to heal." };
+
+    var usersLastCol = usersSheet.getLastColumn();
+    var usersHeaders = usersSheet.getRange(1, 1, 1, usersLastCol).getValues()[0];
+    var usersValues = usersSheet.getRange(2, 1, usersLastRow - 1, usersLastCol).getValues();
+
+    var idColIdx = usersHeaders.findIndex(function(h) { return String(h).trim().toLowerCase() === "id"; });
+    if (idColIdx === -1) return { success: false, error: "ID column not found in users sheet." };
+
+    var usedIds = {};
+    var idMap = {}; // Maps oldId -> newId
+    var healedCount = 0;
+    var updatedRows = 0;
+
+    for (var r = 0; r < usersValues.length; r++) {
+      var oldId = String(usersValues[r][idColIdx]).trim();
+      var needsNewId = false;
+
+      if (!oldId || oldId === "" || oldId === "undefined" || oldId === "null") {
+        needsNewId = true;
+      } else if (usedIds[oldId]) {
+        needsNewId = true;
+      }
+
+      if (needsNewId) {
+        var newId = "id_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
+        if (oldId && oldId !== "" && oldId !== "undefined" && oldId !== "null") {
+          idMap[oldId] = newId;
+        }
+        usersSheet.getRange(r + 2, idColIdx + 1).setValue(newId);
+        usedIds[newId] = true;
+        healedCount++;
+      } else {
+        usedIds[oldId] = true;
+      }
+    }
+
+    if (healedCount > 0) {
+      SpreadsheetApp.flush();
+    }
+
+    var changedKeys = Object.keys(idMap);
+    if (changedKeys.length > 0) {
+      var otherSheets = ["payments", "attendance", "examResults"];
+      for (var s = 0; s < otherSheets.length; s++) {
+        var sName = otherSheets[s];
+        var sheet = getSheet(sName);
+        var lastRow = sheet.getLastRow();
+        if (lastRow < 2) continue;
+
+        var lastCol = sheet.getLastColumn();
+        var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+        var sValues = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+        var studentIdIdx = headers.findIndex(function(h) { 
+          return String(h).trim().toLowerCase() === "studentid"; 
+        });
+        if (studentIdIdx === -1) continue;
+
+        for (var row = 0; row < sValues.length; row++) {
+          var currentStudentId = String(sValues[row][studentIdIdx]).trim();
+          if (idMap[currentStudentId]) {
+            sheet.getRange(row + 2, studentIdIdx + 1).setValue(idMap[currentStudentId]);
+            updatedRows++;
+          }
+        }
+        SpreadsheetApp.flush();
+      }
+
+      var sessionsSheet = getSheet("examSessions");
+      var sessionsLastRow = sessionsSheet.getLastRow();
+      if (sessionsLastRow >= 2) {
+        var sessionsLastCol = sessionsSheet.getLastColumn();
+        var sessionsHeaders = sessionsSheet.getRange(1, 1, 1, sessionsLastCol).getValues()[0];
+        var sessionsValues = sessionsSheet.getRange(2, 1, sessionsLastRow - 1, sessionsLastCol).getValues();
+
+        var uidsColIdx = sessionsHeaders.findIndex(function(h) { 
+          return String(h).trim().toLowerCase() === "participantuids"; 
+        });
+        if (uidsColIdx !== -1) {
+          for (var row = 0; row < sessionsValues.length; row++) {
+            var rawUids = sessionsValues[row][uidsColIdx];
+            var uids = [];
+            try { uids = JSON.parse(rawUids || "[]"); } catch(e) { continue; }
+            if (!Array.isArray(uids)) continue;
+
+            var sessionChanged = false;
+            for (var i = 0; i < uids.length; i++) {
+              if (idMap[uids[i]]) {
+                uids[i] = idMap[uids[i]];
+                sessionChanged = true;
+              }
+            }
+
+            if (sessionChanged) {
+              sessionsSheet.getRange(row + 2, uidsColIdx + 1).setValue(JSON.stringify(uids));
+              updatedRows++;
+            }
+          }
+          SpreadsheetApp.flush();
+        }
+      }
+    }
+
+    return {
+      success: true,
+      healedCount: healedCount,
+      updatedRows: updatedRows,
+      idMap: idMap
+    };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+
 function apiSaveUser(userData) {
   try {
     var users = readSheet("users");

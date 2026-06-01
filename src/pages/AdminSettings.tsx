@@ -18,6 +18,35 @@ export function AdminSettings() {
     razorpayKeySecret: ''
   });
 
+  const [healing, setHealing] = useState(false);
+  const [healResult, setHealResult] = useState<{
+    success: boolean;
+    healedCount: number;
+    updatedRows: number;
+    message?: string;
+  } | null>(null);
+
+  const handleHealDatabase = async () => {
+    if (!window.confirm("Are you sure you want to run database self-healing? This will verify all student IDs, repair duplicate and empty IDs, and fix reference rows in payments, attendance, and exam results to resolve clashes permanently.")) return;
+    setHealing(true);
+    setHealResult(null);
+    try {
+      const result = await api.healStudentIds();
+      setHealResult(result);
+      if (result.success) {
+        alert(`Successfully repaired database! Healed: ${result.healedCount} students, Updated: ${result.updatedRows} reference rows.`);
+        clearCache('users_general'); // Clear users cache
+      } else {
+        alert("Failed to repair database.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert("Error occurred: " + String(err));
+    } finally {
+      setHealing(false);
+    }
+  };
+
   useEffect(() => {
     const fetchSettings = async () => {
       try {
@@ -166,6 +195,31 @@ export function AdminSettings() {
              </button>
           </div>
         </form>
+      </div>
+
+      <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] max-w-2xl mt-6">
+        <h3 className="font-black uppercase border-b-2 border-zinc-200 dark:border-zinc-800 pb-2 text-yellow-600 dark:text-yellow-400">Database Repair & ID Alignment Tools</h3>
+        <p className="text-xs font-bold text-zinc-500 mt-2 mb-4">
+          If student names, emails, or payment details are showing incorrectly (clashed/merged due to duplicate historic IDs), run this tool to align all student IDs to be unique and update their references.
+        </p>
+
+        <button
+          onClick={handleHealDatabase}
+          disabled={healing}
+          className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold uppercase text-xs px-4 py-3 border-2 border-zinc-900 dark:border-zinc-100 hover:-translate-y-0.5 transition-transform flex items-center gap-2"
+        >
+          {healing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          ⚡ Run Database ID Alignment & Healing
+        </button>
+
+        {healResult && (
+          <div className="mt-4 p-4 border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-50 dark:bg-zinc-800 text-sm font-mono space-y-1">
+            <div className="font-bold text-emerald-600 uppercase">Alignment Complete:</div>
+            <div>- Reassigned Duplicate/Blank IDs: <span className="font-bold">{healResult.healedCount}</span> students</div>
+            <div>- Aligned reference rows updated: <span className="font-bold">{healResult.updatedRows}</span> rows (payments/attendance/results)</div>
+            <div className="text-[10px] text-zinc-400 mt-2 uppercase">Please refresh the application (Ctrl+F5) after running.</div>
+          </div>
+        )}
       </div>
     </div>
   );
