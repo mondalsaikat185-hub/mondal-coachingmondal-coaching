@@ -235,6 +235,7 @@ export function AdminStudents() {
   useEffect(() => {
     const mapUserProfileToUser = (profile: any): AppUser => {
       return {
+        id: profile.id,
         uid: profile.id,
         email: profile.email || '',
         displayName: profile.name || 'Student',
@@ -331,20 +332,7 @@ export function AdminStudents() {
     if (!confirmDeleteStudentId) return;
     const uid = confirmDeleteStudentId;
     try {
-      if (localStorage.getItem("mc_coaching_mock_db")) {
-        try {
-          const raw = localStorage.getItem("mc_coaching_mock_db");
-          if (raw) {
-            const db = JSON.parse(raw);
-            db.users = db.users.filter((u: any) => u.id !== uid);
-            localStorage.setItem("mc_coaching_mock_db", JSON.stringify(db));
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      } else {
-        await api.deleteUser(uid);
-      }
+      await api.deleteUser(uid);
       globalStudentsCache = null;
       setStudents(students.filter(s => s.uid !== uid));
     } catch (error) {
@@ -859,19 +847,6 @@ export function AdminBatches() {
     try {
       setLoading(true);
       
-      if (localStorage.getItem("mc_coaching_mock_db")) {
-        try {
-          const raw = localStorage.getItem("mc_coaching_mock_db");
-          if (raw) {
-            const db = JSON.parse(raw);
-            db.users = db.users.map((u: any) => u.batchId === id ? { ...u, batchId: "" } : u);
-            localStorage.setItem("mc_coaching_mock_db", JSON.stringify(db));
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
       await api.deleteBatch(id);
       globalBatchesCache = null;
       globalStudentsCache = null;
@@ -1086,6 +1061,7 @@ export function AdminPayments() {
            .filter(u => u.role !== 'admin')
            .map(u => ({
              id: u.id,
+             uid: u.id,
              fullName: u.name,
              email: u.email,
              phone: u.phone,
@@ -1136,23 +1112,6 @@ export function AdminPayments() {
       return;
     }
     try {
-      if (localStorage.getItem("mc_coaching_mock_db")) {
-        try {
-          const raw = localStorage.getItem("mc_coaching_mock_db");
-          if (raw) {
-            const db = JSON.parse(raw);
-            const idx = db.payments.findIndex((p: any) => p.id === id);
-            if (idx !== -1) {
-              db.payments[idx].status = status;
-              if (remarks) db.payments[idx].remarks = remarks;
-              localStorage.setItem("mc_coaching_mock_db", JSON.stringify(db));
-            }
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
       await api.updatePaymentStatus(id, status as any, remarks);
       setPayments(payments.map(p => p.id === id ? { ...p, status, remarks } : p));
       
@@ -1184,40 +1143,7 @@ export function AdminPayments() {
     try {
       const newAmount = Number(editingAmount);
       
-      if (localStorage.getItem("mc_coaching_mock_db")) {
-        try {
-          const raw = localStorage.getItem("mc_coaching_mock_db");
-          if (raw) {
-            const db = JSON.parse(raw);
-            const idx = db.payments.findIndex((p: any) => p.id === id);
-            if (idx !== -1) {
-              db.payments[idx].amount = newAmount;
-              localStorage.setItem("mc_coaching_mock_db", JSON.stringify(db));
-            }
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      
-      if (api.isProduction()) {
-        try {
-          // @ts-ignore
-          if (typeof google !== 'undefined') {
-            // @ts-ignore
-            await new Promise((res, rej) => {
-              // @ts-ignore
-              google.script.run
-                .withSuccessHandler(res)
-                .withFailureHandler(rej)
-                .apiUpdatePaymentAmount(id, newAmount);
-            });
-          }
-        } catch (err) {
-          console.warn("GAS apiUpdatePaymentAmount failed", err);
-        }
-      }
-
+      await api.updatePaymentAmount(id, newAmount);
       setPayments(payments.map(p => p.id === id ? { ...p, amount: newAmount } : p));
       setEditingAmountId(null);
       setEditingAmount('');
@@ -1233,7 +1159,7 @@ export function AdminPayments() {
      setOfflineSubmitting(true);
      try {
        const offlinePay = {
-          studentId: student.id,
+          studentId: student.id || student.uid,
           studentName: student.fullName || student.displayName || student.email,
           studentEmail: student.email || '',
           amount: Number(offlineAmount),
@@ -1306,7 +1232,7 @@ export function AdminPayments() {
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin w-8 h-8" /></div>;
 
   if (selectedStudentId) {
-     const student = students.find(s => s.id === selectedStudentId);
+     const student = students.find(s => (s.id || s.uid) === selectedStudentId);
      if (!student) return <div>Student not found</div>;
      const studentPayments = payments.filter(p => p.studentId === selectedStudentId);
 
@@ -1324,7 +1250,7 @@ export function AdminPayments() {
               <form onSubmit={(e) => {
                  e.preventDefault();
                  const formData = new FormData(e.currentTarget);
-                 updateStudentPaymentDetails(student.id, {
+                 updateStudentPaymentDetails(student.id || student.uid, {
                     monthlyFee: Number(formData.get('monthlyFee')),
                     exemptReason: formData.get('exemptReason'),
                     pendingMonths: Number(formData.get('pendingMonths')),
@@ -1466,9 +1392,9 @@ export function AdminPayments() {
                       No students in this batch. To add students, go to the 'Students Management' module and click '+ Create Virtual Student'.
                    </div>
                 ) : bStudents.map((s, idx) => {
-                   const pendingCount = payments.filter(p => p.studentId === s.id && p.status === 'pending').length;
+                   const pendingCount = payments.filter(p => p.studentId === (s.id || s.uid) && p.status === 'pending').length;
                    return (
-                     <button key={s.id} onClick={() => setSelectedStudentId(s.id)} className="w-full text-left p-4 border-2 border-zinc-200 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-zinc-100 flex flex-col items-start gap-1">
+                     <button key={s.id || s.uid} onClick={() => setSelectedStudentId(s.id || s.uid)} className="w-full text-left p-4 border-2 border-zinc-200 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-zinc-100 flex flex-col items-start gap-1">
                         <span className="font-bold flex items-center justify-between w-full">
                            <span>{s.fullName || s.email}</span>
                            {Number(s.pendingMonths) > 0 && (

@@ -823,6 +823,24 @@ export const api = {
     }
   },
 
+  updatePaymentAmount: async (paymentId: string, amount: number): Promise<PaymentRecord> => {
+    let updatedPayment: PaymentRecord;
+    if (USE_REAL_API) {
+      updatedPayment = await runGasMethod<PaymentRecord>("apiUpdatePaymentAmount", paymentId, amount);
+    } else {
+      const db = getMockDB();
+      const idx = db.payments.findIndex(p => p.id === paymentId);
+      if (idx === -1) throw new Error("Payment record not found");
+      db.payments[idx].amount = amount;
+      saveMockDB(db);
+      updatedPayment = db.payments[idx];
+    }
+    return {
+      ...updatedPayment,
+      month: api.cleanPaymentMonth(updatedPayment.month)
+    };
+  },
+
   deleteNotification: async (notifId: string): Promise<boolean> => {
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiDeleteNotification", notifId);
