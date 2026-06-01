@@ -1610,3 +1610,37 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
+
+function apiFixStudentId(oldId, newId) {
+  try {
+    var otherSheets = ["payments", "attendance", "examResults"];
+    var updatedRows = 0;
+    for (var s = 0; s < otherSheets.length; s++) {
+      var sName = otherSheets[s];
+      var sheet = getSheet(sName);
+      var lastRow = sheet.getLastRow();
+      if (lastRow < 2) continue;
+
+      var lastCol = sheet.getLastColumn();
+      var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+      var sValues = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+      var studentIdIdx = headers.findIndex(function(h) { 
+        return String(h).trim().toLowerCase() === "studentid"; 
+      });
+      if (studentIdIdx === -1) continue;
+
+      for (var row = 0; row < sValues.length; row++) {
+        var currentStudentId = String(sValues[row][studentIdIdx]).trim();
+        if (currentStudentId === oldId) {
+          sheet.getRange(row + 2, studentIdIdx + 1).setValue(newId);
+          updatedRows++;
+        }
+      }
+      SpreadsheetApp.flush();
+    }
+    return { success: true, updatedRows: updatedRows };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
