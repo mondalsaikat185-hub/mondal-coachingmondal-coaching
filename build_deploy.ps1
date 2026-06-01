@@ -25,4 +25,4 @@ git add -A
 git commit -m "Quota fix FINAL: limit(300) on fetchFolderContent, limit(20) on batches, cache PDF chunks, clearCache on refresh, cache settings, sessionStorage exam join"
 git push origin main
 Write-Host "=== ALL DONE ===" -ForegroundColor Green
-Read-Host "Press Enter to close"
+exit 0

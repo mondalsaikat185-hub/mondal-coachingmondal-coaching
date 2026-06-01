@@ -71,6 +71,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const appUser = mapUserProfileToUser(latestProfile);
           setUser(appUser);
           localStorage.setItem(SESSION_KEY, JSON.stringify(appUser));
+        } else {
+          // If the logged-in user is not found in the sheets database (invalid or updated ID),
+          // automatically clear their session and force them to re-login!
+          console.warn("Logged-in user not found in database. Clearing stale session...");
+          setUser(null);
+          localStorage.removeItem(SESSION_KEY);
         }
       } catch (err) {
         console.error("Failed to sync user session from server on mount:", err);
