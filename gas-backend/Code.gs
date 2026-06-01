@@ -369,7 +369,7 @@ function deleteRow(sheetName, id) {
   if (idColIdx === -1) return false;
   
   for (var r = 0; r < values.length; r++) {
-    if (String(values[r][idColIdx]) === String(id)) {
+    if (String(values[r][idColIdx]).trim() === String(id).trim()) {
       sheet.deleteRow(r + 2);
       SpreadsheetApp.flush();
       return true;
@@ -396,7 +396,7 @@ function deleteMultipleRows(sheetName, columnName, columnValue) {
     
     // নিচে থেকে উপরের দিকে লুপ চালানো যাতে ডিলিট করার পর উপরের রো নম্বরগুলোর ইনডেক্স ঠিক থাকে
     for (var r = values.length - 1; r >= 0; r--) {
-      if (String(values[r][colIdx]) === String(columnValue)) {
+      if (String(values[r][colIdx]).trim() === String(columnValue).trim()) {
         sheet.deleteRow(r + 2); // ১-ইনডেক্সড এবং ১টি হেডার রো
         deletedCount++;
       }
@@ -449,9 +449,17 @@ function apiSaveUser(userData) {
   try {
     var users = readSheet("users");
     // αªÜαºçαªò αªòαª░αºï αªàαª▓αª░αºçαªíαª┐ αªÅαªç αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαª┐αºƒαºç αªçαªëαª£αª╛αª░ αªåαª¢αºç αªòαª┐ αª¿αª╛
-    var existingUser = users.find(function(u) { 
-      return cleanPhone(u.phone) === cleanPhone(userData.phone); 
-    });
+    var existingUser = null;
+    if (userData.id) {
+      existingUser = users.find(function(u) { 
+        return String(u.id) === String(userData.id); 
+      });
+    }
+    if (!existingUser && userData.phone) {
+      existingUser = users.find(function(u) { 
+        return cleanPhone(u.phone) === cleanPhone(userData.phone); 
+      });
+    }
     
     if (existingUser) {
       // αª»αªªαª┐ αªåαªùαºç αªÑαºçαªòαºçαªç αªçαªëαª£αª╛αª░ αªÑαª╛αªòαºç, αª£αª╛αª╕αºìαªƒ αª¬αºìαª░αºïαª½αª╛αªçαª▓ αªåαª¬αªíαºçαªƒ αª¼αª╛ αª░αª┐-αªàαºìαª»αª╛αª¬αºìαª▓αª╛αªç αªåαª¬αªíαºçαªƒ αªòαª░αºï
