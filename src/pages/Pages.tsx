@@ -151,14 +151,14 @@ export function AdminStudents() {
         monthlyFee: 500,
         createdAt: new Date().toISOString()
       } as any]);
-      alert(`Student ${newStudentName} created successfully!`);
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `Student ${newStudentName} created successfully!` }));
       setNewStudentName('');
       setNewStudentEmail('');
       setNewStudentBatch('');
       setNewStudentPhone('');
       setAddingNewStudent(false);
     } catch (err) {
-      alert("Error creating student: " + String(err));
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Error creating student: " + String(err) }));
     }
   };
 
@@ -312,7 +312,7 @@ export function AdminStudents() {
       setStudents(students.map(s => getStudentId(s) === uid ? { ...s, status: newStatus as any, updatedAt: newStatus === 'active' ? new Date().toISOString() : s.updatedAt } : s));
     } catch (error) {
       console.error("handleStatusChange error:", error);
-      alert("Failed to update status.");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to update status." }));
     }
   };
 
@@ -323,7 +323,7 @@ export function AdminStudents() {
       setStudents(students.map(s => getStudentId(s) === uid ? { ...s, batchId } : s));
     } catch (error) {
       console.error("handleBatchChange error:", error);
-      alert("Failed to change batch.");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to change batch." }));
     }
   };
 
@@ -337,14 +337,14 @@ export function AdminStudents() {
     try {
       const success = await api.deleteUser(uid);
       if (success === false || success === null || success === undefined) {
-        alert("ডিলিট হয়নি! Student Database-এ খুঁজে পাওয়া যায়নি। পেজ Refresh করুন।");
+        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "ডিলিট হয়নি! Student Database-এ খুঁজে পাওয়া যায়নি। পেজ Refresh করুন।" }));
         setConfirmDeleteStudentId(null);
         return;
       }
       globalStudentsCache = null;
       setStudents(students.filter(s => getStudentId(s) !== uid));
     } catch (error) {
-       alert("Error deleting student: " + String(error));
+       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Error deleting student: " + String(error) }));
     } finally {
       setConfirmDeleteStudentId(null);
     }
@@ -869,17 +869,15 @@ export function AdminBatches() {
   };
 
   const handleDeleteBatch = async (id: string) => {
-    if (!window.confirm("Are you sure you want to permanently delete this? This action cannot be undone.")) return;
     try {
       setLoading(true);
-      
       await api.deleteBatch(id);
       globalBatchesCache = null;
       globalStudentsCache = null;
       await fetchBatches();
     } catch (error) {
       console.error("handleDeleteBatch error:", error);
-      alert("Error deleting batch.");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Error deleting batch." }));
       setLoading(false);
     }
   };
@@ -958,7 +956,7 @@ export function AdminBatches() {
                           }} className="p-1 px-3 bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-700 font-bold uppercase text-[10px]">
                              Edit
                           </button>
-                          <button onClick={() => handleDeleteBatch(batch.id)} className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900 rounded">
+                          <button onClick={() => setConfirmDeleteBatchId(batch.id)} className="p-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900 rounded">
                             <Trash2 className="w-5 h-5" />
                           </button>
                       </td>
@@ -982,6 +980,36 @@ export function AdminBatches() {
           )}
         </div>
       </div>
+      
+      {confirmDeleteBatchId && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white dark:bg-zinc-900 border-4 border-zinc-900 dark:border-zinc-100 p-6 max-w-sm w-full shadow-[8px_8px_0px_0px_rgba(24,24,27,1)] dark:shadow-[8px_8px_0px_0px_rgba(244,244,245,1)]">
+            <h3 className="font-black text-xl uppercase mb-4 text-zinc-900 dark:text-zinc-100 border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">
+              Confirm Delete Batch
+            </h3>
+            <p className="font-bold text-sm text-zinc-700 dark:text-zinc-300 mb-6">
+              Are you sure you want to permanently delete this? This action cannot be undone.
+            </p>
+            <div className="flex gap-4">
+              <button
+                onClick={() => {
+                  handleDeleteBatch(confirmDeleteBatchId);
+                  setConfirmDeleteBatchId(null);
+                }}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black uppercase py-3 border-2 border-zinc-900 dark:border-zinc-100 transition-transform"
+              >
+                Yes, Delete
+              </button>
+              <button
+                onClick={() => setConfirmDeleteBatchId(null)}
+                className="flex-1 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-black uppercase py-3 border-2 border-zinc-900 dark:border-zinc-100 transition-transform"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1128,7 +1156,7 @@ export function AdminPayments() {
        await api.saveUser({ id: studentId, ...updates } as any);
        setStudents(students.map(s => s.id === studentId ? { ...s, ...updates } : s));
     } catch (err) {
-       alert("Error updating student: " + String(err));
+       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Error updating student: " + String(err) }));
     }
   };
 
@@ -1157,7 +1185,7 @@ export function AdminPayments() {
       }
     } catch (error) {
       console.error("updatePaymentStatus error:", error);
-      alert("Failed to update payment status.");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to update payment status." }));
     }
   };
 
@@ -1174,7 +1202,7 @@ export function AdminPayments() {
       setEditingAmountId(null);
       setEditingAmount('');
     } catch (error) {
-      alert("Error updating payment amount: " + String(error));
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Error updating payment amount: " + String(error) }));
     }
   };
 
@@ -1201,7 +1229,7 @@ export function AdminPayments() {
        setOfflineAmount('');
      } catch(err) {
        console.error("handleAddOfflinePayment error:", err);
-       alert("Failed to add offline payment.");
+       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to add offline payment." }));
      } finally {
        setOfflineSubmitting(false);
      }
@@ -1282,7 +1310,7 @@ export function AdminPayments() {
                     pendingMonths: Number(formData.get('pendingMonths')),
                     showPaymentNudge: formData.get('showPaymentNudge') === 'on'
                  });
-                 alert("Config saved successfully!");
+                 window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Config saved successfully!" }));
               }} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)]">
                  <h3 className="font-black uppercase mb-4 border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">Student Payment Config</h3>
                  <div className="space-y-4">
@@ -1564,11 +1592,11 @@ export function StudentPayments() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (JPG, PNG, etc.)');
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Please select an image file (JPG, PNG, etc.)' }));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      alert('File too large. Maximum 10MB allowed.');
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'File too large. Maximum 10MB allowed.' }));
       return;
     }
     try {
@@ -1577,7 +1605,7 @@ export function StudentPayments() {
       setImagePreview(compressed);
     } catch (err) {
       console.error('Image compression failed:', err);
-      alert('Failed to process image. Please try again.');
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Failed to process image. Please try again.' }));
     }
   };
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
@@ -1710,12 +1738,12 @@ export function StudentPayments() {
 
   const handleRazorpayCheckout = async () => {
     if (selectedMonths.length === 0 || !user) {
-      alert("Please select at least one month.");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select at least one month." }));
       return;
     }
 
     if (isFeeWaived) {
-      alert("আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।" }));
       return;
     }
 
@@ -1729,7 +1757,7 @@ export function StudentPayments() {
     
     for (let i = 1; i < selectedIndices.length; i++) {
        if (selectedIndices[i] !== selectedIndices[i-1] + 1) {
-          alert("Please select strictly consecutive months.");
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select strictly consecutive months." }));
           return;
        }
     }
@@ -1737,11 +1765,11 @@ export function StudentPayments() {
     if (maxPaidIndex !== -1) {
        const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
        if (alreadyPaid) {
-          alert("You have already submitted a payment for one or more of the selected months.");
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "You have already submitted a payment for one or more of the selected months." }));
           return;
        }
        if (selectedIndices[0] !== maxPaidIndex + 1) {
-          alert(`You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.`);
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.` }));
           return;
        }
     }
@@ -1749,7 +1777,7 @@ export function StudentPayments() {
     if ((user as any).isSimulatedAdmin) {
        const isRealStudent = localStorage.getItem('simulatedStudentId');
        if (!isRealStudent) {
-         alert("Please select a real student from the dropdown above to test the payment gateway checkout flow.");
+         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select a real student from the dropdown above to test the payment gateway checkout flow." }));
          return;
        }
     }
@@ -1777,7 +1805,7 @@ export function StudentPayments() {
             );
 
             if (verifyRes.success) {
-              alert("পেমেন্ট সফল এবং অনুমোদিত হয়েছে! (Payment Successful and Instantly Approved!)");
+              window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "পেমেন্ট সফল এবং অনুমোদিত হয়েছে! (Payment Successful and Instantly Approved!)" }));
               setSelectedMonths([]);
               setPaymentSuccess(true);
               setTimeout(() => setPaymentSuccess(false), 3000);
@@ -1785,11 +1813,11 @@ export function StudentPayments() {
               // Force local cache invalidation & reload to fetch updated user profile (pendingMonths etc.)
               window.location.reload(); 
             } else {
-              alert("Verification failed: " + (verifyRes.error || "Unknown Error"));
+              window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Verification failed: " + (verifyRes.error || "Unknown Error") }));
             }
           } catch (err) {
             console.error("Verification error:", err);
-            alert("Payment verification failed, please contact administrator with Payment ID: " + response.razorpay_payment_id);
+            window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Payment verification failed, please contact administrator with Payment ID: " + response.razorpay_payment_id }));
           } finally {
             setSubmitting(false);
           }
@@ -1809,7 +1837,7 @@ export function StudentPayments() {
       rzp.open();
     } catch (err) {
       console.error("Razorpay Checkout failed to open:", err);
-      alert("Failed to initialize Razorpay payment. Please try again.");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to initialize Razorpay payment. Please try again." }));
     } finally {
       setSubmitting(false);
     }
@@ -1818,7 +1846,7 @@ export function StudentPayments() {
   const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedMonths.length === 0 || !user) {
-      alert("Please select at least one month.");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select at least one month." }));
       return;
     }
     
@@ -1834,7 +1862,7 @@ export function StudentPayments() {
     // Check if the selected months themselves are consecutive
     for (let i = 1; i < selectedIndices.length; i++) {
        if (selectedIndices[i] !== selectedIndices[i-1] + 1) {
-          alert("Please select strictly consecutive months.");
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select strictly consecutive months." }));
           return;
        }
     }
@@ -1844,25 +1872,25 @@ export function StudentPayments() {
        // Check if they are trying to pay an already paid month
        const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
        if (alreadyPaid) {
-          alert("You have already submitted a payment for one or more of the selected months.");
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "You have already submitted a payment for one or more of the selected months." }));
           return;
        }
        
        if (selectedIndices[0] !== maxPaidIndex + 1) {
-          alert(`You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.`);
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.` }));
           return;
        }
     }
     
     if (isFeeWaived) {
-      alert("আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।" }));
       return;
     }
     
     if ((user as any).isSimulatedAdmin) {
        const isRealStudent = localStorage.getItem('simulatedStudentId');
        if (!isRealStudent) {
-         alert("Please select a real student from the dropdown above to test the payment submission flow. Submitting as the 'Default Admin UID' is blocked.");
+         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select a real student from the dropdown above to test the payment submission flow. Submitting as the 'Default Admin UID' is blocked." }));
          return;
        }
     }
@@ -1882,12 +1910,12 @@ export function StudentPayments() {
       // Attach proof data if using proof_upload mode
       if (settings.paymentMethod === 'proof_upload') {
         if (!proofImage) {
-          alert('Please upload a payment screenshot as proof.');
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Please upload a payment screenshot as proof.' }));
           setSubmitting(false);
           return;
         }
         if (!transactionId.trim()) {
-          alert('Please enter the Transaction ID / UTR Number.');
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Please enter the Transaction ID / UTR Number.' }));
           setSubmitting(false);
           return;
         }
@@ -1925,7 +1953,7 @@ export function StudentPayments() {
       setPayments(data);
     } catch (error) {
       console.error("handleSubmitPayment error:", error);
-      alert("Failed to submit payment details.");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to submit payment details." }));
     } finally {
       setSubmitting(false);
     }
@@ -1984,7 +2012,7 @@ export function StudentPayments() {
                          type="button"
                          onClick={() => {
                             navigator.clipboard.writeText(settings.adminUpiId);
-                            alert('UPI ID copied!');
+                            window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'UPI ID copied!' }));
                          }}
                          className="mt-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
                        >
@@ -2075,7 +2103,7 @@ export function StudentPayments() {
                                      onClick={(e) => {
                                         e.preventDefault();
                                         navigator.clipboard.writeText(upiId);
-                                        alert('UPI ID copied to clipboard!');
+                                        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'UPI ID copied to clipboard!' }));
                                      }}
                                      className="p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold text-xs uppercase"
                                    >

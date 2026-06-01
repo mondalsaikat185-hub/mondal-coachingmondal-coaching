@@ -5,6 +5,7 @@ export type UserRole = 'student' | 'admin';
 export type UserStatus = 'pending' | 'active' | 'inactive' | 'rejected' | 'incomplete';
 
 export interface AppUser {
+  id?: string;
   uid: string; // Maps to user.id
   email: string;
   displayName: string | null;

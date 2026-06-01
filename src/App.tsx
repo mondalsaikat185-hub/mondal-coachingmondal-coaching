@@ -421,7 +421,7 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.phone.trim() || !formData.batchId) {
-      alert("নাম, ফোন নম্বর ও ব্যাচ বাধ্যতামূলক।"); return;
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "নাম, ফোন নম্বর ও ব্যাচ বাধ্যতামূলক।" })); return;
     }
     setLoading(true); setMsg(""); setMsgType("success");
     try {
@@ -517,7 +517,7 @@ function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone.trim() || !passcode.trim()) {
-      alert("দয়া করে ফোন নম্বর এবং পাসকোড দুটিই পূরণ করুন।");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "দয়া করে ফোন নম্বর এবং পাসকোড দুটিই পূরণ করুন।" }));
       return;
     }
     setLocalLoading(true);
@@ -1166,12 +1166,12 @@ function AdminDashboard() {
         exemptReason: "চলমান রাখা হয়েছে"
       });
       
-      alert("ছাত্রের অনুপস্থিতি মওকুফ করা হয়েছে এবং কাউন্ট রিসেট হয়েছে!");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "ছাত্রের অনুপস্থিতি মওকুফ করা হয়েছে এবং কাউন্ট রিসেট হয়েছে!" }));
       setSelectedAbsentee(null);
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error("Excuse student error:", err);
-      alert("ত্রুটি: অনুপস্থিতি মওকুফ করা যায়নি।");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "ত্রুটি: অনুপস্থিতি মওকুফ করা যায়নি।" }));
     } finally {
       setSubmittingAction(false);
     }
@@ -1194,7 +1194,7 @@ function AdminDashboard() {
       
       const last3Sessions = batchSessions.slice(0, 3);
       if (last3Sessions.length === 0) {
-        alert("কোনো পরীক্ষা পাওয়া যায়নি যার উপস্থিতি পূর্ণ করা যাবে।");
+        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "কোনো পরীক্ষা পাওয়া যায়নি যার উপস্থিতি পূর্ণ করা যাবে।" }));
         setSelectedAbsentee(null);
         return;
       }
@@ -1210,12 +1210,12 @@ function AdminDashboard() {
         );
       }
 
-      alert("ছাত্রের অনুপস্থিত পরীক্ষাগুলোর উপস্থিতি সফলভাবে পূর্ণ করা হয়েছে!");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "ছাত্রের অনুপস্থিত পরীক্ষাগুলোর উপস্থিতি সফলভাবে পূর্ণ করা হয়েছে!" }));
       setSelectedAbsentee(null);
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       console.error("Complete attendance error:", err);
-      alert("ত্রুটি: উপস্থিতি সম্পন্ন করা যায়নি।");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "ত্রুটি: উপস্থিতি সম্পন্ন করা যায়নি।" }));
     } finally {
       setSubmittingAction(false);
     }

@@ -19,6 +19,7 @@ export function AdminSettings() {
   });
 
   const [healing, setHealing] = useState(false);
+  const [showHealConfirm, setShowHealConfirm] = useState(false);
   const [healResult, setHealResult] = useState<{
     success: boolean;
     healedCount: number;
@@ -27,21 +28,27 @@ export function AdminSettings() {
   } | null>(null);
 
   const handleHealDatabase = async () => {
-    if (!window.confirm("Are you sure you want to run database self-healing? This will verify all student IDs, repair duplicate and empty IDs, and fix reference rows in payments, attendance, and exam results to resolve clashes permanently.")) return;
+    setShowHealConfirm(false);
     setHealing(true);
     setHealResult(null);
     try {
       const result = await api.healStudentIds();
       setHealResult(result);
       if (result.success) {
-        alert(`Successfully repaired database! Healed: ${result.healedCount} students, Updated: ${result.updatedRows} reference rows.`);
+        window.dispatchEvent(new CustomEvent("show-custom-alert", {
+          detail: `Successfully repaired database! Healed: ${result.healedCount} students, Updated: ${result.updatedRows} reference rows.`
+        }));
         clearCache('users_general'); // Clear users cache
       } else {
-        alert("Failed to repair database.");
+        window.dispatchEvent(new CustomEvent("show-custom-alert", {
+          detail: "Failed to repair database."
+        }));
       }
     } catch (err: any) {
       console.error(err);
-      alert("Error occurred: " + String(err));
+      window.dispatchEvent(new CustomEvent("show-custom-alert", {
+        detail: "Error occurred: " + String(err)
+      }));
     } finally {
       setHealing(false);
     }
@@ -83,9 +90,9 @@ export function AdminSettings() {
       });
       await api.saveAnnouncement(announcement);
       clearCache('settings_general'); // Invalidate cache so next read gets fresh data
-      alert("Settings saved successfully!");
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Settings saved successfully!" }));
     } catch (err) {
-      alert("Failed to save settings: " + String(err));
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to save settings: " + String(err) }));
     } finally {
       setSaving(false);
     }
@@ -205,13 +212,40 @@ export function AdminSettings() {
         </p>
 
         <button
-          onClick={handleHealDatabase}
+          onClick={() => setShowHealConfirm(true)}
           disabled={healing}
           className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold uppercase text-xs px-4 py-3 border-2 border-zinc-900 dark:border-zinc-100 hover:-translate-y-0.5 transition-transform flex items-center gap-2"
         >
           {healing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           ⚡ Run Database ID Alignment & Healing
         </button>
+
+        {showHealConfirm && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white dark:bg-zinc-900 border-4 border-zinc-900 dark:border-zinc-100 p-6 max-w-md w-full shadow-[8px_8px_0px_0px_rgba(24,24,27,1)] dark:shadow-[8px_8px_0px_0px_rgba(244,244,245,1)]">
+              <h3 className="font-black text-xl uppercase mb-4 text-zinc-900 dark:text-zinc-100 border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">
+                Confirm Database Self-Healing
+              </h3>
+              <p className="font-bold text-sm text-zinc-700 dark:text-zinc-300 mb-6">
+                Are you sure you want to run database self-healing? This will verify all student IDs, repair duplicate and empty IDs, and fix reference rows in payments, attendance, and exam results to resolve clashes permanently.
+              </p>
+              <div className="flex gap-4">
+                <button
+                  onClick={handleHealDatabase}
+                  className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-black font-black uppercase py-3 border-2 border-zinc-900 dark:border-zinc-100 transition-transform"
+                >
+                  Yes, Heal Database
+                </button>
+                <button
+                  onClick={() => setShowHealConfirm(false)}
+                  className="flex-1 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-black uppercase py-3 border-2 border-zinc-900 dark:border-zinc-100 transition-transform"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {healResult && (
           <div className="mt-4 p-4 border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-50 dark:bg-zinc-800 text-sm font-mono space-y-1">

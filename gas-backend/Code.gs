@@ -118,7 +118,7 @@ function seedAdminIfNeeded() {
     
     // Check if headers exist, if not, write them
     if (lastRow === 0) {
-      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason"];
+      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge"];
       sheet.appendRow(headers);
     }
     
@@ -203,7 +203,7 @@ function ensureSheetHeaders(sheetName, requiredHeaders) {
 function readSheet(sheetName) {
   if (sheetName === "users") {
     seedAdminIfNeeded();
-    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason"]);
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge"]);
   } else if (sheetName === "payments") {
     ensureSheetHeaders("payments", ["id", "studentId", "month", "amount", "status", "transactionId", "paidDate", "proofImage", "paymentMode", "remarks", "createdAt"]);
   }
@@ -250,7 +250,7 @@ function saveRow(sheetName, dataObj) {
   
   // αªåαªçαªíαª┐ αª»αªªαª┐ αªàαª¼αª£αºçαªòαºìαªƒαºç αª¿αª╛ αªÑαª╛αªòαºç, αªñαª¼αºç αªÅαªòαªƒαª┐ αªçαªëαª¿αª┐αªò αªçαªëαªåαªçαªíαª┐ αª£αºçαª¿αª╛αª░αºçαªƒ αªòαª░αºï
   if (!dataObj.id) {
-    dataObj.id = "id_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
+    dataObj.id = Utilities.getUuid();
   }
   if (!dataObj.createdAt) {
     dataObj.createdAt = new Date().toISOString();

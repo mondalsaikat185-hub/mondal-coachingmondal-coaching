@@ -1,0 +1,409 @@
+================================================================================
+        চূড়ান্ত ও সম্পূর্ণ Code Audit রিপোর্ট
+        M-C Tuition Application — Google Apps Script + React Version
+        তারিখ: ১ জুন ২০২৬
+        প্রস্তুতকারী: Claude (Anthropic)
+        উদ্দেশ্য: Jenny (Google Gemini)-র সমস্ত fixes verify করা এবং
+                   এখনো যা যা সমস্যা আছে তা চিহ্নিত করা
+================================================================================
+
+এই রিপোর্টে দুটি ভাগ আছে:
+  ভাগ ১ → Jenny যা যা FIX করেছে (সঠিকভাবে) — প্রমাণ সহ
+  ভাগ ২ → এখনো যা যা BUG/সমস্যা আছে — exact file + line সহ
+  ভাগ ৩ → সবচেয়ে জরুরি action items (Saikat-কে কী করতে হবে)
+
+================================================================================
+                     ভাগ ১: JENNY যা FIX করেছে ✅
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #1 ✅ — `formatDateOnlySafe` function missing ছিল
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/lib/utils.ts
+সমস্যা ছিল: `formatDateOnlySafe` function সম্পূর্ণ missing ছিল, যার কারণে
+             build error হচ্ছিল এবং payment page crash করছিল।
+JENNY-র FIX: সম্পূর্ণ function যোগ করা হয়েছে (line 26-46)।
+             timestamp থেকে "১ January 2026" format-এ date দেখায়।
+STATUS: ✅ সঠিকভাবে fix হয়েছে। Code verify করা হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #2 ✅ — Code.gs-এ `rejectReason` ও `reapplyReason` header missing ছিল
+────────────────────────────────────────────────────────────────────────────────
+FILE: gas-backend/Code.gs
+সমস্যা ছিল: "users" sheet-এর header array-তে `rejectReason` এবং `reapplyReason`
+             column ছিল না, তাই rejection reason কখনো Google Sheet-এ save হতো না।
+JENNY-র FIX: Line 121 এবং line 206 উভয় জায়গায় header array-তে
+             "reapplyReason" এবং "rejectReason" যোগ করা হয়েছে।
+STATUS: ✅ সঠিকভাবে fix হয়েছে। Code verify করা হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #3 ✅ — `apiUpdateUserStatus` এ reject reason দুটো column-এই save হয় না
+────────────────────────────────────────────────────────────────────────────────
+FILE: gas-backend/Code.gs, line 696-698
+সমস্যা ছিল: Admin যখন student reject করত, reason শুধু `rejectReason`-এ যেত,
+             কিন্তু App.tsx `reapplyReason` field পড়ে। তাই rejection message
+             App-এ দেখাত না।
+JENNY-র FIX:
+    if (rejectReason) {
+      updates.reapplyReason = rejectReason;  // App এটা পড়বে
+      updates.rejectReason = rejectReason;   // Backward compatibility
+    }
+STATUS: ✅ সঠিকভাবে fix হয়েছে। Code verify করা হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #4 ✅ — Rejection screen-এ কারণ দেখাত না
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/App.tsx
+সমস্যা ছিল: Student reject হলে তার screen-এ rejection reason দেখানো হতো না,
+             শুধু "Rejected" লেখা দেখাত।
+JENNY-র FIX: App.tsx-এ `reapplyReason` conditional rendering যোগ করা হয়েছে।
+             এখন student দেখতে পাবে ঠিক কী কারণে তাকে reject করা হয়েছে।
+STATUS: ✅ সঠিকভাবে fix হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #5 ✅ — Student delete confirmation modal render হতো না
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/pages/Pages.tsx
+সমস্যা ছিল: `confirmDeleteStudentId` state declare করা ছিল এবং delete button-এ
+             set করা হতো, কিন্তু modal JSX কোড কোথাও render করা হতো না।
+             ফলে delete button click করলে কিছুই হতো না।
+JENNY-র FIX: Delete confirmation modal JSX যোগ করা হয়েছে।
+             "Delete" বা "Cancel" button-এ click করলে সঠিকভাবে কাজ করে।
+STATUS: ✅ সঠিকভাবে fix হয়েছে। Code verify করা হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #6 ✅ — Delete করলেও GAS-এ delete হতো না কিন্তু UI থেকে সরে যেত
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/pages/Pages.tsx, executeDeleteStudent function
+সমস্যা ছিল: GAS যদি delete fail করত, তবুও frontend UI থেকে student remove হয়ে
+             যেত। Page refresh করলে student আবার ফিরে আসত।
+JENNY-র FIX:
+    const success = await api.deleteUser(uid);
+    if (success === false || success === null || success === undefined) {
+      alert("ডিলিট হয়নি! Student Database-এ খুঁজে পাওয়া যায়নি।");
+      setConfirmDeleteStudentId(null);
+      return;
+    }
+    // সফল হলেই UI থেকে সরানো হয়
+    setStudents(students.filter(s => getStudentId(s) !== uid));
+STATUS: ✅ সঠিকভাবে fix হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #7 ✅ — `mapUserProfileToUser`-এ `id` ও `uid` inconsistency
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/pages/Pages.tsx, mapUserProfileToUser function
+সমস্যা ছিল: `mapUserProfileToUser` শুধু `uid: profile.id` set করত, `id` field
+             empty থাকত। `getStudentId` তখন ভুল ID দিত।
+JENNY-র FIX: এখন `id: profile.id` এবং `uid: profile.id` উভয়ই সঠিকভাবে set হয়।
+             `getStudentId = (s) => s.id || s.uid || ''` helper যোগ করা হয়েছে।
+STATUS: ✅ সঠিকভাবে fix হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #8 ✅ — `apiHealStudentIds`-এ Math.random() দিয়ে ID তৈরি হতো
+────────────────────────────────────────────────────────────────────────────────
+FILE: gas-backend/Code.gs, apiHealStudentIds function (line ~477)
+সমস্যা ছিল: Heal function-এ নতুন ID তৈরিতে Math.random() ব্যবহার হতো যা
+             collision-prone (দুটো student একই ID পেতে পারত)।
+JENNY-র FIX: এখন `Utilities.getUuid()` ব্যবহার করা হয় — GAS-এর built-in
+             UUID generator যা guaranteed unique।
+STATUS: ✅ সঠিকভাবে fix হয়েছে। Code verify করা হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #9 ✅ — `excuseStudent()` এ iOS-blocked `prompt()` ব্যবহার
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/App.tsx
+সমস্যা ছিল: `excuseStudent()` function iOS-এ block হওয়া `prompt()` ব্যবহার করত,
+             যার কারণে iOS device-এ function সম্পূর্ণ কাজ করত না।
+JENNY-র FIX: `prompt()` সরিয়ে modal-based system (`selectedAbsentee` state,
+             `handleContinueStudent` ও `handleCompleteAttendance` functions)
+             যোগ করা হয়েছে।
+STATUS: ✅ modal যোগ করা হয়েছে — prompt() আর নেই।
+⚠️ NOTE: কিন্তু এই নতুন functions-এ alert() এখনো আছে (দেখুন ভাগ ২, Bug #3)।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #10 ✅ — `excusedDates` AdminDashboard-এ ignore হতো
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/App.tsx, AdminDashboard computeFlags function
+সমস্যা ছিল: `excusedDates` field fetch হলেও attendance flag calculation-এ
+             check করা হতো না, তাই excused student-কেও "absent" দেখাত।
+JENNY-র FIX: `computeFlags()` এ `excusedDates` check যোগ করা হয়েছে।
+STATUS: ✅ সঠিকভাবে fix হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #11 ✅ — `api.ts` error handling দুর্বল ছিল
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/lib/api.ts, runGasMethod function (line 145-195)
+সমস্যা ছিল: GAS response-এর double-wrapping (`{ success: true, data: { success: false } }`)
+             সঠিকভাবে handle হতো না।
+JENNY-র FIX: Response parsing logic উন্নত করা হয়েছে:
+    - outer json.success false → Error throw
+    - inner response.success === false + 1 key → return false
+    - inner response.success === true + 1 key → return true
+    - response.data present → return data
+STATUS: ✅ সঠিকভাবে fix হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #12 ✅ — `healStudentIds` API method missing ছিল api.ts-এ
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/lib/api.ts
+সমস্যা ছিল: GAS-এ `apiHealStudentIds` function থাকলেও frontend-এ API call
+             করার কোনো method ছিল না।
+JENNY-র FIX: `healStudentIds()` method যোগ করা হয়েছে।
+STATUS: ✅ সঠিকভাবে fix হয়েছে।
+
+────────────────────────────────────────────────────────────────────────────────
+FIX #13 ✅ — AdminSettings-এ Heal Database button ছিল না
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/pages/AdminSettings.tsx
+সমস্যা ছিল: Database healing করার কোনো UI ছিল না।
+JENNY-র FIX: AdminSettings-এ `handleHealDatabase` function এবং button যোগ
+             করা হয়েছে।
+STATUS: ✅ Button যোগ হয়েছে।
+⚠️ NOTE: কিন্তু window.confirm() ও alert() ব্যবহার হচ্ছে (দেখুন ভাগ ২, Bug #4)।
+
+
+================================================================================
+                  ভাগ ২: এখনো যা যা BUG আছে ❌ (Jenny Fix করেনি)
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+BUG #1 ❌ [Critical] — নাম মিলিয়ে যাওয়া সমস্যা এখনো সমাধান হয়নি
+────────────────────────────────────────────────────────────────────────────────
+প্রভাব: Arnap Mondal-এর জায়গায় Pritik Kanji-র data দেখায় (বা যেকোনো দুই
+         student-এর data মিলিয়ে যায়)।
+মূল কারণ: Google Sheet-এ দুইটি student-এর `id` column-এ একই value আছে।
+           Frontend সবসময় প্রথম match নেয়, তাই একজনের data অন্যজনের
+           screen-এ দেখায়।
+
+Jenny কী করেছে:
+  - `mapUserProfileToUser`-এ id/uid consistency fix করেছে ✅
+  - `apiHealStudentIds` ফাংশন Utilities.getUuid() ব্যবহার করছে ✅
+  - AdminSettings-এ Heal button যোগ করেছে ✅
+
+যা করেনি (এবং যা ছাড়া সমস্যা ঠিক হবে না):
+  ❌ Code.gs এখনো নতুন GAS deployment হিসেবে publish করা হয়নি।
+     GitHub-এ push করলে live endpoint আপডেট হয় না।
+     GAS Editor-এ গিয়ে নতুন Version তৈরি করে Re-deploy করতে হবে।
+
+  ❌ Admin এখনো Heal Database button click করেনি।
+     Button আছে কিন্তু click না করলে Sheet-এর duplicate ID ঠিক হবে না।
+
+ACTION REQUIRED (Saikat-কে করতে হবে):
+  1. GAS Editor খুলুন → Deploy → Manage Deployments → Edit → New Version → Deploy
+  2. App-এ login করুন → Settings → "Heal Database" button click করুন
+  3. Success message দেখলে নাম মিলিয়ে যাওয়া সমস্যা ঠিক হবে।
+
+⚠️ গুরুত্বপূর্ণ সতর্কতা:
+  Heal করার সময় যে দুই student-এর ID এক, তাদের মধ্যে একজন তার পুরনো
+  payment ও attendance record হারাতে পারে (যে records ওই shared ID-তে
+  save ছিল সেগুলো দ্বিতীয় student-এর নতুন UUID-তে move হয়ে যাবে)।
+  এটা এড়ানো সম্ভব নয় — একটা ID-তে দুইজনের record থাকলে আলাদা করা যায় না।
+
+────────────────────────────────────────────────────────────────────────────────
+BUG #2 ❌ [High] — `saveRow()` এ নতুন student তৈরিতে collision-prone ID
+────────────────────────────────────────────────────────────────────────────────
+FILE: gas-backend/Code.gs, line 253
+CODE:
+    dataObj.id = "id_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
+
+সমস্যা: প্রতিটি নতুন student, payment, notification, exam session তৈরিতে
+         এই Math.random() দিয়ে ID generate হয়। যদিও clash-এর সম্ভাবনা
+         কম, কিন্তু এটা guaranteed unique নয়।
+
+Jenny যা করেছে: শুধু `apiHealStudentIds`-এ UUID ব্যবহার করেছে। কিন্তু সব
+                নতুন record তৈরিতে `saveRow()` ব্যবহার হয় — সেটা unchanged।
+
+FIX (Jenny-র জন্য):
+    // Code.gs, line 253
+    // এটা পরিবর্তন করুন:
+    dataObj.id = "id_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
+    // এটা দিয়ে:
+    dataObj.id = Utilities.getUuid();
+
+────────────────────────────────────────────────────────────────────────────────
+BUG #3 ❌ [High] — iOS-এ blocked `alert()` এখনো আছে — নতুন যোগ করা functions-এ
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/App.tsx
+
+AFFECTED LINES:
+  • Line 1169: alert("ছাত্রের অনুপস্থিতি মওকুফ করা হয়েছে এবং কাউন্ট রিসেট হয়েছে!");
+               [handleContinueStudent, success case]
+  • Line 1174: alert("ত্রুটি: অনুপস্থিতি মওকুফ করা যায়নি।");
+               [handleContinueStudent, error case]
+  • Line 1197: alert("কোনো পরীক্ষা পাওয়া যায়নি যার উপস্থিতি পূর্ণ করা যাবে।");
+               [handleCompleteAttendance, no sessions found]
+  • Line 1213: alert("ছাত্রের অনুপস্থিত পরীক্ষাগুলোর উপস্থিতি সফলভাবে পূর্ণ করা হয়েছে!");
+               [handleCompleteAttendance, success case]
+  • Line 1218: alert("ত্রুটি: উপস্থিতি সম্পন্ন করা যায়নি।");
+               [handleCompleteAttendance, error case]
+
+সমস্যা: iOS Safari (PWA mode)-এ `alert()` block হয়ে যায়।
+         এই functions নতুন যোগ করা হয়েছে কিন্তু একই ভুল করা হয়েছে।
+         Admin iOS device-এ এই কাজ করতে পারবে না।
+
+FILE: src/pages/Pages.tsx
+  • Line 154:  alert(`Student ${newStudentName} created successfully!`);
+  • Line 161:  alert("Error creating student: " + String(err));
+  • Line 315:  alert("Failed to update status.");
+  • Line 326:  alert("Failed to change batch.");
+  • Line 340:  alert("ডিলিট হয়নি! Student...");
+  • Line 347:  alert("Error deleting student: ...");
+  এবং আরো অনেক জায়গায়।
+
+FIX পদ্ধতি:
+  প্রতিটি alert() কে toast/inline message দিয়ে replace করুন।
+  App.tsx-এ ইতিমধ্যে `downloadMessage` state আছে — একই pattern follow করুন।
+  অথবা একটি shared `useToast()` hook তৈরি করুন।
+
+────────────────────────────────────────────────────────────────────────────────
+BUG #4 ❌ [High] — AdminSettings.tsx-এ `window.confirm()` iOS-blocked
+────────────────────────────────────────────────────────────────────────────────
+FILE: src/pages/AdminSettings.tsx, line 30
+CODE:
+    if (!window.confirm("Are you sure you want to run database self-healing?...")) return;
+
+সমস্যা: iOS Safari-এ `window.confirm()` block হয়। Admin iOS device থেকে
+         Heal Database button click করলে confirmation dialog আসবে না এবং
+         function চলবে না। (heal ছাড়া নাম মিলিয়ে যাওয়া ঠিক হবে না!)
+
+FILE: src/pages/Pages.tsx, line 872
+CODE:
+    if (!window.confirm("Are you sure...")) return;
+
+একই সমস্যা batch delete-এও আছে।
+
+FIX পদ্ধতি:
+    AdminSettings.tsx-এ confirm-এর জায়গায় React state-based confirmation modal ব্যবহার করুন:
+    const [showHealConfirm, setShowHealConfirm] = useState(false);
+    // button click → setShowHealConfirm(true)
+    // modal-এ confirm → handleHealDatabase() চালান
+
+    এবং AdminSettings heal success-এর alert() কেও inline message দিয়ে replace করুন।
+
+────────────────────────────────────────────────────────────────────────────────
+BUG #5 ❌ [Medium] — `showPaymentNudge` GAS headers-এ নেই
+────────────────────────────────────────────────────────────────────────────────
+FILE: gas-backend/Code.gs
+
+সমস্যা: `showPaymentNudge` field Google Sheet-এর "users" sheet header-এ নেই।
+         এই field save করা হলে GAS-এর `saveRow`/`updateRow` logic শুধু
+         existing columns-এ write করে — নতুন column auto-create করে না।
+         ফলে Admin যখন student-এর "Activate App Nudge" checkbox on করে
+         save করে, সেই value Sheet-এ persist হয় না।
+         পরদিন page refresh করলে checkbox আবার unchecked হয়ে যাবে।
+
+GAS-এ `showPaymentNudge` এর কোনো mention নেই (grep verify করা হয়েছে)।
+
+FIX (Jenny-র জন্য):
+    gas-backend/Code.gs, line 121 ও line 206-তে header array-তে যোগ করুন:
+    "showPaymentNudge"
+
+    BEFORE (line 121):
+    var headers = ["id", "name", ..., "reapplyReason", "rejectReason"];
+
+    AFTER:
+    var headers = ["id", "name", ..., "reapplyReason", "rejectReason", "showPaymentNudge"];
+
+    এবং line 206-এও একই পরিবর্তন।
+
+────────────────────────────────────────────────────────────────────────────────
+BUG #6 ❌ [Low] — GAS deployment re-publish না করলে কোনো Code.gs fix কাজ করবে না
+────────────────────────────────────────────────────────────────────────────────
+এটা bug নয়, কিন্তু অনেক developer ভুল করেন।
+
+সমস্যা: GitHub-এ Code.gs push করলে live GAS endpoint আপডেট হয় না।
+         GAS Web App একটি নির্দিষ্ট "version"-এ deploy থাকে।
+         নতুন code serve করতে নতুন version publish করতে হয়।
+
+ACTION:
+  1. script.google.com এ যান
+  2. Apps Script project খুলুন
+  3. Deploy → Manage Deployments → Edit (pencil icon)
+  4. Version dropdown → "New Version" select করুন
+  5. Deploy button click করুন
+  6. URL same থাকবে, কিন্তু নতুন code serve হবে।
+
+Jenny-র সব Code.gs fix (headers, reject reason, heal function) কোনোটাই
+live হবে না যদি এই step না নেওয়া হয়।
+
+
+================================================================================
+                  ভাগ ৩: SUMMARY TABLE (চার্ট)
+================================================================================
+
+┌─────────────────────────────────────────────────┬──────────┬─────────────────┐
+│ সমস্যা                                          │ Status   │ File            │
+├─────────────────────────────────────────────────┼──────────┼─────────────────┤
+│ formatDateOnlySafe missing                      │ ✅ FIXED │ utils.ts        │
+│ rejectReason header missing in Code.gs          │ ✅ FIXED │ Code.gs         │
+│ apiUpdateUserStatus saves both reason fields    │ ✅ FIXED │ Code.gs         │
+│ Rejection screen shows reason                   │ ✅ FIXED │ App.tsx         │
+│ Delete confirmation modal not rendering         │ ✅ FIXED │ Pages.tsx       │
+│ Delete from UI even when GAS fails              │ ✅ FIXED │ Pages.tsx       │
+│ id/uid inconsistency in mapUserProfileToUser    │ ✅ FIXED │ Pages.tsx       │
+│ apiHealStudentIds using Math.random()           │ ✅ FIXED │ Code.gs         │
+│ excuseStudent() using iOS-blocked prompt()      │ ✅ FIXED │ App.tsx         │
+│ excusedDates ignored in computeFlags()          │ ✅ FIXED │ App.tsx         │
+│ api.ts weak error handling                      │ ✅ FIXED │ api.ts          │
+│ healStudentIds() API method missing             │ ✅ FIXED │ api.ts          │
+│ No Heal Database button in AdminSettings        │ ✅ FIXED │ AdminSettings   │
+├─────────────────────────────────────────────────┼──────────┼─────────────────┤
+│ নাম মিলিয়ে যাওয়া — GAS re-deploy + heal needed│ ❌ OPEN  │ Code.gs (GAS)   │
+│ saveRow() এ collision-prone Math.random() ID    │ ❌ OPEN  │ Code.gs line 253│
+│ alert() in handleContinueStudent (iOS blocked)  │ ❌ OPEN  │ App.tsx 1169    │
+│ alert() in handleCompleteAttendance (iOS blocked│ ❌ OPEN  │ App.tsx 1197    │
+│ alert() in handleCreateStudent (iOS blocked)    │ ❌ OPEN  │ Pages.tsx 154   │
+│ window.confirm() in handleHealDatabase (iOS)    │ ❌ OPEN  │ AdminSettings 30│
+│ window.confirm() in handleDeleteBatch (iOS)     │ ❌ OPEN  │ Pages.tsx 872   │
+│ showPaymentNudge header missing in Code.gs      │ ❌ OPEN  │ Code.gs headers │
+└─────────────────────────────────────────────────┴──────────┴─────────────────┘
+
+জেনে রাখুন: Pages.tsx-এ আরো অনেক alert() আছে (payment update, batch change,
+বিভিন্ন error message) — iOS production device-এ সব block হবে।
+
+
+================================================================================
+                  ভাগ ৪: SAIKAT-এর জন্য তাৎক্ষণিক করণীয়
+================================================================================
+
+এখনই করুন (নাম মিলিয়ে যাওয়া ঠিক করতে):
+─────────────────────────────────────────────────────────────────────
+  ১. GAS Editor → Deploy → Manage Deployments → New Version → Deploy
+  ২. App-এ Admin হিসেবে login করুন → Settings page যান
+  ৩. "Heal Database" button click করুন
+  ৪. Success message দেখুন
+  ⚠️ Heal করার আগে Google Sheet backup নিন!
+     (Sheet → File → Download → xlsx)
+
+Jenny-কে দিন এই বাকি fixes-এর জন্য:
+─────────────────────────────────────────────────────────────────────
+  ১. Code.gs saveRow() line 253: Math.random() → Utilities.getUuid()
+  ২. Code.gs headers (line 121, 206): "showPaymentNudge" যোগ করুন
+  ৩. App.tsx lines 1169, 1174, 1197, 1213, 1218: alert() → inline state message
+  ④. AdminSettings.tsx line 30: window.confirm() → React modal
+  ৫. Pages.tsx line 872: window.confirm() → React modal
+  ৬. উপরে fix শেষে আবার GAS New Version deploy করুন
+
+
+================================================================================
+              সর্বশেষ মন্তব্য — Claude (Anthropic)
+================================================================================
+
+Jenny মোট ১৩টি সমস্যা সঠিকভাবে fix করেছে। কাজ উল্লেখযোগ্য।
+কিন্তু ৮টি সমস্যা এখনো remaining:
+
+- সবচেয়ে জরুরি: নাম মিলিয়ে যাওয়া সমস্যা code change-এ ঠিক হবে না।
+  GAS re-deploy + Heal Database run করতেই হবে।
+
+- iOS blocked alert()/confirm() — এটা শুধু Admin iOS device ব্যবহারকারীর
+  জন্য সমস্যা। কিন্তু যেহেতু ভারতে অনেকেই iPhone ব্যবহার করেন এবং
+  PWA মানে browser-এর বাইরে, এটা গুরুত্বপূর্ণ।
+
+- showPaymentNudge GAS header missing — এই feature একেবারেই কাজ করছে না।
+
+Gemini ভালো কাজ করেছে, কিন্তু সম্পূর্ণ নয়। এই report-এর ভিত্তিতে
+Jenny-কে remaining items দিয়ে দিন।
+
+================================================================================
+                           রিপোর্ট শেষ
+================================================================================
