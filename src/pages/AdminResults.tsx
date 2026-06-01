@@ -24,11 +24,12 @@ export function AdminResults() {
     const init = async () => {
       try {
         setLoading(true);
-        // Load all data in parallel!
-        const [batchesData, resultsData, usersData] = await Promise.all([
+        // Load all data in parallel including library!
+        const [batchesData, resultsData, usersData, libraryData] = await Promise.all([
           api.getBatches(),
           api.getExamResults(),
-          api.getUsers()
+          api.getUsers(),
+          api.getLibrary()
         ]);
 
         setBatches(batchesData);
@@ -45,10 +46,32 @@ export function AdminResults() {
           };
         });
 
+        // Map library exams for quick lookup of titles and correct marks weight
+        const examMap: Record<string, { title: string; marksCorrect: number }> = {};
+        libraryData.forEach((item: any) => {
+          if (item.type === 'exam') {
+            let marksCorrect = Number(item.marksCorrect) || 2;
+            if (item.quizData) {
+               try {
+                  const parsed = typeof item.quizData === 'string' ? JSON.parse(item.quizData) : item.quizData;
+                  if (parsed && parsed.config && parsed.config.marksCorrect !== undefined) {
+                     marksCorrect = Number(parsed.config.marksCorrect);
+                  }
+               } catch (e) {
+                  console.warn("Error parsing quizData config for", item.title, e);
+               }
+            }
+            examMap[item.id] = {
+              title: item.title,
+              marksCorrect: isNaN(marksCorrect) ? 2 : marksCorrect
+            };
+          }
+        });
+
         // Filter and map results
         let filtered = examId ? resultsData.filter(r => r.examId === examId) : resultsData;
 
-        // Sort descending by date
+        // Sort descending by date by default
         filtered.sort((a, b) => {
           const dateA = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
           const dateB = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
@@ -59,7 +82,14 @@ export function AdminResults() {
            const cachedUser = userMap[r.studentId] || {};
            r.studentName = r.studentName || cachedUser.name || 'Unknown Student';
            r.studentBatchId = r.studentBatchId || cachedUser.batchId || null;
-           r.totalPossible = r.totalPossible || r.totalQuestions || 10;
+           
+           // Resolve exam name and total possible marks
+           const cachedExam: any = examMap[r.examId] || {};
+           r.examTitle = cachedExam.title || 'Unknown Exam';
+           
+           const marksCorrect = cachedExam.marksCorrect !== undefined ? cachedExam.marksCorrect : 2;
+           r.totalPossible = Number(r.totalQuestions || 0) * marksCorrect;
+           
            r.createdAt = r.createdAt || r.submittedAt;
            
            r.formattedDate = (() => {
@@ -127,25 +157,33 @@ export function AdminResults() {
   let uniqueExams: string[] = [];
 
   if (!examId) {
+     // Filter by batch first
      displayResults = displayResults.filter(r => r.studentBatchId === activeBatchId);
      
+     // Get list of unique exam titles in this batch dynamically
      uniqueExams = Array.from(new Set(displayResults.map(r => r.examTitle).filter(d => Boolean(d))));
      
+     // Search filter: Student Name or Exam Title with safe string check
      if (searchQuery) {
        displayResults = displayResults.filter(r => 
-         (r.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-         (r.examTitle || '').toLowerCase().includes(searchQuery.toLowerCase())
+         String(r.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+         String(r.examTitle || '').toLowerCase().includes(searchQuery.toLowerCase())
        );
      }
      
+     // Dropdown Exam filter
      if (examFilter) {
        displayResults = displayResults.filter(r => r.examTitle === examFilter);
+       
+       // "If I select an exam name, then the marks of that exam will be shown list wise."
+       // List-wise ranked score descending (highest to lowest) for comparative scoreboard
+       displayResults.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
      }
   } else {
      if (tab === 'student') {
-        displayResults.sort((a,b) => (a.studentName || '').localeCompare(b.studentName || ''));
+        displayResults.sort((a,b) => String(a.studentName || '').localeCompare(String(b.studentName || '')));
      } else if (tab === 'exam') {
-        displayResults.sort((a,b) => (a.examTitle || '').localeCompare(b.examTitle || ''));
+        displayResults.sort((a,b) => String(a.examTitle || '').localeCompare(String(b.examTitle || '')));
      }
   }
 
@@ -277,12 +315,36 @@ export function AdminResults() {
                            return d ? d.toLocaleString(): 'N/A';
                         })()}
                      </td>
-                     <td className="p-2 font-bold text-sm">{r.studentName}</td>
-                     <td className="p-2 text-sm text-zinc-600 dark:text-zinc-400">{r.examTitle}</td>
-                     <td className="p-2 text-right">
-                       <span className="font-black text-blue-600 dark:text-blue-400">{r.score}</span>
-                       <span className="text-xs opacity-50 ml-1">/ {r.totalPossible}</span>
-                     </td>
+                      <td className="p-2 font-bold text-sm">
+                        <div className="flex items-center gap-2">
+                          <span>{r.studentName}</span>
+                          {examFilter && (
+                            <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-black uppercase rounded ${
+                              idx === 0 
+                                ? 'bg-yellow-300 text-black border border-yellow-500 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' 
+                                : idx === 1 
+                                  ? 'bg-zinc-200 text-black border border-zinc-400 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' 
+                                  : idx === 2 
+                                    ? 'bg-amber-600 text-white border border-amber-800 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]' 
+                                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
+                            }`}>
+                              Rank #{idx + 1}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-2 text-sm text-zinc-600 dark:text-zinc-400">{r.examTitle}</td>
+                      <td className="p-2 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className="font-black text-blue-600 dark:text-blue-400">{r.score}</span>
+                          <span className="text-xs opacity-50">/ {r.totalPossible}</span>
+                          {r.totalPossible > 0 && (
+                            <span className="text-[11px] font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20 px-1 py-0.5 border border-green-200 dark:border-green-800/40 rounded">
+                              {Math.round((Number(r.score) / Number(r.totalPossible)) * 100)}%
+                            </span>
+                          )}
+                        </div>
+                      </td>
                    </tr>
                  ))}
                </tbody>
