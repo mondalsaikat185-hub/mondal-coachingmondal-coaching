@@ -139,6 +139,7 @@ export function AdminStudents() {
       } as any);
       globalStudentsCache = null;
       setStudents(prev => [...prev, {
+        id: mockUid,
         uid: mockUid,
         email: newStudentEmail.toLowerCase(),
         fullName: newStudentName,
@@ -252,8 +253,8 @@ export function AdminStudents() {
         batchId: profile.batchId,
         isProfileComplete: profile.status !== 'incomplete',
         profilePhotoUrl: profile.profilePhotoUrl,
-        monthlyFee: profile.monthlyFee !== undefined ? Number(profile.monthlyFee) : 500,
-        pendingMonths: profile.pendingMonths !== undefined ? Number(profile.pendingMonths) : 0,
+        monthlyFee: (profile.monthlyFee !== undefined && profile.monthlyFee !== '' && profile.monthlyFee !== null) ? Number(profile.monthlyFee) : 500,
+        pendingMonths: (profile.pendingMonths !== undefined && profile.pendingMonths !== '' && profile.pendingMonths !== null) ? Number(profile.pendingMonths) : 0,
         passcode: profile.passcode,
         paymentStatus: profile.paymentStatus,
         reapplyReason: profile.reapplyReason,
@@ -302,11 +303,13 @@ export function AdminStudents() {
     fetchData();
   }, [refreshKey]);
 
+  const getStudentId = (s: any): string => s.id || s.uid || '';
+
   const handleStatusChange = async (uid: string, newStatus: string) => {
     try {
       await api.updateUserStatus(uid, newStatus as any);
       globalStudentsCache = null;
-      setStudents(students.map(s => s.uid === uid ? { ...s, status: newStatus as any, updatedAt: newStatus === 'active' ? new Date().toISOString() : s.updatedAt } : s));
+      setStudents(students.map(s => getStudentId(s) === uid ? { ...s, status: newStatus as any, updatedAt: newStatus === 'active' ? new Date().toISOString() : s.updatedAt } : s));
     } catch (error) {
       console.error("handleStatusChange error:", error);
       alert("Failed to update status.");
@@ -317,7 +320,7 @@ export function AdminStudents() {
     try {
       await api.saveUser({ id: uid, batchId } as any);
       globalStudentsCache = null;
-      setStudents(students.map(s => s.uid === uid ? { ...s, batchId } : s));
+      setStudents(students.map(s => getStudentId(s) === uid ? { ...s, batchId } : s));
     } catch (error) {
       console.error("handleBatchChange error:", error);
       alert("Failed to change batch.");
@@ -334,7 +337,7 @@ export function AdminStudents() {
     try {
       await api.deleteUser(uid);
       globalStudentsCache = null;
-      setStudents(students.filter(s => s.uid !== uid));
+      setStudents(students.filter(s => getStudentId(s) !== uid));
     } catch (error) {
        alert("Error deleting student: " + String(error));
     } finally {
@@ -354,6 +357,23 @@ export function AdminStudents() {
            {loading ? '...' : 'Refresh'}
         </button>
       </div>
+
+      {/* Delete Student Confirmation Modal */}
+      {confirmDeleteStudentId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 border-4 border-red-600 p-6 shadow-[8px_8px_0px_0px_rgba(220,38,38,1)] max-w-md w-full">
+            <h3 className="text-xl font-black uppercase text-red-600 mb-4">⚠️ Permanently Delete Student?</h3>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-2 font-bold">
+              Student: <span className="text-zinc-900 dark:text-zinc-100">{students.find(s => getStudentId(s) === confirmDeleteStudentId)?.fullName || students.find(s => getStudentId(s) === confirmDeleteStudentId)?.displayName || 'Unknown'}</span>
+            </p>
+            <p className="text-xs text-zinc-500 mb-6">This will permanently remove the student and all their payment records, attendance, and exam data from the database. This action <strong>cannot be undone</strong>.</p>
+            <div className="flex gap-4">
+              <button onClick={executeDeleteStudent} className="flex-1 border-2 border-red-600 bg-red-600 text-white shadow-[4px_4px_0px_0px_rgba(153,27,27,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform">Yes, Delete</button>
+              <button onClick={() => setConfirmDeleteStudentId(null)} className="flex-1 border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-200 dark:bg-zinc-800 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedStudentForModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -669,9 +689,10 @@ export function AdminStudents() {
                     </tr>
                   )}
                   {displayStudents.map((student) => {
-                    const absentDays = studentAbsentCount[student.uid] || 0;
+                    const sId = getStudentId(student);
+                    const absentDays = studentAbsentCount[sId] || studentAbsentCount[student.uid] || 0;
                     return (
-                    <tr key={student.uid} className="border-b border-zinc-200 dark:border-zinc-800">
+                    <tr key={sId} className="border-b border-zinc-200 dark:border-zinc-800">
                       <td className="p-2">
                         {student.profilePhotoUrl ? (
                           <a href={student.profilePhotoUrl} target="_blank" rel="noopener noreferrer">
@@ -718,7 +739,7 @@ export function AdminStudents() {
                   <td className="p-2">
                     <select
                       value={student.batchId || ''}
-                      onChange={(e) => handleBatchChange(student.uid, e.target.value)}
+                      onChange={(e) => handleBatchChange(sId, e.target.value)}
                       className="border-2 border-zinc-200 dark:border-zinc-800 p-1 bg-transparent text-sm w-full max-w-[150px] text-zinc-900 dark:text-zinc-100"
                     >
                       <option value="" className="text-zinc-900">No Batch</option>
@@ -740,16 +761,16 @@ export function AdminStudents() {
                         <div className="flex justify-end gap-2">
                           {student.status === 'pending' && (
                             <>
-                              <button onClick={() => { handleStatusChange(student.uid, 'active'); setStudentTab(student.batchId || 'all'); }} className="p-1 px-2 border-2 border-emerald-600 bg-emerald-500 text-white font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform" title="Approve">
+                              <button onClick={() => { handleStatusChange(sId, 'active'); setStudentTab(student.batchId || 'all'); }} className="p-1 px-2 border-2 border-emerald-600 bg-emerald-500 text-white font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform" title="Approve">
                                 Approve
                               </button>
-                              <button onClick={() => handleStatusChange(student.uid, 'rejected')} className="p-1 px-2 border-2 border-red-600 bg-red-500 text-white font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform" title="Reject">
+                              <button onClick={() => handleStatusChange(sId, 'rejected')} className="p-1 px-2 border-2 border-red-600 bg-red-500 text-white font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform" title="Reject">
                                 Reject
                               </button>
                             </>
                           )}
                           
-                             <button onClick={() => handleDeleteStudent(student.uid)} className="p-1 px-2 border-2 border-red-600 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform flex items-center justify-center" title="Delete Student">
+                             <button onClick={() => handleDeleteStudent(sId)} className="p-1 px-2 border-2 border-red-600 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform flex items-center justify-center" title="Delete Student">
                                <Trash2 className="w-3.5 h-3.5" />
                              </button>
                         </div>
@@ -1067,8 +1088,8 @@ export function AdminPayments() {
              phone: u.phone,
              status: u.status,
              batchId: u.batchId,
-             monthlyFee: (u as any).monthlyFee === undefined ? 500 : Number((u as any).monthlyFee),
-             pendingMonths: (u as any).pendingMonths || 0,
+             monthlyFee: ((u as any).monthlyFee !== undefined && (u as any).monthlyFee !== '' && (u as any).monthlyFee !== null) ? Number((u as any).monthlyFee) : 500,
+             pendingMonths: ((u as any).pendingMonths !== undefined && (u as any).pendingMonths !== '' && (u as any).pendingMonths !== null) ? Number((u as any).pendingMonths) : 0,
              exemptReason: (u as any).exemptReason || '',
              showPaymentNudge: !!(u as any).showPaymentNudge
            }));
@@ -1232,7 +1253,7 @@ export function AdminPayments() {
   if (loading) return <div className="p-8 flex justify-center"><Loader2 className="animate-spin w-8 h-8" /></div>;
 
   if (selectedStudentId) {
-     const student = students.find(s => (s.id || s.uid) === selectedStudentId);
+     const student = students.find(s => s.id === selectedStudentId || s.uid === selectedStudentId);
      if (!student) return <div>Student not found</div>;
      const studentPayments = payments.filter(p => p.studentId === selectedStudentId);
 
@@ -1250,7 +1271,7 @@ export function AdminPayments() {
               <form onSubmit={(e) => {
                  e.preventDefault();
                  const formData = new FormData(e.currentTarget);
-                 updateStudentPaymentDetails(student.id || student.uid, {
+                 updateStudentPaymentDetails(student.id || (student as any).uid, {
                     monthlyFee: Number(formData.get('monthlyFee')),
                     exemptReason: formData.get('exemptReason'),
                     pendingMonths: Number(formData.get('pendingMonths')),
@@ -1392,9 +1413,10 @@ export function AdminPayments() {
                       No students in this batch. To add students, go to the 'Students Management' module and click '+ Create Virtual Student'.
                    </div>
                 ) : bStudents.map((s, idx) => {
-                   const pendingCount = payments.filter(p => p.studentId === (s.id || s.uid) && p.status === 'pending').length;
+                   const sId = s.id || (s as any).uid;
+                   const pendingCount = payments.filter(p => p.studentId === sId && p.status === 'pending').length;
                    return (
-                     <button key={s.id || s.uid} onClick={() => setSelectedStudentId(s.id || s.uid)} className="w-full text-left p-4 border-2 border-zinc-200 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-zinc-100 flex flex-col items-start gap-1">
+                     <button key={sId} onClick={() => setSelectedStudentId(sId)} className="w-full text-left p-4 border-2 border-zinc-200 dark:border-zinc-800 hover:border-zinc-900 dark:hover:border-zinc-100 flex flex-col items-start gap-1">
                         <span className="font-bold flex items-center justify-between w-full">
                            <span>{s.fullName || s.email}</span>
                            {Number(s.pendingMonths) > 0 && (
