@@ -1,0 +1,549 @@
+================================================================================
+  IMPLEMENTATION GUIDE — Mobile Layout for Cloze Test & Comprehension Test
+  File to edit: src/components/quiz/UnifiedQuizPlayer.tsx
+  Date: June 2026 | Prepared by: Claude (Anthropic) for Google Gemini
+================================================================================
+
+SCOPE:
+  These changes apply ONLY to Cloze Test and Comprehension Test exam types
+  (i.e., exams where the `passage` variable is non-empty).
+  All other exam types (MCQ, Bilingual MCQ, Parajumble, Error Correction)
+  remain completely unchanged.
+  Desktop layout (lg: breakpoint and above) also remains unchanged.
+
+GOAL:
+  Portrait  → passage fills all available space at top (flex:1),
+              question+options shrink to content size at bottom (flex-shrink:0),
+              nav buttons always visible and fixed at the very bottom.
+  Landscape → passage fixed at 48% width on the left (scrollable),
+              question+options fill 52% on the right in one scrollable zone,
+              nav buttons always visible and fixed at the bottom of the right panel.
+  Minimum font size is never below 11px — content scrolls, font never shrinks further.
+
+================================================================================
+  CHANGE 1 — Outer wrapper div (Line 844)
+================================================================================
+
+FIND (Line 844) — the outermost div of the QUIZ screen:
+────────────────────────────────────────────────────────
+    <div className={`flex flex-col min-h-screen bg-[#121214] text-zinc-100 font-sans select-none overflow-x-hidden ${isForcedLandscape ? 'force-landscape-active' : ''}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+    <div className={`flex flex-col bg-[#121214] text-zinc-100 font-sans select-none overflow-x-hidden ${passage ? 'h-[100dvh]' : 'min-h-screen'} ${isForcedLandscape ? 'force-landscape-active' : ''}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+
+EXPLANATION:
+  - When passage exists (Cloze/Comprehension): use h-[100dvh] so the entire
+    screen is exactly one viewport height. This is required for the flex
+    split panels to work correctly on mobile.
+  - When no passage (MCQ etc.): keep min-h-screen. Zero change for other exams.
+  - 100dvh (dynamic viewport height) handles mobile browsers correctly —
+    it accounts for the browser address bar collapsing/expanding on iOS/Android.
+
+================================================================================
+  CHANGE 2 — <main> element (Line 915)
+================================================================================
+
+FIND (Line 915):
+────────────────────────────────────────────────────────
+    <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 md:p-6 max-w-7xl mx-auto w-full relative z-10">
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+    <main className={`relative z-10 w-full max-w-7xl mx-auto ${passage ? 'flex-1 flex flex-col overflow-hidden lg:grid lg:grid-cols-12 lg:gap-6 lg:p-6' : 'flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 md:p-6'}`}>
+
+EXPLANATION:
+  - When passage exists on mobile: switches from grid to flex-col so the
+    passage and question panels can use flex sizing (flex:1 and flex-shrink:0).
+  - On desktop (lg:): keeps the original 12-column grid, no change at all.
+  - When no passage: completely unchanged grid layout.
+
+================================================================================
+  CHANGE 3 — Passage panel div (Lines 917–928)
+================================================================================
+
+FIND (Lines 917–928):
+────────────────────────────────────────────────────────
+          {passage && (
+             <div className="lg:col-span-4 bg-[#1c1c1f] border border-zinc-800/80 p-6 rounded-2xl shadow-lg overflow-y-auto max-h-[250px] lg:max-h-[calc(100vh-160px)]">
+                <span className="text-[9px] uppercase tracking-widest text-[#eab308] font-black block mb-2">Comprehension Text</span>
+                 <div className="space-y-4">
+                    {formatPassageText(passage).map((para, pIdx) => (
+                       <p key={pIdx} className="serif text-sm text-zinc-300 leading-relaxed text-justify indent-6">
+                          {para}
+                       </p>
+                    ))}
+                 </div>
+             </div>
+          )}
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+          {passage && (
+             <div className="
+               flex-1 overflow-y-auto bg-[#1c1c1f] border-b border-zinc-800/80
+               p-4
+               lg:col-span-4 lg:flex-none lg:border-b-0 lg:border lg:rounded-2xl
+               lg:shadow-lg lg:p-6 lg:max-h-[calc(100vh-160px)]
+             ">
+                <span className="text-[9px] uppercase tracking-widest text-[#eab308] font-black block mb-2">Passage</span>
+                 <div className="space-y-3">
+                    {formatPassageText(passage).map((para, pIdx) => (
+                       <p key={pIdx} className="serif text-[11px] text-zinc-300 leading-relaxed text-justify indent-4 lg:text-sm lg:indent-6">
+                          {para}
+                       </p>
+                    ))}
+                 </div>
+             </div>
+          )}
+
+EXPLANATION:
+  Mobile portrait changes:
+    - flex-1: passage takes ALL remaining space above the question panel.
+      When the question panel is small, passage gets more space.
+      When question panel is larger, passage naturally shrinks.
+    - overflow-y-auto: passage scrolls independently within its own area.
+    - border-b: a subtle dividing line between passage and question section.
+    - p-4: tighter padding on mobile (was p-6).
+    - text-[11px]: slightly smaller serif text on mobile (was text-sm = 14px).
+      11px is the minimum — readable but more compact.
+    - indent-4: slightly tighter indent on mobile.
+
+  Desktop (lg:) — UNCHANGED:
+    - lg:flex-none: restores fixed sizing on desktop grid.
+    - lg:col-span-4: keeps the 4-column desktop layout.
+    - lg:border lg:rounded-2xl lg:shadow-lg: keeps desktop card styling.
+    - lg:p-6 lg:max-h-[calc(100vh-160px)]: keeps desktop height and padding.
+    - lg:text-sm lg:indent-6: keeps original desktop font sizes.
+
+================================================================================
+  CHANGE 4 — Question panel outer div (Line 931)
+================================================================================
+
+FIND (Line 931):
+────────────────────────────────────────────────────────
+          <div className={`${passage ? 'lg:col-span-5' : 'lg:col-span-9'} space-y-6 flex flex-col justify-between`}>
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+          <div className={`flex flex-col overflow-hidden ${passage ? 'flex-shrink-0 max-h-[52%] lg:flex-none lg:col-span-5' : 'flex-1 lg:col-span-9'} lg:space-y-6 lg:justify-between`}>
+
+EXPLANATION:
+  Mobile portrait — when passage exists:
+    - flex-shrink:0: this panel does NOT grow. It takes only the space it needs.
+    - max-h-[52%]: safety cap — even a very long question+options can never
+      exceed 52% of the screen. Beyond this, the question+options scroll.
+    - overflow-hidden: required so the internal scroll zone works correctly.
+
+  Mobile portrait — when NO passage (MCQ etc.):
+    - flex-1: takes full remaining space (unchanged behavior).
+
+  Desktop (lg:):
+    - lg:flex-none lg:col-span-5: restores the original 5-column desktop grid.
+    - lg:space-y-6 lg:justify-between: restores original desktop spacing.
+
+================================================================================
+  CHANGE 5 — Question content card div (Line 932)
+================================================================================
+
+FIND (Line 932):
+────────────────────────────────────────────────────────
+             <div className="bg-[#1c1c1f] border border-zinc-800 p-6 md:p-8 rounded-2xl shadow-lg space-y-6">
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+             <div className={`flex flex-col overflow-hidden ${passage ? 'flex-1' : ''} lg:bg-[#1c1c1f] lg:border lg:border-zinc-800 lg:p-6 lg:md:p-8 lg:rounded-2xl lg:shadow-lg lg:space-y-6`}>
+
+EXPLANATION:
+  Mobile portrait — when passage exists:
+    - flex-1: this inner card expands to fill the question panel.
+    - overflow-hidden: required for the scrollable zone inside (Change 6).
+    - Removes mobile card styling (no rounded corners, no border, no bg on
+      mobile — the content is already in a distinct section separated by
+      the border-b from the passage panel above).
+
+  Desktop: lg: classes restore all original card styling exactly.
+
+================================================================================
+  CHANGE 6 — Add a SCROLLABLE ZONE wrapper around question text + options
+             (currently there is NO such wrapper — this is a new wrapper div)
+================================================================================
+
+FIND — the beginning of the question content inside the card (Line 933):
+────────────────────────────────────────────────────────
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+
+BEFORE this line, INSERT a new opening div:
+────────────────────────────────────────────────────────
+                <div className={`${passage ? 'flex-1 overflow-y-auto px-4 pt-3 lg:px-0 lg:pt-0 lg:overflow-visible' : ''}`}>
+
+EXPLANATION:
+  This new wrapper div makes the question text + options one single
+  scrollable zone on mobile (portrait and landscape):
+    - flex-1: takes all available space inside the card.
+    - overflow-y-auto: scrolls when content is taller than available space.
+    - px-4 pt-3: adds mobile padding (since the outer card has no padding on mobile now).
+    - lg:overflow-visible: on desktop, no internal scroll — desktop scrolls normally.
+
+THEN FIND — the closing </div> of the options section (Line 995):
+────────────────────────────────────────────────────────
+             </div>
+
+             {/* Bottom Navigation exam buttons */}
+
+BEFORE the "Bottom Navigation" comment, INSERT a CLOSING </div> for the
+scrollable zone:
+────────────────────────────────────────────────────────
+                </div>
+                {/* END scrollable zone */}
+
+FINAL STRUCTURE inside the question card should be:
+    [Question card div]
+      [Scrollable zone div]  ← NEW (flex-1 overflow-y-auto)
+        question number + type badge
+        cloze hint (if applicable)
+        question text
+        options A B C D
+      [/Scrollable zone div]  ← closes before nav
+    [/Question card div]
+    [Nav buttons div]  ← OUTSIDE scroll zone, always visible
+
+================================================================================
+  CHANGE 7 — Question number header row (Line 933-940)
+================================================================================
+
+FIND (Lines 933-940):
+────────────────────────────────────────────────────────
+                <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                   <span className="text-[10px] uppercase font-bold tracking-widest text-[#eab308]">
+                      Question {currentIdx + 1} of {questions.length}
+                   </span>
+                   <span className="text-[9px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 border border-zinc-800 rounded tracking-wide">
+                      Multi-Choice (MCQ)
+                   </span>
+                </div>
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2 mb-1">
+                   <span className="text-[9px] uppercase font-bold tracking-widest text-[#eab308]">
+                      Q {currentIdx + 1}/{questions.length}
+                   </span>
+                   <span className="text-[8px] font-mono text-zinc-500 bg-zinc-900/80 px-1.5 py-0.5 border border-zinc-800 rounded tracking-wide">
+                      MCQ
+                   </span>
+                </div>
+
+EXPLANATION:
+  Reduces the header row height on mobile:
+    - "Question X of Y" → "Q X/Y" (shorter, same information)
+    - "Multi-Choice (MCQ)" → "MCQ" (shorter badge)
+    - Smaller font sizes (10px→9px, 9px→8px)
+    - Less padding (pb-3→pb-2, mb added to push content down slightly)
+  This saves ~8px of vertical space in the question panel.
+
+================================================================================
+  CHANGE 8 — Question text font size (Line 950)
+================================================================================
+
+FIND (Line 950):
+────────────────────────────────────────────────────────
+                <p className="text-base sm:text-lg text-white font-medium leading-relaxed whitespace-pre-wrap text-left">
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                <p className={`text-white font-medium leading-snug whitespace-pre-wrap text-left ${passage ? 'text-[11px] lg:text-base' : 'text-base sm:text-lg leading-relaxed'}`}>
+
+EXPLANATION:
+  - When passage exists (Cloze/Comprehension): question text = 11px on mobile.
+    This is the minimum readable size. Saves significant vertical space.
+    On desktop: restores to text-base (16px).
+  - When no passage (MCQ etc.): completely unchanged (text-base sm:text-lg).
+  - leading-snug: tighter line height for passage exams on mobile.
+
+================================================================================
+  CHANGE 9 — Options gap and padding (Lines 967-994)
+================================================================================
+
+FIND (Line 967):
+────────────────────────────────────────────────────────
+                <div className="grid grid-cols-1 gap-3 pt-2">
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                <div className={`grid grid-cols-1 pt-1 ${passage ? 'gap-[6px] lg:gap-3' : 'gap-3 pt-2'}`}>
+
+EXPLANATION:
+  - gap-[6px]: reduces gap between options from 12px to 6px on mobile
+    for passage-based exams. Saves ~18px total for 4 options.
+  - Desktop: restores gap-3 (12px) unchanged.
+  - Non-passage exams: completely unchanged.
+
+FIND (Line 974) — option card className:
+────────────────────────────────────────────────────────
+                           className={`border rounded-xl px-4 py-3 text-sm font-medium cursor-pointer transition-all flex items-center justify-between select-none ${
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                           className={`border cursor-pointer transition-all select-none flex items-start justify-between ${passage ? 'rounded-lg px-3 py-[5px] text-[11px] font-medium lg:rounded-xl lg:px-4 lg:py-3 lg:text-sm' : 'rounded-xl px-4 py-3 text-sm font-medium'} ${
+
+EXPLANATION:
+  Mobile passage exams:
+    - rounded-lg (was rounded-xl): slightly smaller corners, saves tiny space.
+    - px-3 py-[5px]: tighter padding (was px-4 py-3).
+    - text-[11px]: smaller option text. 11px is the minimum.
+    - items-start: aligns option letter and text to top (important for
+      multi-line option text — the letter stays at top, text wraps below).
+  Desktop: lg: classes restore all original sizes.
+  Non-passage exams: completely unchanged.
+
+FIND (Lines 980-985) — option inner span:
+────────────────────────────────────────────────────────
+                            <span className="text-left">
+                               <b className={`mr-2 ${isSelected ? 'text-yellow-400' : 'text-zinc-500'}`}>
+                                  {String.fromCharCode(65 + optIdx)}.
+                               </b>
+                               {opt}
+                            </span>
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                            <span className="text-left flex items-start gap-1.5">
+                               <b className={`flex-shrink-0 ${passage ? 'text-[10px]' : ''} ${isSelected ? 'text-yellow-400' : 'text-zinc-500'}`}>
+                                  {String.fromCharCode(65 + optIdx)}.
+                               </b>
+                               <span>{opt}</span>
+                            </span>
+
+EXPLANATION:
+  - flex items-start gap-1.5: option letter and text are now flex siblings,
+    both aligned to top. This is critical for multi-line option text.
+  - flex-shrink-0 on the letter: letter never wraps or shrinks.
+  - The option text wraps naturally within its own span.
+
+================================================================================
+  CHANGE 10 — Navigation buttons (Lines 998-1030) — make sticky/fixed
+================================================================================
+
+FIND (Line 998):
+────────────────────────────────────────────────────────
+             {/* Bottom Navigation exam buttons */}
+             <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 border-t border-zinc-800/80 pt-4">
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+             {/* Bottom Navigation exam buttons — always visible */}
+             <div className={`flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 border-t border-zinc-800/80 ${passage ? 'flex-shrink-0 px-4 py-2.5 bg-[#121214] lg:px-0 lg:py-0 lg:pt-4 lg:bg-transparent' : 'pt-4'}`}>
+
+EXPLANATION:
+  Mobile passage exams:
+    - flex-shrink-0: nav bar never compresses. It is always fully visible.
+    - px-4 py-2.5 bg-[#121214]: adds mobile padding and a background so
+      the nav bar looks clean when content scrolls "under" it.
+    - gap-2: slightly tighter gap between buttons on mobile (was gap-3).
+  Desktop: lg: classes restore original styling exactly.
+  Non-passage exams: completely unchanged.
+
+FIND (Lines 1001-1006) — Previous button:
+────────────────────────────────────────────────────────
+                   <button
+                     onClick={prevQuestion}
+                     disabled={currentIdx === 0}
+                     className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs uppercase tracking-widest font-bold rounded-xl transition-all border border-red-400 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                   >
+                      Previous
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                   <button
+                     onClick={prevQuestion}
+                     disabled={currentIdx === 0}
+                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs' : 'px-4 py-2 text-xs'} bg-zinc-800 hover:bg-zinc-700 text-zinc-200 uppercase tracking-widest font-bold rounded-xl transition-all border border-red-400 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed`}
+                   >
+                      Prev
+
+FIND (Lines 1007-1013) — Clear button:
+────────────────────────────────────────────────────────
+                   <button
+                     onClick={clearResponse}
+                     disabled={userAnswers[currentIdx] === undefined}
+                     className="px-4 py-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                   >
+                      Clear
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                   <button
+                     onClick={clearResponse}
+                     disabled={userAnswers[currentIdx] === undefined}
+                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs' : 'px-4 py-2 text-xs'} bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed`}
+                   >
+                      Clear
+
+FIND (Lines 1017-1022) — Next & Preview button:
+────────────────────────────────────────────────────────
+                   <button
+                     onClick={nextAndReview}
+                     className="px-4 py-2.5 bg-zinc-900 border border-violet-400 hover:bg-zinc-800 text-violet-400 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer"
+                   >
+                      Next & Preview
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                   <button
+                     onClick={nextAndReview}
+                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2.5 lg:text-xs' : 'px-4 py-2.5 text-xs'} bg-zinc-900 border border-violet-400 hover:bg-zinc-800 text-violet-400 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer`}
+                   >
+                      {passage ? 'Next ▷' : 'Next & Preview'}
+
+FIND (Lines 1023-1029) — Save & Next button:
+────────────────────────────────────────────────────────
+                   <button
+                     onClick={saveAndNext}
+                     className="px-6 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-green-400 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border border-green-500 shadow-md"
+                   >
+                      {currentIdx === questions.length - 1 ? 'Submit' : 'Save & Next'}
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+                   <button
+                     onClick={saveAndNext}
+                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-6 lg:py-2.5 lg:text-xs' : 'px-6 py-2.5 text-xs'} bg-zinc-900 hover:bg-zinc-800 text-green-400 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border border-green-500 shadow-md`}
+                   >
+                      {currentIdx === questions.length - 1 ? 'Submit' : (passage ? 'Save & Next →' : 'Save & Next')}
+
+EXPLANATION (all nav buttons):
+  - On mobile with passage: smaller padding (px-3 py-1.5) and smaller text
+    (text-[10px]) so all 4 buttons fit on one line.
+  - "Next & Preview" shortened to "Next ▷" on mobile passage exams.
+  - Desktop (lg:): all original sizes restored exactly.
+  - Non-passage exams: completely unchanged.
+
+================================================================================
+  LANDSCAPE SPECIFIC — Additional CSS in <style> block (Line 845)
+================================================================================
+
+FIND (Lines 845-851) — the <style> block:
+────────────────────────────────────────────────────────
+       <style dangerouslySetInnerHTML={{__html: `
+          .serif { font-family: 'Georgia', serif; }
+          ::-webkit-scrollbar { width: 6px; }
+          ::-webkit-scrollbar-track { background: transparent; }
+          ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 99px; }
+          ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+       `}} />
+
+REPLACE WITH:
+────────────────────────────────────────────────────────
+       <style dangerouslySetInnerHTML={{__html: `
+          .serif { font-family: 'Georgia', serif; }
+          ::-webkit-scrollbar { width: 4px; }
+          ::-webkit-scrollbar-track { background: transparent; }
+          ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 99px; }
+          ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+          @media (orientation: landscape) and (max-width: 1024px) {
+            .quiz-passage-panel {
+              width: 48% !important;
+              flex-shrink: 0 !important;
+              border-right: 1px solid rgba(63,63,70,0.6) !important;
+              border-bottom: none !important;
+              overflow-y: auto !important;
+              max-height: none !important;
+            }
+            .quiz-question-panel {
+              flex: 1 !important;
+              flex-direction: column !important;
+              overflow: hidden !important;
+            }
+            .quiz-scroll-zone {
+              flex: 1 !important;
+              overflow-y: auto !important;
+            }
+            .quiz-nav-bar {
+              flex-shrink: 0 !important;
+            }
+            .quiz-outer-main {
+              flex-direction: row !important;
+            }
+          }
+       `}} />
+
+EXPLANATION:
+  This CSS media query targets ONLY landscape orientation on non-desktop
+  screens (max-width: 1024px = mobile/tablet landscape).
+
+  It forces the layout to switch from portrait stack to landscape side-by-side:
+    - .quiz-passage-panel: takes exactly 48% width, scrolls vertically.
+    - .quiz-question-panel: takes remaining 52%, is a column flex.
+    - .quiz-scroll-zone: fills question panel, scrolls independently.
+    - .quiz-nav-bar: always at bottom, never scrolls.
+    - .quiz-outer-main: switches to flex-row (side-by-side).
+
+================================================================================
+  CHANGE 11 — Add landscape CSS class names to key elements
+================================================================================
+
+After applying Changes 3, 4, 5, 6 above, ADD these className additions:
+
+  Passage panel div → add class: quiz-passage-panel
+  Question panel outer div → add class: quiz-question-panel
+  The new scrollable zone div (from Change 6) → add class: quiz-scroll-zone
+  Nav buttons div → add class: quiz-nav-bar
+  The <main> element → add class: quiz-outer-main
+
+Example — passage panel after Change 3 should ALSO include quiz-passage-panel:
+    <div className="quiz-passage-panel flex-1 overflow-y-auto ...">
+
+Example — main element after Change 2 should ALSO include quiz-outer-main:
+    <main className={`quiz-outer-main relative z-10 ...`}>
+
+These class names are used ONLY by the landscape CSS media query above.
+They do not conflict with any existing Tailwind classes.
+
+================================================================================
+  SUMMARY OF ALL CHANGES
+================================================================================
+
+Line 844  → Change min-h-screen to h-[100dvh] conditionally on passage
+Line 845  → Add landscape CSS media query in style block; scrollbar width 6px→4px
+Line 915  → Change main to flex-col on mobile when passage exists
+Lines 917-928 → Passage panel: flex-1, smaller mobile font/padding, landscape class
+Line 931  → Question outer panel: flex-shrink-0 max-h-[52%] on mobile with passage
+Line 932  → Question card: remove mobile card styling, add overflow-hidden
+Line 933  → ADD new scrollable zone opening div (flex-1 overflow-y-auto)
+Lines 933-940 → Question header row: shorten text, reduce font sizes
+Line 950  → Question text: text-[11px] on mobile with passage
+Line 967  → Options container: gap-[6px] on mobile with passage
+Line 974  → Option card: smaller padding/font, items-start for multi-line
+Lines 980-985 → Option inner: flex gap-1.5, flex-shrink-0 on letter
+Line 995  → ADD closing </div> for scrollable zone (before nav comment)
+Line 998  → Nav bar: flex-shrink-0 bg on mobile, smaller gap
+Lines 1001-1029 → All 4 nav buttons: smaller padding/font on mobile with passage
+
+LANDSCAPE CLASS NAMES TO ADD:
+  quiz-outer-main → on <main>
+  quiz-passage-panel → on passage <div>
+  quiz-question-panel → on question outer <div>
+  quiz-scroll-zone → on new scrollable zone <div>
+  quiz-nav-bar → on nav <div>
+
+================================================================================
+  WHAT DOES NOT CHANGE (CONFIRM TO GEMINI)
+================================================================================
+
+  ✅ All quiz logic (selectOption, saveAndNext, prevQuestion, etc.) — unchanged
+  ✅ Timer logic — unchanged
+  ✅ Submit flow — unchanged
+  ✅ Result screen — unchanged
+  ✅ Agreement / Landing screens — unchanged
+  ✅ Desktop layout (lg: breakpoint) — completely unchanged
+  ✅ MCQ, Bilingual MCQ, Parajumble, Error Correction exam types — completely unchanged
+  ✅ Question Palette sidebar (desktop) — unchanged (Lines 1034-1079)
+  ✅ Watermark overlay — unchanged
+  ✅ Firestore reads / API calls — zero impact
+  ✅ Firebase quota — zero impact
+
+================================================================================
+  END OF IMPLEMENTATION GUIDE
+================================================================================

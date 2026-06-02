@@ -841,13 +841,39 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
 
   // SCREEN 3: Active Quiz Area (SSC-Style) - Returned as default
   return (
-    <div className={`flex flex-col min-h-screen bg-[#121214] text-zinc-100 font-sans select-none overflow-x-hidden ${isForcedLandscape ? 'force-landscape-active' : ''}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+    <div className={`flex flex-col bg-[#121214] text-zinc-100 font-sans select-none overflow-x-hidden ${passage ? 'h-[100dvh]' : 'min-h-screen'} ${isForcedLandscape ? 'force-landscape-active' : ''}`} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
        <style dangerouslySetInnerHTML={{__html: `
           .serif { font-family: 'Georgia', serif; }
-          ::-webkit-scrollbar { width: 6px; }
+          ::-webkit-scrollbar { width: 4px; }
           ::-webkit-scrollbar-track { background: transparent; }
           ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 99px; }
           ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+
+          @media (orientation: landscape) and (max-width: 1024px) {
+            .quiz-passage-panel {
+              width: 48% !important;
+              flex-shrink: 0 !important;
+              border-right: 1px solid rgba(63,63,70,0.6) !important;
+              border-bottom: none !important;
+              overflow-y: auto !important;
+              max-height: none !important;
+            }
+            .quiz-question-panel {
+              flex: 1 !important;
+              flex-direction: column !important;
+              overflow: hidden !important;
+            }
+            .quiz-scroll-zone {
+              flex: 1 !important;
+              overflow-y: auto !important;
+            }
+            .quiz-nav-bar {
+              flex-shrink: 0 !important;
+            }
+            .quiz-outer-main {
+              flex-direction: row !important;
+            }
+          }
        `}} />
 
        {/* Security Watermark */}
@@ -912,14 +938,14 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
        </header>
 
        {/* Grid Layout (Passage, Questions, Desktop Sidebar Palette) */}
-       <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 md:p-6 max-w-7xl mx-auto w-full relative z-10">
+       <main className={`quiz-outer-main relative z-10 w-full max-w-7xl mx-auto ${passage ? 'flex-1 flex flex-col overflow-hidden lg:grid lg:grid-cols-12 lg:gap-6 lg:p-6' : 'flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-4 md:p-6'}`}>
           {/* Optional Passage container */}
           {passage && (
-             <div className="lg:col-span-4 bg-[#1c1c1f] border border-zinc-800/80 p-6 rounded-2xl shadow-lg overflow-y-auto max-h-[250px] lg:max-h-[calc(100vh-160px)]">
-                <span className="text-[9px] uppercase tracking-widest text-[#eab308] font-black block mb-2">Comprehension Text</span>
-                 <div className="space-y-4">
+             <div className="quiz-passage-panel flex-1 overflow-y-auto bg-[#1c1c1f] border-b border-zinc-800/80 p-4 lg:col-span-4 lg:flex-none lg:border-b-0 lg:border lg:rounded-2xl lg:shadow-lg lg:p-6 lg:max-h-[calc(100vh-160px)]">
+                <span className="text-[9px] uppercase tracking-widest text-[#eab308] font-black block mb-2">Passage</span>
+                 <div className="space-y-3">
                     {formatPassageText(passage).map((para, pIdx) => (
-                       <p key={pIdx} className="serif text-sm text-zinc-300 leading-relaxed text-justify indent-6">
+                       <p key={pIdx} className="serif text-[11px] text-zinc-300 leading-relaxed text-justify indent-4 lg:text-sm lg:indent-6">
                           {para}
                        </p>
                     ))}
@@ -928,86 +954,92 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           )}
 
           {/* Active Question Render panel */}
-          <div className={`${passage ? 'lg:col-span-5' : 'lg:col-span-9'} space-y-6 flex flex-col justify-between`}>
-             <div className="bg-[#1c1c1f] border border-zinc-800 p-6 md:p-8 rounded-2xl shadow-lg space-y-6">
-                <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
-                   <span className="text-[10px] uppercase font-bold tracking-widest text-[#eab308]">
-                      Question {currentIdx + 1} of {questions.length}
-                   </span>
-                   <span className="text-[9px] font-mono text-zinc-400 bg-zinc-900 px-2 py-0.5 border border-zinc-800 rounded tracking-wide">
-                      Multi-Choice (MCQ)
-                   </span>
-                </div>
-
-                {/* Cloze Test blanket helper */}
-                {((exam.examType as any) === 'Cloze' || exam.examType === 'Cloze Test') && (activeQuestion as any).blank_num && (
-                   <div className="text-xs text-yellow-500/80 bg-yellow-500/5 border border-yellow-500/10 p-3 rounded-lg font-bold">
-                     🎯 Select correct option to fill blank position <b>{(activeQuestion as any).blank_num}</b> in the left-hand passage.
+          <div className={`quiz-question-panel flex flex-col overflow-hidden ${passage ? 'flex-shrink-0 max-h-[52%] lg:flex-none lg:col-span-5' : 'flex-1 lg:col-span-9'} lg:space-y-6 lg:justify-between`}>
+             <div className={`flex flex-col overflow-hidden ${passage ? 'flex-1' : ''} lg:bg-[#1c1c1f] lg:border lg:border-zinc-800 lg:p-6 lg:md:p-8 lg:rounded-2xl lg:shadow-lg lg:space-y-6`}>
+                <div className={`quiz-scroll-zone ${passage ? 'flex-1 overflow-y-auto px-4 pt-3 lg:px-0 lg:pt-0 lg:overflow-visible' : ''}`}>
+                   <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2 mb-1">
+                      <span className="text-[9px] uppercase font-bold tracking-widest text-[#eab308]">
+                         Q {currentIdx + 1}/{questions.length}
+                      </span>
+                      <span className="text-[8px] font-mono text-zinc-505 bg-zinc-900/80 px-1.5 py-0.5 border border-zinc-800 rounded tracking-wide">
+                         MCQ
+                      </span>
                    </div>
-                )}
 
-                {/* Question statement */}
-                <p className="text-base sm:text-lg text-white font-medium leading-relaxed whitespace-pre-wrap text-left">
-                   {qText}
-                </p>
+                   {/* Cloze Test blanket helper */}
+                   {((exam.examType as any) === 'Cloze' || exam.examType === 'Cloze Test') && (activeQuestion as any).blank_num && (
+                      <div className="text-xs text-yellow-500/80 bg-yellow-500/5 border border-yellow-500/10 p-3 rounded-lg font-bold mb-3">
+                        🎯 Select correct option to fill blank position <b>{(activeQuestion as any).blank_num}</b> in the left-hand passage.
+                      </div>
+                   )}
 
-                {/* Parajumble sentences grid */}
-                {activeQuestion?.sentences && typeof activeQuestion.sentences === 'object' && (
-                   <div className="space-y-2 bg-[#121214] p-4 rounded-xl border border-zinc-800 text-xs text-zinc-300 leading-relaxed font-mono">
-                      {Object.entries(activeQuestion.sentences).map(([key, value]) => (
-                         <div key={`pj-${currentIdx}-${key}`} className="flex items-start gap-1.5 text-left">
-                            <b className="text-yellow-650 mr-1 shrink-0">{key}:</b> 
-                            <span>{String(value)}</span>
-                         </div>
-                      ))}
-                   </div>
-                )}
+                   {/* Question statement */}
+                   <p className={`text-white font-medium leading-snug whitespace-pre-wrap text-left ${passage ? 'text-[11px] lg:text-base' : 'text-base sm:text-lg leading-relaxed'}`}>
+                      {qText}
+                   </p>
 
-                {/* Option selection card lists */}
-                <div className="grid grid-cols-1 gap-3 pt-2">
-                   {opts.map((opt: string, optIdx: number) => {
-                      const isSelected = userAnswers[currentIdx] === optIdx;
-                      return (
-                         <div 
-                           key={`opt-${currentIdx}-${optIdx}`}
-                           onClick={() => selectOption(optIdx)}
-                           className={`border rounded-xl px-4 py-3 text-sm font-medium cursor-pointer transition-all flex items-center justify-between select-none ${
-                             isSelected 
-                               ? 'bg-yellow-500/10 border-yellow-500 text-white font-semibold shadow-[0_0_10px_rgba(234,179,8,0.15)]' 
-                               : 'bg-[#18181b]/60 hover:bg-[#27272a] border-zinc-800/80 text-zinc-400'
-                           }`}
-                         >
-                            <span className="text-left">
-                               <b className={`mr-2 ${isSelected ? 'text-yellow-400' : 'text-zinc-500'}`}>
-                                  {String.fromCharCode(65 + optIdx)}.
-                               </b> 
-                               {opt}
-                            </span>
-                            {isSelected && (
-                               <span className="text-[10px] uppercase font-bold text-yellow-400 tracking-wider">
-                                  Selected
+                   {/* Parajumble sentences grid */}
+                   {activeQuestion?.sentences && typeof activeQuestion.sentences === 'object' && (
+                      <div className="space-y-2 bg-[#121214] p-4 rounded-xl border border-zinc-800 text-xs text-zinc-300 leading-relaxed font-mono my-3">
+                         {Object.entries(activeQuestion.sentences).map(([key, value]) => (
+                            <div key={`pj-${currentIdx}-${key}`} className="flex items-start gap-1.5 text-left">
+                               <b className="text-yellow-650 mr-1 shrink-0">{key}:</b> 
+                               <span>{String(value)}</span>
+                            </div>
+                         ))}
+                      </div>
+                   )}
+
+                   {/* Option selection card lists */}
+                   <div className={`grid grid-cols-1 pt-1 ${passage ? 'gap-[6px] lg:gap-3' : 'gap-3 pt-2'}`}>
+                      {opts.map((opt: string, optIdx: number) => {
+                         const isSelected = userAnswers[currentIdx] === optIdx;
+                         return (
+                            <div 
+                              key={`opt-${currentIdx}-${optIdx}`}
+                              onClick={() => selectOption(optIdx)}
+                              className={`border cursor-pointer transition-all select-none flex items-start justify-between ${
+                                 passage 
+                                   ? 'rounded-lg px-3 py-[5px] text-[11px] font-medium lg:rounded-xl lg:px-4 lg:py-3 lg:text-sm' 
+                                   : 'rounded-xl px-4 py-3 text-sm font-medium'
+                              } ${
+                                isSelected 
+                                  ? 'bg-yellow-500/10 border-yellow-500 text-white font-semibold shadow-[0_0_10px_rgba(234,179,8,0.15)]' 
+                                  : 'bg-[#18181b]/60 hover:bg-[#27272a] border-zinc-800/80 text-zinc-400'
+                              }`}
+                            >
+                               <span className="text-left flex items-start gap-1.5">
+                                  <b className={`flex-shrink-0 ${passage ? 'text-[10px]' : ''} ${isSelected ? 'text-yellow-400' : 'text-zinc-505'}`}>
+                                     {String.fromCharCode(65 + optIdx)}.
+                                  </b> 
+                                  <span>{opt}</span>
                                </span>
-                            )}
-                         </div>
-                      )
-                   })}
+                               {isSelected && (
+                                  <span className="text-[10px] uppercase font-bold text-yellow-400 tracking-wider">
+                                     Selected
+                                  </span>
+                               )}
+                            </div>
+                         )
+                      })}
+                   </div>
                 </div>
              </div>
 
-             {/* Bottom Navigation exam buttons */}
-             <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 border-t border-zinc-800/80 pt-4">
+             {/* Bottom Navigation exam buttons — always visible */}
+             <div className={`quiz-nav-bar flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 border-t border-zinc-800/80 ${passage ? 'flex-shrink-0 px-4 py-2.5 bg-[#121214] lg:px-0 lg:py-0 lg:pt-4 lg:bg-transparent' : 'pt-4'}`}>
                 <div className="flex gap-2">
                    <button 
                      onClick={prevQuestion} 
                      disabled={currentIdx === 0}
-                     className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs uppercase tracking-widest font-bold rounded-xl transition-all border border-red-400 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs' : 'px-4 py-2 text-xs'} bg-zinc-800 hover:bg-zinc-700 text-zinc-200 uppercase tracking-widest font-bold rounded-xl transition-all border border-red-400 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed`}
                    >
-                      Previous
+                      Prev
                    </button>
                    <button 
                      onClick={clearResponse} 
                      disabled={userAnswers[currentIdx] === undefined}
-                     className="px-4 py-2 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs' : 'px-4 py-2 text-xs'} bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed`}
                    >
                       Clear
                    </button>
@@ -1016,19 +1048,20 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 <div className="flex flex-wrap gap-2">
                    <button 
                      onClick={nextAndReview} 
-                     className="px-4 py-2.5 bg-zinc-900 border border-violet-400 hover:bg-zinc-800 text-violet-400 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer"
+                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2.5 lg:text-xs' : 'px-4 py-2.5 text-xs'} bg-zinc-900 border border-violet-400 hover:bg-zinc-800 text-violet-400 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer`}
                    >
-                      Next & Preview
+                      {passage ? 'Next ▷' : 'Next & Preview'}
                    </button>
                    <button 
                      onClick={saveAndNext} 
-                     className="px-6 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-green-400 text-xs uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border border-green-500 shadow-md"
+                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-6 lg:py-2.5 lg:text-xs' : 'px-6 py-2.5 text-xs'} bg-zinc-900 hover:bg-zinc-800 text-green-400 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border border-green-500 shadow-md`}
                    >
-                      {currentIdx === questions.length - 1 ? 'Submit' : 'Save & Next'}
+                      {currentIdx === questions.length - 1 ? 'Submit' : (passage ? 'Save & Next →' : 'Save & Next')}
                    </button>
                 </div>
              </div>
           </div>
+
 
           {/* Desktop Palette Panel column */}
           <div className="hidden lg:block lg:col-span-3 bg-[#1c1c1f] border border-zinc-800 p-5 rounded-2xl shadow-lg h-max max-h-[calc(100vh-160px)] overflow-y-auto sticky top-24 space-y-6">
