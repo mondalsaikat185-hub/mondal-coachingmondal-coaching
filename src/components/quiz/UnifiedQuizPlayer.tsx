@@ -862,6 +862,8 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
               flex: 1 !important;
               flex-direction: column !important;
               overflow: hidden !important;
+              max-height: none !important;
+              height: 100% !important;
             }
             .quiz-scroll-zone {
               flex: 1 !important;
@@ -869,9 +871,12 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
             }
             .quiz-nav-bar {
               flex-shrink: 0 !important;
+              margin-top: auto !important;
             }
             .quiz-outer-main {
               flex-direction: row !important;
+              height: calc(100vh - 50px) !important;
+              overflow: hidden !important;
             }
           }
        `}} />
