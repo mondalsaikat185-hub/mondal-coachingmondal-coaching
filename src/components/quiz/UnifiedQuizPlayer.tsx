@@ -668,12 +668,24 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                  </div>
               )}
 
-              <button 
-                onClick={onBack} 
-                className="relative z-10 px-6 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 text-[10px] uppercase tracking-widest font-black rounded-xl transition-all cursor-pointer border-none shadow-md"
-              >
-                 Return to Dashboard
-              </button>
+              <div className="flex flex-col sm:flex-row justify-center items-center gap-3">
+                 {isPreview && (
+                    <button 
+                      onClick={() => {
+                         setScreen('QUIZ');
+                      }} 
+                      className="relative z-10 px-6 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-[10px] uppercase tracking-widest font-black rounded-xl transition-all cursor-pointer border border-zinc-750 shadow-md"
+                    >
+                       Back to Questions / প্রশ্নসমূহে ফিরে যান
+                    </button>
+                 )}
+                 <button 
+                   onClick={onBack} 
+                   className="relative z-10 px-6 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 text-[10px] uppercase tracking-widest font-black rounded-xl transition-all cursor-pointer border-none shadow-md"
+                 >
+                    {isPreview ? 'Close Preview & Return to Folder / প্রিভিউ বন্ধ করুন এবং ফোল্ডারে ফিরে যান' : 'Return to Dashboard'}
+                 </button>
+              </div>
            </div>
 
            {/* Review of detailed question by question solutions */}
@@ -900,6 +912,18 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           </div>
           
           <div className="flex items-center gap-3">
+             {/* Exit Preview button for Admin */}
+             {isPreview && (
+                <button 
+                  type="button"
+                  onClick={onBack}
+                  className="text-[10px] landscape:text-[9px] flex items-center gap-1 px-2.5 py-1 landscape:px-2 landscape:py-0.5 bg-red-650 hover:bg-red-700 text-white font-bold uppercase rounded-md transition-all border-none cursor-pointer shadow-sm"
+                  title="Exit Preview / প্রিভিউ বন্ধ করুন"
+                >
+                  ✕ Exit Preview
+                </button>
+             )}
+
              {/* Landscape simulation button */}
              <button 
                type="button"

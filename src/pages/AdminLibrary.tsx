@@ -690,7 +690,7 @@ export function AdminLibrary() {
   };
 
   if (previewItem) {
-     return <UnifiedQuizPlayer exam={previewItem as any} onBack={() => setPreviewItem(null)} />;
+     return <UnifiedQuizPlayer exam={previewItem as any} onBack={() => setPreviewItem(null)} isPreview={true} />;
   }
 
   const breadcrumbs = folderBreadcrumbs.map(b => ({ id: b.id, title: b.title }));
