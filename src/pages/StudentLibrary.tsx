@@ -289,8 +289,10 @@ export function StudentLibrary() {
         URL.revokeObjectURL(blobUrl);
         setDownloadMessage({
           title: '⚠️ Browser Not Supported',
-          body: `WhatsApp/Instagram browser-এ PDF download হয় না। Chrome বা Safari ব্রাউজারে অ্যাপটি ওপেন করুন। পিডিএফ পাসওয়ার্ড: ${password}`,
-          isWarning: true
+          body: `WhatsApp/Instagram browser-এ সরাসরি PDF download হয় না।\n\nনিচের বোতামগুলো ব্যবহার করুন:\n• Chrome/Safari-এ খুলতে: "নিরাপদ ডাউনলোড" বোতাম\n• WhatsApp-এ PDF লিংক পাঠান: নীল বোতাম\n\nPDF পাসওয়ার্ড: ${password}`,
+          isWarning: true,
+          fallbackUrl: item.contentUrl || undefined,
+          item: item
         });
         return;
       }
@@ -298,12 +300,14 @@ export function StudentLibrary() {
       if (isIOS) {
         const newTab = window.open(blobUrl, '_blank');
         if (!newTab) {
-          // Popup blocked — don't redirect, just show warning message
+          // Popup blocked — show Oracle direct link as alternative
           URL.revokeObjectURL(blobUrl);
           setDownloadMessage({
             title: '⚠️ Popup Blocked',
-            body: `Safari-এ Popup blocked হয়েছে। Settings → Safari → Block Pop-ups বন্ধ করুন, তারপর আবার try করুন।\n\nপিডিএফ পাসওয়ার্ড: ${password}`,
-            isWarning: true
+            body: `Safari-এ Popup blocked হয়েছে।\n\nনিচের "নিরাপদ ডাউনলোড" বোতামে চাপ দিন অথবা WhatsApp-এ PDF লিংক পাঠান।\n\nPDF পাসওয়ার্ড: ${password}`,
+            isWarning: true,
+            fallbackUrl: item.contentUrl || undefined,
+            item: item
           });
           return;
         }
@@ -391,7 +395,7 @@ export function StudentLibrary() {
 
         try {
            const rawPhone = user?.phone || '0000000000';
-           const phonePassword = rawPhone.replace(/^\+91/, '').replace(/\s+/g, '').trim();
+           const phonePassword = cleanPhone(rawPhone) || rawPhone.replace(/^\+91/, '').replace(/\s+/g, '').trim();
            const { encryptPDF } = await import('@pdfsmaller/pdf-encrypt');
            byteArray = (await encryptPDF(byteArray, phonePassword)) as any;
         } catch (pdfErr) {
@@ -401,7 +405,7 @@ export function StudentLibrary() {
         const blob = new Blob([byteArray], { type: 'application/pdf' });
         const blobUrl = URL.createObjectURL(blob);
         const fileName = item.fileName || `${item.title || 'note'}.pdf`;
-        const password = (user?.phone || '').replace(/^\+91/, '').replace(/\s+/g, '').trim();
+        const password = cleanPhone(user?.phone || '') || (user?.phone || '').replace(/^\+91/, '').replace(/\s+/g, '').trim();
         setActiveDownloadFile({ blob, fileName, title: item.title || 'document' });
 
         const ua = navigator.userAgent;
@@ -492,7 +496,11 @@ export function StudentLibrary() {
          }
 
          if (!user || !(user as any).batchId) {
-            alert("প্রথমে একটি batch-এ যোগ দিন (Join a batch first)");
+            setDownloadMessage({
+               title: '⚠️ Batch নেই',
+               body: 'প্রথমে একটি batch-এ যোগ দিন। অ্যাডমিনের সাথে যোগাযোগ করুন।',
+               isWarning: true
+             });
             return;
          }
 
@@ -529,7 +537,11 @@ export function StudentLibrary() {
             if (endedSessionDocs.length > 0) {
                setPreviewItem(item);
             } else {
-               alert('এই পরীক্ষা এখনো শুরু হয়নি। দয়া করে লাইভ সেশন শুরু হওয়া পর্যন্ত অপেক্ষা করুন।');
+               setDownloadMessage({
+                 title: '🔒 পরীক্ষা শুরু হয়নি',
+                 body: 'এই পরীক্ষা এখনো শুরু হয়নি। অ্যাডমিন লাইভ সেশন শুরু করলে আপনি যোগ দিতে পারবেন।',
+                 isWarning: true
+               });
             }
             return;
          }
@@ -852,27 +864,32 @@ export function StudentLibrary() {
                 </button>
                 </>
               )}
-              {downloadMessage.isWarning && (
+              {downloadMessage.isWarning && !downloadMessage.fallbackUrl && (
                 <>
                   <button
                     onClick={() => {
                       const appUrl = window.location.origin + window.location.pathname;
-                      navigator.clipboard.writeText(appUrl);
-                      alert("লিংক কপি করা হয়েছে! দয়া করে Google Chrome বা Safari ব্রাউজারে পেস্ট করে ওপেন করুন এবং পিডিএফ ডাউনলোড করুন।");
+                      if (navigator.clipboard) {
+                        navigator.clipboard.writeText(appUrl).catch(() => {});
+                      }
+                      setDownloadMessage(prev => prev ? {
+                        ...prev,
+                        body: prev.body + '\n\n✅ লিংক কপি হয়েছে! Chrome বা Safari-এ পেস্ট করুন।'
+                      } : null);
                     }}
-                    className="w-full bg-zinc-150 hover:bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-zinc-400 dark:border-zinc-700 shadow-[3px_3px_0px_0px_rgba(161,161,170,0.5)] cursor-pointer"
+                    className="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-zinc-600 cursor-pointer"
                   >
-                    📋 অ্যাপের লিংক কপি করুন
+                    📋 Chrome-এ খোলার লিংক কপি করুন
                   </button>
                   <button
                     onClick={() => {
                       const appUrl = window.location.origin + window.location.pathname;
-                      const text = `Mondal Coaching tuition app link. Please open this link in Google Chrome or Safari to download PDFs successfully!\n\n👉 ${appUrl}`;
+                      const text = `M-C Tuition পোর্টাল: এই লিংকটি Chrome বা Safari-এ খুলুন এবং PDF ডাউনলোড করুন।\n\n${appUrl}`;
                       window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
                     }}
-                    className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-green-800 shadow-[3px_3px_0px_0px_rgba(20,83,45,1)] cursor-pointer"
+                    className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-green-800 cursor-pointer"
                   >
-                    💬 WhatsApp-এ অ্যাপ লিংক পাঠান
+                    💬 Chrome-এ খোলার লিংক WhatsApp-এ পাঠান
                   </button>
                 </>
               )}

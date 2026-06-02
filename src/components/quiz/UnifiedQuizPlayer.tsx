@@ -886,11 +886,11 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
        </div>
 
        {/* Header */}
-       <header className="bg-[#1c1c1f] border-b border-zinc-800/80 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-lg relative">
+       <header className="bg-[#1c1c1f] border-b border-zinc-800/80 px-4 py-2 landscape:py-1.5 flex items-center justify-between sticky top-0 z-10 shadow-lg relative">
           <div>
-             <h2 className="serif text-lg font-bold text-white tracking-tight">{exam.title}</h2>
-             <span className="text-[9px] uppercase tracking-wider text-zinc-400 font-bold">
-                Student: {(user as any)?.fullName || user?.displayName || 'Attendee'} ({lang.toUpperCase()})
+             <h2 className="serif text-sm landscape:text-xs font-bold text-white tracking-tight leading-tight line-clamp-1">{exam.title}</h2>
+             <span className="text-[8px] uppercase tracking-wider text-zinc-500 font-bold hidden landscape:hidden sm:block">
+                {(user as any)?.fullName || user?.displayName || 'Attendee'}
              </span>
           </div>
           
@@ -899,33 +899,33 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              <button 
                type="button"
                onClick={() => setIsForcedLandscape(!isForcedLandscape)}
-               className="text-xs flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-650 text-zinc-950 font-bold uppercase rounded-lg shadow transition-all border-none cursor-pointer"
+               className="text-[10px] landscape:text-[9px] flex items-center gap-1 px-2 py-1 landscape:px-1.5 landscape:py-0.5 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 font-bold uppercase rounded-md transition-all border-none cursor-pointer"
                title="Rotate Screen / স্ক্রিন ঘোরান"
              >
-               <RotateCw className="w-3.5 h-3.5" />
-               <span className="hidden sm:inline">Rotate Screen</span>
+               <RotateCw className="w-3 h-3" />
+               <span className="hidden sm:inline">Rotate</span>
              </button>
 
              {/* Language Toggler */}
              {isBilingual && (
-                <div className="flex items-center gap-1 bg-zinc-900 p-1 rounded-lg border border-zinc-800">
+                <div className="flex items-center gap-0.5 bg-zinc-900 p-0.5 rounded-md border border-zinc-800">
                    <button 
                      onClick={() => setLang('en')} 
-                     className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded transition-colors border-none cursor-pointer ${lang === 'en' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-505'}`}
+                     className={`px-1.5 py-0.5 text-[9px] font-bold uppercase rounded transition-colors border-none cursor-pointer ${lang === 'en' ? 'bg-zinc-800 text-white' : 'text-zinc-500'}`}
                    >
                      EN
                    </button>
                    <button 
                      onClick={() => setLang('bn')} 
-                     className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded transition-colors border-none cursor-pointer ${lang === 'bn' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-505'}`}
+                     className={`px-1.5 py-0.5 text-[9px] font-bold uppercase rounded transition-colors border-none cursor-pointer ${lang === 'bn' ? 'bg-zinc-800 text-white' : 'text-zinc-500'}`}
                    >
-                     বাংলা
+                     বাং
                    </button>
                 </div>
              )}
 
              {/* Dynamic Timer Box */}
-             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-950/40 border border-red-900/50 text-red-400 font-mono text-xs font-bold leading-none animate-pulse">
+             <div className="flex items-center gap-1 px-2 py-1 landscape:px-1.5 landscape:py-0.5 rounded-full bg-red-950/40 border border-red-900/50 text-red-400 font-mono text-[11px] landscape:text-[10px] font-bold leading-none animate-pulse">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
                 <span>
                   {Math.floor(timeLeft / 3600) > 0 
@@ -1026,39 +1026,35 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 </div>
              </div>
 
-             {/* Bottom Navigation exam buttons — always visible */}
-             <div className={`quiz-nav-bar flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 border-t border-zinc-800/80 ${passage ? 'flex-shrink-0 px-4 py-2.5 bg-[#121214] lg:px-0 lg:py-0 lg:pt-4 lg:bg-transparent' : 'pt-4'}`}>
-                <div className="flex gap-2">
-                   <button 
-                     onClick={prevQuestion} 
-                     disabled={currentIdx === 0}
-                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs' : 'px-4 py-2 text-xs'} bg-zinc-800 hover:bg-zinc-700 text-zinc-200 uppercase tracking-widest font-bold rounded-xl transition-all border border-red-400 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed`}
-                   >
-                      Prev
-                   </button>
-                   <button 
-                     onClick={clearResponse} 
-                     disabled={userAnswers[currentIdx] === undefined}
-                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs' : 'px-4 py-2 text-xs'} bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed`}
-                   >
-                      Clear
-                   </button>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                   <button 
-                     onClick={nextAndReview} 
-                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-4 lg:py-2.5 lg:text-xs' : 'px-4 py-2.5 text-xs'} bg-zinc-900 border border-violet-400 hover:bg-zinc-800 text-violet-400 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer`}
-                   >
-                      {passage ? 'Next ▷' : 'Next & Preview'}
-                   </button>
-                   <button 
-                     onClick={saveAndNext} 
-                     className={`${passage ? 'px-3 py-1.5 text-[10px] lg:px-6 lg:py-2.5 lg:text-xs' : 'px-6 py-2.5 text-xs'} bg-zinc-900 hover:bg-zinc-800 text-green-400 uppercase tracking-widest font-bold rounded-xl transition-all cursor-pointer border border-green-500 shadow-md`}
-                   >
-                      {currentIdx === questions.length - 1 ? 'Submit' : (passage ? 'Save & Next →' : 'Save & Next')}
-                   </button>
-                </div>
+             {/* Bottom Navigation — always visible, always one line */}
+             <div className={`quiz-nav-bar flex-shrink-0 flex flex-nowrap items-center gap-1.5 border-t border-zinc-800/80 px-3 py-2 bg-[#121214] lg:px-0 lg:py-0 lg:pt-4 lg:bg-transparent lg:gap-3 landscape:py-1`}>
+                <button
+                  onClick={prevQuestion}
+                  disabled={currentIdx === 0}
+                  className="px-2.5 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 uppercase tracking-wide font-bold rounded-lg transition-all border border-red-400 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  ← Prev
+                </button>
+                <button
+                  onClick={clearResponse}
+                  disabled={userAnswers[currentIdx] === undefined}
+                  className="px-2.5 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 uppercase tracking-wide font-bold rounded-lg transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  Clear
+                </button>
+                <div className="flex-1" />
+                <button
+                  onClick={nextAndReview}
+                  className="px-2.5 py-1.5 text-[10px] lg:px-4 lg:py-2.5 lg:text-xs bg-zinc-900 border border-violet-400 hover:bg-zinc-800 text-violet-400 uppercase tracking-wide font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap"
+                >
+                  Preview
+                </button>
+                <button
+                  onClick={saveAndNext}
+                  className="px-3 py-1.5 text-[10px] lg:px-6 lg:py-2.5 lg:text-xs bg-zinc-900 hover:bg-zinc-800 text-green-400 uppercase tracking-wide font-bold rounded-lg transition-all cursor-pointer border border-green-500 whitespace-nowrap"
+                >
+                  {currentIdx === questions.length - 1 ? 'Submit ✓' : 'Save & Next →'}
+                </button>
              </div>
           </div>
 
