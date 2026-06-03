@@ -199,7 +199,23 @@ function ensureSheetHeaders(sheetName, requiredHeaders) {
   }
 }
 
-// αª╢αª┐αªƒ αªÑαºçαªòαºç αªàαª¼αª£αºçαªòαºìαªƒ αªàαºìαª»αª╛αª░αºç αª░αª┐αªí αªòαª░αª╛αª░ αª£αª¿αºìαª» αª£αºçαª¿αºçαª░αª┐αªò αª░αª┐αªíαª╛αª░
+function isDateField(headerKey) {
+  if (!headerKey) return false;
+  var key = String(headerKey).trim().toLowerCase();
+  var dateFields = [
+    "createdat",
+    "updatedat",
+    "dob",
+    "joindate",
+    "paiddate",
+    "submittedat",
+    "scheduledstarttime",
+    "joinedtime"
+  ];
+  return dateFields.indexOf(key) !== -1;
+}
+
+// generic reader
 function readSheet(sheetName) {
   if (sheetName === "users") {
     seedAdminIfNeeded();
@@ -209,11 +225,12 @@ function readSheet(sheetName) {
   }
   var sheet = getSheet(sheetName);
   var lastRow = sheet.getLastRow();
-  if (lastRow < 2) return []; // αª╢αºüαªºαºü αª╣αºçαªíαª╛αª░ αªåαª¢αºç αª¼αª╛ αªÅαªòαªªαª« αª½αª╛αªüαªòαª╛
+  if (lastRow < 2) return []; // header only or empty
   
   var lastCol = sheet.getLastColumn();
   var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  var displayValues = sheet.getRange(2, 1, lastRow - 1, lastCol).getDisplayValues();
   
   var result = [];
   for (var r = 0; r < values.length; r++) {
@@ -222,9 +239,13 @@ function readSheet(sheetName) {
       var headerKey = headers[c];
       var val = values[r][c];
       
-      // αªíαºçαªƒ αª¼αª╛ αª½αºìαª▓αºïαªƒ αªàαª¼αª£αºçαªòαºìαªƒ αªòαª¿αª¡αª╛αª░αºìαªƒ αªòαª░αª╛
+      // format date or parse back to string if google sheets auto-converted text to date
       if (val instanceof Date) {
-        obj[headerKey] = val.toISOString();
+        if (isDateField(headerKey)) {
+          obj[headerKey] = val.toISOString();
+        } else {
+          obj[headerKey] = displayValues[r][c];
+        }
       } else {
         obj[headerKey] = val;
       }
@@ -289,7 +310,22 @@ function saveRow(sheetName, dataObj) {
     }
   }
   
-  sheet.appendRow(rowValues);
+  var nextRow = sheet.getLastRow() + 1;
+  var range = sheet.getRange(nextRow, 1, 1, headers.length);
+  
+  // Format non-date cells as plain text so Google Sheets doesn't auto-convert strings like "February 2026" or "1 to 15" into Date objects
+  var formats = [];
+  for (var c = 0; c < headers.length; c++) {
+    var key = headers[c];
+    if (isDateField(key)) {
+      formats.push("yyyy-MM-dd HH:mm:ss");
+    } else {
+      formats.push("@"); // Plain Text format
+    }
+  }
+  range.setNumberFormats([formats]);
+  range.setValues([rowValues]);
+  
   SpreadsheetApp.flush();
   return dataObj;
 }
@@ -339,7 +375,6 @@ function updateRow(sheetName, id, updateObj) {
     lastCol = lastCol + newKeys.length;
   }
   
-  // αª¬αºìαª░αºƒαºïαª£αª¿αºÇαºƒ αªòαª▓αª╛αª«αªùαºüαª▓αºï αªåαª¬αªíαºçαªƒ αªòαª░αª╛
   for (var c = 0; c < headers.length; c++) {
     var key = headers[c];
     if (updateObj[key] !== undefined) {
@@ -347,7 +382,11 @@ function updateRow(sheetName, id, updateObj) {
       if (typeof val === 'object' && val !== null) {
         val = JSON.stringify(val);
       }
-      sheet.getRange(targetRowIdx, c + 1).setValue(val);
+      var cellRange = sheet.getRange(targetRowIdx, c + 1);
+      if (!isDateField(key)) {
+        cellRange.setNumberFormat("@");
+      }
+      cellRange.setValue(val);
     }
   }
   
