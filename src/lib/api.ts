@@ -10,6 +10,7 @@ declare const google: any;
 // =========================================================================
 // REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL
 export const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
+export const SECURITY_TOKEN = "MondalCoachingSecureToken2026!";
 
 export interface UserProfile {
   id: string;
@@ -156,7 +157,7 @@ export function cleanPhone(p: any): string {
     try {
       const fetchResponse = await fetch(GAS_WEB_APP_URL, {
         method: "POST",
-        body: JSON.stringify({ action: methodName, args: args }),
+        body: JSON.stringify({ action: methodName, args: args, token: SECURITY_TOKEN }),
         headers: {
           "Content-Type": "text/plain;charset=utf-8"
         }

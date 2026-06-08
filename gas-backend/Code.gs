@@ -1685,6 +1685,14 @@ function doPost(e) {
     var requestData = JSON.parse(e.postData.contents);
     var action = requestData.action;
     var args = requestData.args || [];
+    var token = requestData.token;
+
+    // Security Check Layer
+    var SECURITY_TOKEN = "MondalCoachingSecureToken2026!";
+    if (token !== SECURITY_TOKEN) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Unauthorized access: Invalid or missing security token' }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
 
     if (!action || typeof this[action] !== 'function') {
       return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Invalid action: ' + action }))
