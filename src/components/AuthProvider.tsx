@@ -118,8 +118,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       batchId: profile.batchId,
       isProfileComplete: profile.status !== 'incomplete',
       profilePhotoUrl: profile.profilePhotoUrl,
-      monthlyFee: profile.monthlyFee !== undefined ? Number(profile.monthlyFee) : 500,
-      pendingMonths: profile.pendingMonths !== undefined ? Number(profile.pendingMonths) : 0,
+      monthlyFee: (() => {
+        if (profile.monthlyFee === undefined || profile.monthlyFee === null) return 500;
+        const s = String(profile.monthlyFee).trim();
+        if (s === '') return 500;
+        const val = Number(s);
+        return isNaN(val) ? 500 : val;
+      })(),
+      pendingMonths: (profile.pendingMonths !== undefined && profile.pendingMonths !== '' && profile.pendingMonths !== null) ? Number(profile.pendingMonths) : 0,
       passcode: profile.passcode,
       paymentStatus: profile.paymentStatus,
       reapplyReason: profile.reapplyReason,

@@ -629,6 +629,7 @@ function apiSaveUser(userData) {
       userData.role = userData.role || "student";
       userData.status = userData.status || "incomplete";
       userData.paymentStatus = userData.paymentStatus || "unpaid";
+      userData.monthlyFee = userData.monthlyFee !== undefined && userData.monthlyFee !== '' && userData.monthlyFee !== null ? Number(userData.monthlyFee) : 500;
       // αª¬αºìαª░αªÑαª«αª¼αª╛αª░ αªíαª┐αª½αª▓αºìαªƒ αª¬αª╛αª╕αªòαºïαªí αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αª░αª╛αªûαª╛ αª╣αª▓αºï
       userData.passcode = userData.passcode || cleanPhone(userData.phone); 
       
@@ -662,6 +663,7 @@ function apiRegisterUser(userData) {
     userData.role = "student";
     userData.status = "pending";
     userData.paymentStatus = "unpaid";
+    userData.monthlyFee = 500;
     userData.passcode = cleanedPhone; // αªíαª┐αª½αª▓αºìαªƒ αª¬αª╛αª╕αªòαºïαªí = αª½αºïαª¿ αª¿αª«αºìαª¼αª░
     userData.createdAt = new Date().toISOString();
     userData.updatedAt = new Date().toISOString();

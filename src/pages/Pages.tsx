@@ -253,7 +253,13 @@ export function AdminStudents() {
         batchId: profile.batchId,
         isProfileComplete: profile.status !== 'incomplete',
         profilePhotoUrl: profile.profilePhotoUrl,
-        monthlyFee: (profile.monthlyFee !== undefined && profile.monthlyFee !== '' && profile.monthlyFee !== null) ? Number(profile.monthlyFee) : 500,
+        monthlyFee: (() => {
+          if (profile.monthlyFee === undefined || profile.monthlyFee === null) return 500;
+          const s = String(profile.monthlyFee).trim();
+          if (s === '') return 500;
+          const val = Number(s);
+          return isNaN(val) ? 500 : val;
+        })(),
         pendingMonths: (profile.pendingMonths !== undefined && profile.pendingMonths !== '' && profile.pendingMonths !== null) ? Number(profile.pendingMonths) : 0,
         passcode: profile.passcode,
         paymentStatus: profile.paymentStatus,
@@ -1121,7 +1127,14 @@ export function AdminPayments() {
              phone: u.phone,
              status: u.status,
              batchId: u.batchId,
-             monthlyFee: ((u as any).monthlyFee !== undefined && (u as any).monthlyFee !== '' && (u as any).monthlyFee !== null) ? Number((u as any).monthlyFee) : 500,
+              monthlyFee: (() => {
+                const f = (u as any).monthlyFee;
+                if (f === undefined || f === null) return 500;
+                const s = String(f).trim();
+                if (s === '') return 500;
+                const val = Number(s);
+                return isNaN(val) ? 500 : val;
+              })(),
              pendingMonths: ((u as any).pendingMonths !== undefined && (u as any).pendingMonths !== '' && (u as any).pendingMonths !== null) ? Number((u as any).pendingMonths) : 0,
              exemptReason: (u as any).exemptReason || '',
              showPaymentNudge: !!(u as any).showPaymentNudge
@@ -1304,8 +1317,10 @@ export function AdminPayments() {
               <form onSubmit={(e) => {
                  e.preventDefault();
                  const formData = new FormData(e.currentTarget);
+                 const feeInput = formData.get('monthlyFee');
+                 const parsedFee = (feeInput !== null && feeInput !== '') ? Number(feeInput) : 500;
                  updateStudentPaymentDetails(student.id || (student as any).uid, {
-                    monthlyFee: Number(formData.get('monthlyFee')),
+                    monthlyFee: parsedFee,
                     exemptReason: formData.get('exemptReason'),
                     pendingMonths: Number(formData.get('pendingMonths')),
                     showPaymentNudge: formData.get('showPaymentNudge') === 'on'

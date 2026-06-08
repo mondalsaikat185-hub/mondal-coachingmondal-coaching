@@ -2204,8 +2204,15 @@ function StudentSimulatorWrapper() {
         batchId: simulatedStudentData.batchId,
         isProfileComplete: simulatedStudentData.status !== 'incomplete',
         profilePhotoUrl: simulatedStudentData.profilePhotoUrl,
-        monthlyFee: simulatedStudentData.monthlyFee !== undefined ? Number(simulatedStudentData.monthlyFee) : 500,
-        pendingMonths: simulatedStudentData.pendingMonths !== undefined ? Number(simulatedStudentData.pendingMonths) : 0,
+        monthlyFee: (() => {
+          const f = simulatedStudentData.monthlyFee;
+          if (f === undefined || f === null) return 500;
+          const s = String(f).trim();
+          if (s === '') return 500;
+          const val = Number(s);
+          return isNaN(val) ? 500 : val;
+        })(),
+        pendingMonths: (simulatedStudentData.pendingMonths !== undefined && simulatedStudentData.pendingMonths !== '' && simulatedStudentData.pendingMonths !== null) ? Number(simulatedStudentData.pendingMonths) : 0,
         passcode: simulatedStudentData.passcode,
         paymentStatus: simulatedStudentData.paymentStatus,
         reapplyReason: simulatedStudentData.reapplyReason,
