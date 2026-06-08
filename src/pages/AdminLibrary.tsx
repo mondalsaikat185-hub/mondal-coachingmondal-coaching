@@ -112,6 +112,7 @@ export function AdminLibrary() {
   }, []);
 
   const [sessionBatchPickerItem, setSessionBatchPickerItem] = useState<LibraryItem | null>(null);
+  const [startingSession, setStartingSession] = useState(false);
 
   // Navigation and Folders
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -723,8 +724,9 @@ export function AdminLibrary() {
   };
 
   const handleStartSession = async (batchId: string) => {
-    if (!user || !sessionBatchPickerItem) return;
+    if (!user || !sessionBatchPickerItem || startingSession) return;
     try {
+      setStartingSession(true);
       const { sessionId, accessCode } = await createExamSession(
         sessionBatchPickerItem.id,
         batchId,
@@ -746,6 +748,9 @@ export function AdminLibrary() {
       startActiveSessionPolling(sessionId);
     } catch (err) {
       console.error('Failed to start session:', err);
+      alert("Failed to start session: " + String(err));
+    } finally {
+      setStartingSession(false);
     }
   };
 
@@ -1211,18 +1216,21 @@ export function AdminLibrary() {
                  {batches.filter(b => itemAssignments.some(a => a.batchId === b.id)).map(b => (
                     <button
                       key={b.id}
+                      disabled={startingSession}
                       onClick={() => handleStartSession(b.id)}
-                      className="w-full text-left p-3 border-2 border-black hover:bg-zinc-100 font-bold dark:hover:bg-zinc-800 flex justify-between items-center"
+                      className="w-full text-left p-3 border-2 border-black hover:bg-zinc-100 font-bold dark:hover:bg-zinc-800 flex justify-between items-center disabled:opacity-50"
                     >
                       <span>{b.name}</span>
-                      <span className="text-xs bg-black text-white px-2 py-1">▶ Start</span>
+                      <span className="text-xs bg-black text-white px-2 py-1 flex items-center gap-1">
+                          {startingSession ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "▶ Start"}
+                       </span>
                     </button>
                  ))}
                  {batches.filter(b => itemAssignments.some(a => a.batchId === b.id)).length === 0 && (
                    <p className="text-sm font-bold text-red-500">First share this exam to a batch.</p>
                  )}
                </div>
-               <button onClick={() => setSessionBatchPickerItem(null)} className="w-full py-2 border-2 border-black font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancel</button>
+               <button onClick={() => setSessionBatchPickerItem(null)} disabled={startingSession} className="w-full py-2 border-2 border-black font-bold hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50">Cancel</button>
             </div>
          </div>
       )}

@@ -22,7 +22,7 @@ Write-Host "=== GIT PUSH ===" -ForegroundColor Cyan
 if (Test-Path ".git\index.lock") { Remove-Item ".git\index.lock" -Force }
 if (Test-Path ".git\HEAD.lock")  { Remove-Item ".git\HEAD.lock"  -Force }
 git add -A
-git commit -m "Fix: implement robust student tuition fee waiver logic and database cleanup to default empty and invalid fees to 500"
+git commit -m "Fix: implement double-click prevention and backend single active session constraint for live exam sessions"
 git push origin main
 Write-Host "=== ALL DONE ===" -ForegroundColor Green
 exit 0

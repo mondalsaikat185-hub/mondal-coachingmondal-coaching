@@ -1381,6 +1381,19 @@ function apiGetExamSessions() {
 
 function apiCreateExamSession(sessionData) {
   try {
+    // Enforce single active session constraint per exam/batch: return existing active session if found
+    var sessionsResponse = apiGetExamSessions();
+    if (sessionsResponse.success) {
+      var existingActive = sessionsResponse.data.find(function(s) {
+        return String(s.examId) === String(sessionData.examId) && 
+               String(s.batchId) === String(sessionData.batchId) && 
+               s.isActive;
+      });
+      if (existingActive) {
+        return { success: true, data: existingActive };
+      }
+    }
+
     sessionData.isActive = true;
     sessionData.participantUids = sessionData.participantUids || [];
     
