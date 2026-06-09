@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { api, UserProfile } from '../lib/api';
+import { api, UserProfile, cleanPhone } from '../lib/api';
 
 export type UserRole = 'student' | 'admin';
 export type UserStatus = 'pending' | 'active' | 'inactive' | 'rejected' | 'incomplete';
@@ -66,14 +66,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const fetchLatestUser = async (savedUser: AppUser) => {
       try {
         const allUsers = await api.getUsers();
-        const latestProfile = allUsers.find(u => u.id === savedUser.uid);
+
+        // PRIMARY lookup: phone number (সবসময় unique — login credential)
+        // এটা দিয়ে id corruption-এর পরেও সঠিক user খুঁজে পাওয়া যাবে
+        // FALLBACK: id দিয়ে খোঁজা (backwards compatibility)
+        let latestProfile: UserProfile | undefined;
+        const savedPhone = savedUser.phone || '';
+        if (savedPhone) {
+          const cleanedSavedPhone = cleanPhone(savedPhone);
+          latestProfile = allUsers.find(u => cleanPhone(u.phone) === cleanedSavedPhone);
+        }
+        if (!latestProfile) {
+          // Phone দিয়ে না পাওয়া গেলে id দিয়ে try করো
+          latestProfile = allUsers.find(u => String(u.id).trim() === String(savedUser.uid).trim());
+        }
+
         if (latestProfile) {
           const appUser = mapUserProfileToUser(latestProfile);
           setUser(appUser);
           localStorage.setItem(SESSION_KEY, JSON.stringify(appUser));
         } else {
-          // If the logged-in user is not found in the sheets database (invalid or updated ID),
-          // automatically clear their session and force them to re-login!
+          // যদি database-এ user পাওয়া না যায় (stale/invalid session),
+          // session clear করে re-login force করো
           console.warn("Logged-in user not found in database. Clearing stale session...");
           setUser(null);
           localStorage.removeItem(SESSION_KEY);

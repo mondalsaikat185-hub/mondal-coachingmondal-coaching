@@ -652,7 +652,7 @@ function TopNav() {
 
   // Auto PWA Cache Buster on Startup
   useEffect(() => {
-    const CURRENT_VERSION = "v1.5.0";
+    const CURRENT_VERSION = "v1.6.0";
     const savedVersion = localStorage.getItem("app_version");
     if (savedVersion !== CURRENT_VERSION) {
       const runAutoBuster = async () => {
@@ -672,6 +672,8 @@ function TopNav() {
             }
           } catch (_) {}
         }
+        // Force logout to clear stale/corrupted student sessions from localStorage
+        localStorage.removeItem("mc_session_user");
         localStorage.setItem("app_version", CURRENT_VERSION);
         window.location.reload();
       };
@@ -797,7 +799,7 @@ function TopNav() {
       await api.saveUser({
         id: user.uid,
         name: editName,
-        phone: user.phoneNumber || '',
+        phone: user.phone || '', // BUG FIX: user.phoneNumber → user.phone (AppUser-এ 'phoneNumber' নেই, 'phone' আছে)
         address: editAddress
       });
       updateLocalUser({
@@ -1175,11 +1177,14 @@ function AdminDashboard() {
       // Update student profile:
       // 1. Set exemptReason to put the ❌ cross mark next to their name in the students table
       // 2. Set createdAt to current time so they instantly start as a fresh student with 0 absences!
+      // BUG FIX: আগে ...student spread করা হত — যদি student.id corrupt থাকত তাহলে
+      // phone-based fallback-এ অন্য student-এর data overwrite হওয়ার ঝুঁকি ছিল।
+      // এখন শুধু id, createdAt, exemptReason পাঠানো হচ্ছে।
       await api.saveUser({
-        ...student,
+        id: student.id,
         createdAt: new Date().toISOString(),
-        exemptReason: "চলমান রাখা হয়েছে"
-      });
+        exemptReason: "চলমান রাখা হয়েছে"
+      } as any);
       
       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "ছাত্রের অনুপস্থিতি মওকুফ করা হয়েছে এবং কাউন্ট রিসেট হয়েছে!" }));
       setSelectedAbsentee(null);

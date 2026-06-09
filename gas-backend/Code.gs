@@ -621,9 +621,23 @@ function apiSaveUser(userData) {
     }
     
     if (existingUser) {
-      // αª»αªªαª┐ αªåαªùαºç αªÑαºçαªòαºçαªç αªçαªëαª£αª╛αª░ αªÑαª╛αªòαºç, αª£αª╛αª╕αºìαªƒ αª¬αºìαª░αºïαª½αª╛αªçαª▓ αªåαª¬αªíαºçαªƒ αª¼αª╛ αª░αª┐-αªàαºìαª»αª╛αª¬αºìαª▓αª╛αªç αªåαª¬αªíαºçαªƒ αªòαª░αºï
-      var updated = updateRow("users", existingUser.id, userData);
-      return { success: true, data: updated };
+      // যদি আগে থেকেই user আছে, just profile আপডেট বা re-apply আপডেট করো
+      // CRITICAL BUG FIX: কখনো existingUser-এর 'id' overwrite করবে না!
+      // পুরনো code: updateRow("users", existingUser.id, userData) — এটা userData.id (নতুন mockUid)
+      // দিয়ে Sheet-এর id column overwrite করত, যা data corruption ঘটাত।
+      // উদাহরণ: Admin "Soumen Halder" create করতে গিয়ে Chayan Pal-এর phone দেয়
+      // → Chayan-এর row-এর id + name দুটোই overwrite হয়ে যেত → name mixing bug!
+      var safeUpdateData = {};
+      for (var key in userData) {
+        if (key !== 'id') { // 'id' field কখনো পরিবর্তন করা যাবে না
+          safeUpdateData[key] = userData[key];
+        }
+      }
+      var updated = updateRow("users", existingUser.id, safeUpdateData);
+      // সবসময় original existingUser.id return করো
+      var returnData = updated ? updated : {};
+      returnData.id = existingUser.id;
+      return { success: true, data: returnData };
     } else {
       // αª¿αªñαºüαª¿ αªçαªëαª£αª╛αª░ αª░αºçαª£αª┐αª╕αºìαªƒαºìαª░αºçαª╢αª¿
       userData.role = userData.role || "student";

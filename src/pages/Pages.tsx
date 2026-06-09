@@ -125,8 +125,22 @@ export function AdminStudents() {
     e.preventDefault();
     if (!newStudentName || !newStudentEmail || !newStudentBatch || !newStudentPhone) return;
     try {
+      // CRITICAL SAFETY CHECK: এই phone number কি আগে থেকেই কোনো student-এর?
+      // যদি থাকে, সেই student-এর data overwrite হবে — এটা data corruption-এর মূল কারণ!
+      const cleanDigits = (p: string) => p.replace(/\D/g, '').slice(-10);
+      const inputPhone = cleanDigits(newStudentPhone);
+      const alreadyExists = inputPhone ? students.find(s => {
+        return cleanDigits(String(s.phone || '')) === inputPhone;
+      }) : null;
+      if (alreadyExists) {
+        window.dispatchEvent(new CustomEvent("show-custom-alert", {
+          detail: `⚠️ এই ফোন নম্বরটি ইতিমধ্যে "${(alreadyExists as any).fullName || (alreadyExists as any).displayName || alreadyExists.phone}" নামে registered আছে। নতুন student create করতে ভিন্ন নম্বর ব্যবহার করুন। যদি এই student-এর তথ্য update করতে চান, তাহলে student list থেকে তাদের profile edit করুন।`
+        }));
+        return;
+      }
+
       const mockUid = "student_" + Date.now() + Math.floor(Math.random()*1000);
-      await api.saveUser({
+      const savedUser = await api.saveUser({
         id: mockUid,
         email: newStudentEmail.toLowerCase(),
         name: newStudentName,
@@ -136,11 +150,13 @@ export function AdminStudents() {
         batchId: newStudentBatch,
         isProfileComplete: true,
         monthlyFee: 500,
-      } as any);
+      } as any) as any;
+      // GAS থেকে return হওয়া real id ব্যবহার করো (mockUid নয়)
+      const realId = (savedUser && savedUser.id) ? savedUser.id : mockUid;
       globalStudentsCache = null;
       setStudents(prev => [...prev, {
-        id: mockUid,
-        uid: mockUid,
+        id: realId,
+        uid: realId,
         email: newStudentEmail.toLowerCase(),
         fullName: newStudentName,
         phone: newStudentPhone,

@@ -1,0 +1,217 @@
+==========================================================
+  M-C Tuition Database — ত্রুটি বিশ্লেষণ রিপোর্ট
+  তারিখ: ০৯-জুন-২০২৬
+  তৈরি করেছে: Claude (Anthropic)
+==========================================================
+
+এই ফাইলটি M-C Tuition Database.xlsx-এর সম্পূর্ণ বিশ্লেষণের ফলাফল।
+প্রতিটি ত্রুটি কোথায় আছে এবং কীভাবে ঠিক করতে হবে তা নিচে বিস্তারিত দেওয়া হয়েছে।
+
+===========================================================
+  ⚠️ সবচেয়ে গুরুতর সমস্যা (Critical Issues)
+===========================================================
+
+──────────────────────────────────────────────────────────
+সমস্যা #১: Susmita Naskar — একই ব্যক্তির ৩টি record!
+──────────────────────────────────────────────────────────
+
+Database-এ "Susmita Naskar" নামে ৩টি আলাদা row আছে,
+সবগুলোতেই email: susmitanaskar369@gmail.com — এটা ভুল।
+
+  [Record A] ID: S6lyx6ixhlSFivfBkrAMXG0f0zv2
+    → phone: (ফাঁকা — কোনো নম্বর নেই)
+    → passcode: 1111 (phone নম্বর নয়!)
+    → status: active
+    → batch: 5NAXh0WJOM89VVBzAau0
+    ★ এটি একটি GHOST ACCOUNT (ভুতুড়ে account)।
+      Phone নেই, passcode ভুল — এই student কখনো login করতে পারবে না।
+      ► করণীয়: এই record-টি DELETE করুন।
+
+  [Record B] ID: a07cd16d-a013-4336-9487-a660adaedba9
+    → phone: (ফাঁকা)
+    → passcode: 7586088214
+    → status: pending
+    → batch: 5NAXh0WJOM89VVBzAau0
+    ★ Phone field ফাঁকা, কিন্তু passcode-এ phone নম্বর আছে।
+      ► করণীয়: phone field-এ "7586088214" লিখুন। status 'active' করুন।
+        এটাই হয়তো আসল record। Record A ও C delete করুন।
+
+  [Record C] ID: e1b63a0e-ce7f-4d62-8a65-80a995585f04
+    → phone: 7586088214
+    → passcode: 7586088214
+    → status: pending
+    → batch: dhiK6dmSns421kaMRX0z  ← ভুল batch!
+      (Record B-তে batch হলো 5NAXh0WJOM89VVBzAau0)
+    → reapplyReason column-এ আছে: দীর্ঘ text বার্তা (নিচে দেখুন)
+    ► করণীয়: এই record-টি DELETE করুন (duplicate + wrong batch)।
+
+  [অতিরিক্ত সমস্যা Record C-তে]
+    → reapplyReason field-এ "In the details provided, or in the Excel
+      file that was given..." লেখা আছে — এটা আসলে ব্যবহারকারীর
+      নির্দেশনার text যা ভুলবশত database-এ সেভ হয়ে গেছে!
+    ► করণীয়: reapplyReason field সম্পূর্ণ খালি করুন।
+
+──────────────────────────────────────────────────────────
+সমস্যা #২: Madhumita Shikari — একই email-এ ২টি record!
+──────────────────────────────────────────────────────────
+
+  [Record A] ID: iUllKlvJZLRt47WlhHHzmfF0cB52
+    → name: Madhumita Shikari (capital S)
+    → phone: 904661216   ← মাত্র ৯ সংখ্যা! (একটি সংখ্যা missing)
+    → passcode: 904661216
+    → email: madhushikari0@gmail.com
+    → batch: 5NAXh0WJOM89VVBzAau0
+
+  [Record B] ID: id_m2lz2fac5_mpnsecrt
+    → name: Madhumita shikari (lowercase s)
+    → phone: 9046612416   ← ১০ সংখ্যা, সঠিক
+    → passcode: 9046612416
+    → email: madhushikari0@gmail.com
+    → batch: 5NAXh0WJOM89VVBzAau0
+
+  ★ Record A-এর phone নম্বরটি সম্ভবত "9046612416" হওয়া উচিত
+    (শুরুতে "9" missing)। দুটো record একই ব্যক্তির।
+  ► করণীয়: Record A (iUllKlvJZL...) DELETE করুন।
+    Record B রাখুন, name ঠিক করুন "Madhumita Shikari" (capital S)।
+
+──────────────────────────────────────────────────────────
+সমস্যা #৩: Sunday Morning Batch (RK4XX4cswYrHc2WjeSSh) — 
+           Anusree Bairagi নামে ২টি record
+──────────────────────────────────────────────────────────
+
+  [Record A] ID: id_eh3gltdof_mpt6okz2
+    → name: Anusree Bairagi
+    → phone: 8513093597
+    → email: welanusree01@gmail.com
+    → status: active
+    → batch: RK4XX4cswYrHc2WjeSSh (Sunday morning)
+
+  [Record B] ID: id_r6xqbkm29_mpt8y0mc
+    → name: Anusree Bairagi
+    → phone: 8637083356
+    → email: welcomeanusree01@gmail.com
+    → status: rejected
+    → batch: RK4XX4cswYrHc2WjeSSh (Sunday morning)
+
+  ★ Phone নম্বর ও email আলাদা। হয়তো একই ব্যক্তি দুইবার
+    registration করেছেন (প্রথমবার reject হয়েছিল, দ্বিতীয়বার active)।
+  ► করণীয়: Saikat-কে confirm করতে হবে — এরা কি একই ব্যক্তি?
+    যদি একই ব্যক্তি হন: Record B (rejected) DELETE করুন।
+    যদি আলাদা হন: কিছু করার নেই, ঠিক আছে।
+
+===========================================================
+  🔶 মাঝারি গুরুত্বের সমস্যা (Moderate Issues)
+===========================================================
+
+──────────────────────────────────────────────────────────
+সমস্যা #৪: "SANCHITA DAS new" — নামে ভুল শব্দ
+──────────────────────────────────────────────────────────
+
+  ID: id_t6b3e6sw7_mptk24pe
+  → বর্তমান name: "SANCHITA DAS new"
+  → "new" শব্দটি নামের অংশ নয়, ভুলবশত যোগ হয়ে গেছে
+  ► করণীয়: name পরিবর্তন করুন → "SANCHITA DAS"
+
+──────────────────────────────────────────────────────────
+সমস্যা #৫: Ghost Account — Susmita Naskar (phone নেই)
+──────────────────────────────────────────────────────────
+
+  (উপরে সমস্যা #১-এর Record A — আলাদাভাবেও উল্লেখ করা হচ্ছে)
+  ID: S6lyx6ixhlSFivfBkrAMXG0f0zv2
+  → phone field ফাঁকা
+  → passcode "1111" — এটি phone নম্বর নয়
+  → status: active (কিন্তু login করতে পারবে না)
+  ► করণীয়: এই record DELETE করুন।
+
+===========================================================
+  🔷 ছোট ছোট সমস্যা (Minor/Formatting Issues)
+===========================================================
+
+──────────────────────────────────────────────────────────
+সমস্যা #৬: Phone নম্বরে +91 Country Code
+──────────────────────────────────────────────────────────
+
+নিচের ৪ জন student-এর phone column-এ "+91" country code আছে
+(বাকি সবার শুধু ১০ সংখ্যার নম্বর)। এটি inconsistency তৈরি করে।
+
+  ১. Shubhadip Banik (xqP6qouGaZUdwdjLPjdg9buahNf1)
+     phone: "+91 9775535175"  → হওয়া উচিত: 9775535175
+     
+  ২. SUNANDA PRAMANIK (U9OsXrDLtUPdI5NBGCV7nGznOzk2)
+     phone: "+918167548909"   → হওয়া উচিত: 8167548909
+     
+  ৩. Sannyasi Purkait (HTCtSxC1DQQ3IWbgneiDkMuUNqo1)
+     phone: "+91 9635549689"  → হওয়া উচিত: 9635549689
+     
+  ৪. Sandip Bhuinya (AevpprGD9xb6IfFKkDEDTr9Cntw1)
+     phone: "+919609279418"   → হওয়া উচিত: 9609279418
+
+  (Note: passcode column-এ এদের সঠিক ১০ সংখ্যা আছে, তাই
+   login-এ সম্ভবত সমস্যা হচ্ছে না। তবু সামঞ্জস্যের জন্য ঠিক করুন।)
+
+──────────────────────────────────────────────────────────
+সমস্যা #৭: Mixed ID Formats (তথ্যের জন্য)
+──────────────────────────────────────────────────────────
+
+Database-এ ৩ ধরনের ID format দেখা যাচ্ছে:
+  ১. Firebase Auth UID (28-char alphanumeric) → পুরোনো entries
+  ২. UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx) → মাঝামাঝি entries
+  ৩. id_xxxxxxxx_xxxxxxxx format → নতুন GAS-generated entries
+
+  এটি কোনো bug নয়, কিন্তু তথ্যের জন্য জানিয়ে রাখা হলো।
+  GAS backend এখন Utilities.getUuid() ব্যবহার করে (UUID format)।
+
+===========================================================
+  📋 Sunday Morning Batch বিশেষ পর্যালোচনা
+  (Batch ID: RK4XX4cswYrHc2WjeSSh)
+===========================================================
+
+এই batch-এ মোট ৩০ জন student পাওয়া গেছে। 
+বর্তমান Excel-এ Chayan Pal ও Soumen Halder-এর data সঠিক দেখাচ্ছে:
+
+  ✅ Chayan Pal:
+     ID: fwnJmHQtf1gGFn6HFtPPPwPJBWy2
+     phone: 7679485822
+     status: active
+     → ঠিক আছে।
+
+  ✅ Soumen Halder:
+     ID: f2ba8a49-d9e5-4167-a24a-ad73c4cddba6
+     phone: 9641982097
+     status: active
+     → ঠিক আছে।
+
+  ⚠️ এই batch-এ Anusree Bairagi duplicate আছে (সমস্যা #৩ দেখুন)।
+  ⚠️ Sannyasi Purkait ও Sandip Bhuinya-র phone-এ +91 আছে (সমস্যা #৬ দেখুন)।
+
+===========================================================
+  📝 সারসংক্ষেপ: কী কী করতে হবে
+===========================================================
+
+  [DELETE করুন]
+  ✗ S6lyx6ixhlSFivfBkrAMXG0f0zv2  (Susmita Naskar ghost account)
+  ✗ e1b63a0e-ce7f-4d62-8a65-80a995585f04  (Susmita Naskar wrong batch + garbage data)
+  ✗ iUllKlvJZLRt47WlhHHzmfF0cB52  (Madhumita Shikari truncated phone duplicate)
+
+  [EDIT করুন]
+  ✏ a07cd16d-a013-4336-9487-a660adaedba9  (Susmita Naskar):
+      phone → "7586088214", status → "active" করুন
+  ✏ id_m2lz2fac5_mpnsecrt  (Madhumita shikari):
+      name → "Madhumita Shikari" (capital S)
+  ✏ id_t6b3e6sw7_mptk24pe  (SANCHITA DAS new):
+      name → "SANCHITA DAS"
+
+  [VERIFY করুন — Saikat-কে confirm করতে হবে]
+  ? Anusree Bairagi দুজন কি একই ব্যক্তি?
+    (id_eh3gltdof... active vs id_r6xqbkm29... rejected)
+
+  [Optional — সুপারিশ করা হয়]
+  → ৪ জনের phone column থেকে +91 prefix সরান
+    (Shubhadip Banik, SUNANDA PRAMANIK, Sannyasi Purkait, Sandip Bhuinya)
+
+===========================================================
+  মোট সমস্যার সংখ্যা:
+  - Critical: ৩টি (Triple duplicate, Double duplicate, Garbage data)
+  - Moderate: ২টি (Name error, Ghost account)
+  - Minor: ২টি (Phone format, Mixed ID format)
+===========================================================
