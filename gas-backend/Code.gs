@@ -774,16 +774,16 @@ function apiChangePasscode(userId, currentPasscode, newPasscode) {
   try {
     var users = readSheet("users");
     var user = users.find(function(u) { return String(u.id) === String(userId); });
-    if (!user) return { success: false, error: "αª¼αºìαª»αª¼αª╣αª╛αª░αªòαª╛αª░αºÇ αª¬αª╛αªôαª»αª╝αª╛ αª»αª╛αª»αª╝αª¿αª┐αÑñ" };
+    if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
 
     var storedPasscode = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
     if (storedPasscode === "") storedPasscode = cleanPhone(user.phone);
 
     if (storedPasscode !== String(currentPasscode).trim()) {
-      return { success: false, error: "αª¼αª░αºìαªñαª«αª╛αª¿ passcode αª¡αºüαª▓αÑñ" };
+      return { success: false, error: "বর্তমান passcode ভুল।" };
     }
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "αª¿αªñαºüαª¿ passcode αªòαª«αª¬αªòαºìαª╖αºç αº¬ αªàαªòαºìαª╖αª░αºçαª░ αª╣αªñαºç αª╣αª¼αºçαÑñ" };
+      return { success: false, error: "নতুন passcode কমপক্ষে ৬ অক্ষরের হতে হবে।" };
     }
 
     updateRow("users", userId, { passcode: String(newPasscode).trim() });
@@ -797,10 +797,10 @@ function apiChangePasscode(userId, currentPasscode, newPasscode) {
 function apiAdminResetPasscode(studentId, newPasscode) {
   try {
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "αª¿αªñαºüαª¿ passcode αªòαª«αª¬αªòαºìαª╖αºç αº¬ αªàαªòαºìαª╖αª░αºçαª░ αª╣αªñαºç αª╣αª¼αºçαÑñ" };
+      return { success: false, error: "নতুন passcode কমপক্ষে ৬ অক্ষরের হতে হবে।" };
     }
     var updated = updateRow("users", studentId, { passcode: String(newPasscode).trim() });
-    if (!updated) return { success: false, error: "αª¼αºìαª»αª¼αª╣αª╛αª░αªòαª╛αª░αºÇ αª¬αª╛αªôαª»αª╝αª╛ αª»αª╛αª»αª╝αª¿αª┐αÑñ" };
+    if (!updated) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -810,33 +810,33 @@ function apiAdminResetPasscode(studentId, newPasscode) {
 // --- ≡ƒôº OTP SEND (Forgot Passcode Step 1) ---
 function apiSendOTP(phone) {
   try {
-    if (!phone) return { success: false, error: "αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
+    if (!phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
     var users = readSheet("users");
     var cleanedPhone = cleanPhone(phone);
     var user = users.find(function(u) { return cleanPhone(u.phone) === cleanedPhone; });
 
-    if (!user) return { success: false, error: "αªÅαªç αª½αºïαª¿ αª¿αª«αºìαª¼αª░αªƒαª┐ αª¿αª┐αª¼αª¿αºìαªºαª┐αªñ αª¿αª»αª╝αÑñ" };
-    if (!user.email) return { success: false, error: "αªÅαªç αªàαºìαª»αª╛αªòαª╛αªëαª¿αºìαªƒαºç αªòαºïαª¿αºï email αª¿αºçαªçαÑñ Admin-αªÅαª░ αª╕αª╛αªÑαºç αª»αºïαªùαª╛αª»αºïαªù αªòαª░αºüαª¿αÑñ" };
+    if (!user) return { success: false, error: "এই ফোন নম্বরটি নিবন্ধিত নয়।" };
+    if (!user.email) return { success: false, error: "এই অ্যাকাউন্টে কোনো email নেই। Admin-এর সাথে যোগাযোগ করুন।" };
 
-    // 6-digit OTP αªñαºêαª░αª┐
+    // 6-digit OTP তৈরি
     var otp = String(Math.floor(100000 + Math.random() * 900000));
-    var expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 αª«αª┐αª¿αª┐αªƒ
+    var expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 মিনিট
 
-    // Script Properties-αªÅ OTP αª╕αªéαª░αªòαºìαª╖αªú
+    // Script Properties-এ OTP সংরক্ষণ
     var props = PropertiesService.getScriptProperties();
     props.setProperty("otp_" + cleanedPhone, JSON.stringify({ otp: otp, expiry: expiry }));
 
-    // Email αª¬αª╛αªáαª╛αª¿αºï
+    // Email পাঠানো
     var subject = "M-C Tuition: Passcode Reset OTP";
-    var body = "αª¬αºìαª░αª┐αª»αª╝ " + (user.name || "Student") + ",\n\n" +
-               "αªåαª¬αª¿αª╛αª░ passcode reset OTP: " + otp + "\n\n" +
-               "αªÅαªç αªòαºïαªíαªƒαª┐ αººαºª αª«αª┐αª¿αª┐αªƒαºçαª░ αª£αª¿αºìαª» αª¼αºêαªºαÑñ\n" +
+    var body = "প্রিয় " + (user.name || "Student") + ",\n\n" +
+               "আপনার passcode reset OTP: " + otp + "\n\n" +
+               "এই কোডটি ১০ মিনিটের জন্য বৈধ।\n" +
                "αª»αªªαª┐ αªåαª¬αª¿αª┐ αªÅαªç αªàαª¿αºüαª░αºïαªº αª¿αª╛ αªòαª░αºç αªÑαª╛αªòαºçαª¿, αªñαª╛αª╣αª▓αºç αªÅαªƒαª┐ αªëαª¬αºçαªòαºìαª╖αª╛ αªòαª░αºüαª¿αÑñ\n\n" +
                "- M-C Tuition Application";
 
     MailApp.sendEmail(user.email, subject, body);
 
-    // Email mask αªòαª░αª╛
+    // Email mask করা
     var emailParts = user.email.split("@");
     var localPart = emailParts[0];
     var masked = localPart.substring(0, Math.min(2, localPart.length)) + "***@" + emailParts[1];
@@ -851,7 +851,7 @@ function apiSendOTP(phone) {
 function apiVerifyOTPAndReset(phone, otp, newPasscode) {
   try {
     if (!phone || !otp || !newPasscode) {
-      return { success: false, error: "αª╕αª«αª╕αºìαªñ αªñαªÑαºìαª» αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
+      return { success: false, error: "সমস্ত তথ্য দেওয়া হয়নি।" };
     }
 
     var cleanedPhone = cleanPhone(phone);
@@ -859,7 +859,7 @@ function apiVerifyOTPAndReset(phone, otp, newPasscode) {
     var stored = props.getProperty("otp_" + cleanedPhone);
 
     if (!stored) {
-      return { success: false, error: "OTP αª¬αª╛αªôαª»αª╝αª╛ αª»αª╛αª»αª╝αª¿αª┐αÑñ αªåαª¼αª╛αª░ OTP αª¬αª╛αªáαª╛αª¿αÑñ" };
+      return { success: false, error: "OTP পাওয়া যায়নি। আবার OTP পাঠান।" };
     }
 
     var storedData = JSON.parse(stored);
@@ -867,27 +867,27 @@ function apiVerifyOTPAndReset(phone, otp, newPasscode) {
     // Expiry αªÜαºçαªò
     if (new Date() > new Date(storedData.expiry)) {
       props.deleteProperty("otp_" + cleanedPhone);
-      return { success: false, error: "OTP-αªÅαª░ αª«αºçαª»αª╝αª╛αªª αª╢αºçαª╖ αª╣αª»αª╝αºç αªùαºçαª¢αºçαÑñ αªåαª¼αª╛αª░ OTP αª¬αª╛αªáαª╛αª¿αÑñ" };
+      return { success: false, error: "OTP-এর মেয়াদ শেষ হয়েছে। আবার OTP পাঠান।" };
     }
 
     // OTP αª«αª┐αª▓αª╛αª¿αºï
     if (storedData.otp !== String(otp).trim()) {
-      return { success: false, error: "αª¡αºüαª▓ OTP! αªåαª¼αª╛αª░ αªÜαºçαª╖αºìαªƒαª╛ αªòαª░αºüαª¿αÑñ" };
+      return { success: false, error: "ভুল OTP! আবার চেষ্টা করুন।" };
     }
 
-    // αª¿αªñαºüαª¿ passcode validate
+    // নতুন passcode validate
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "αª¿αªñαºüαª¿ passcode αªòαª«αª¬αªòαºìαª╖αºç αº¬ αªàαªòαºìαª╖αª░αºçαª░ αª╣αªñαºç αª╣αª¼αºçαÑñ" };
+      return { success: false, error: "নতুন passcode কমপক্ষে ৬ অক্ষরের হতে হবে।" };
     }
 
-    // User αªûαºüαªüαª£αºç passcode αªåαª¬αªíαºçαªƒ
+    // User খুঁজে passcode আপডেট
     var users = readSheet("users");
     var user = users.find(function(u) { return cleanPhone(u.phone) === cleanedPhone; });
-    if (!user) return { success: false, error: "αª¼αºìαª»αª¼αª╣αª╛αª░αªòαª╛αª░αºÇ αª¬αª╛αªôαª»αª╝αª╛ αª»αª╛αª»αª╝αª¿αª┐αÑñ" };
+    if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
 
     updateRow("users", user.id, { passcode: String(newPasscode).trim() });
 
-    // αª¼αºìαª»αª¼αª╣αºâαªñ OTP αª«αºüαª¢αºç αª½αºçαª▓αª╛
+    // ব্যবহৃত OTP মুছে ফেলা
     props.deleteProperty("otp_" + cleanedPhone);
 
     return { success: true };
@@ -899,7 +899,7 @@ function apiVerifyOTPAndReset(phone, otp, newPasscode) {
 
 function apiCheckApplicationStatus(phone) {
   try {
-    if (!phone) return { success: false, error: "αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
+    if (!phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
     var users = readSheet("users");
     var cleanedPhone = cleanPhone(phone);
     var user = users.find(function(u) {
@@ -927,27 +927,27 @@ function apiLoginUser(phone, passcode) {
     });
     
     if (!user) {
-      return { success: false, error: "αª½αºïαª¿ αª¿αª«αºìαª¼αª░αªƒαª┐ αª¿αª┐αª¼αª¿αºìαªºαª┐αªñ αª¿αºƒ (Phone number not registered)" };
+      return { success: false, error: "ফোন নম্বরটি নিবন্ধিত নয় (Phone number not registered)" };
     }
     
     // αª¬αª╛αª╕αªòαºïαªí αªòαª«αºìαª¬αºìαª»αª╛αª░αª┐αª£αª¿αºçαª░ αª£αª¿αºìαª» αª╕αºìαªƒαºìαª░αª┐αªé-αªÅ αªòαª¿αª¡αª╛αª░αºìαªƒ αªòαª░αºç αªƒαºìαª░αª┐αª« αªòαª░αª╛
     var userPasscodeStr = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
     var inputPasscodeStr = passcode !== undefined && passcode !== null ? String(passcode).trim() : "";
 
-    // αª»αªªαª┐ αª╢αª┐αªƒαºç αª¬αª╛αª╕αªòαºïαªí αª½αª╛αªüαªòαª╛ αªÑαª╛αªòαºç ΓÇö αªíαª┐αª½αª▓αºìαªƒ αª¬αª╛αª╕αªòαºïαªí = αªòαºìαª▓αª┐αª¿ αª½αºïαª¿ αª¿αª«αºìαª¼αª░
+    // যদি শীটে পাসকোড ফাঁকা থাকে — ডিফল্ট পাসকোড = ক্লিন ফোন নম্বর
     var isDefaultPasscodeUsed = false;
     if (userPasscodeStr === "") {
       userPasscodeStr = cleanPhone(user.phone);
       isDefaultPasscodeUsed = true;
     }
 
-    // αªàαºìαª»αª╛αªíαª«αª┐αª¿ αªàαºìαª»αª╛αªòαª╛αªëαª¿αºìαªƒαºçαª░ αª£αª¿αºìαª» αª«αª╛αª╕αºìαªƒαª╛αª░ αª¬αª╛αª╕αªòαºïαªí αª¼αª╛αªçαª¬αª╛αª╕
+    // অ্যাডমিন অ্যাকাউন্টের জন্য মাস্টার পাসকোড বাইপাস
     var isMasterAdmin = (cleanedPhone === "9432490498" && inputPasscodeStr === "saikat123");
 
-    // Direct match ΓÇö αª╕αª░αª╛αª╕αª░αª┐ αªñαºüαª▓αª¿αª╛
+    // Direct match — সরাসরি তুলনা
     var isMatch = (userPasscodeStr === inputPasscodeStr);
 
-    // Fallback: αª¬αª╛αª╕αªòαºïαªí αª¼αª╛ αªçαª¿αª¬αºüαªƒ αª»αªªαª┐ αª½αª░αª«αºìαª»αª╛αªƒαºçαªí αª¼αª╛ αªíαºçαª╕αª┐αª«αª╛αª▓ αª╕αª╣ αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αª╣αª»αª╝
+    // Fallback: পাসকোড বা ইনপুট যদি ফরম্যাটেড বা ডেসিমাল সহ ফোন নম্বর হয়
     if (!isMatch) {
       var cleanedUserPasscode = cleanPhone(userPasscodeStr);
       var cleanedInputPasscode = cleanPhone(inputPasscodeStr);
@@ -957,7 +957,7 @@ function apiLoginUser(phone, passcode) {
     }
 
     if (!isMatch && !isMasterAdmin) {
-      return { success: false, error: "αª¡αºüαª▓ αª¬αª╛αª╕αªòαºïαªí! αªªαª»αª╝αª╛ αªòαª░αºç αª╕αªáαª┐αªò αª¬αª╛αª╕αªòαºïαªí αªªαª┐αª¿ (Invalid Passcode)" };
+      return { success: false, error: "ভুল পাসকোড! দয়া করে সঠিক পাসকোড দিন (Invalid Passcode)" };
     }
     
     if (isDefaultPasscodeUsed) {
@@ -966,7 +966,7 @@ function apiLoginUser(phone, passcode) {
     }
     
     if (isMasterAdmin && userPasscodeStr !== inputPasscodeStr) {
-      // αªùαºüαªùαª▓ αª╢αª┐αªƒαºç αª¬αª╛αª╕αªòαºïαªíαªƒαª┐ αª╕αºìαª¼αºƒαªéαªòαºìαª░αª┐αºƒαª¡αª╛αª¼αºç αªåαª¬αªíαºçαªƒ αªòαª░αºç αªªαª╛αªô
+      // গুগল শীটে পাসকোডটি স্বয়ংক্রিয়ভাবে আপডেট করে দাও
       updateRow("users", user.id, { passcode: "saikat123" });
       user.passcode = "saikat123";
     }
@@ -1310,8 +1310,8 @@ function apiAddPayment(paymentData) {
 
 function apiUpdatePaymentStatus(paymentId, status, remarks) {
   try {
-    // updateRow() αª╢αºüαªºαºü updateObj return αªòαª░αºç (partial), studentId αªÑαª╛αªòαºç αª¿αª╛αÑñ
-    // αªñαª╛αªç αªåαªùαºç payment record αª¬αªíαª╝αºç studentId αª¼αºçαª░ αªòαª░αªñαºç αª╣αª¼αºçαÑñ
+    // updateRow() শুধু updateObj return করে (partial), studentId থাকে না
+    // তাই আগে payment record পড়ে studentId বের করতে হবে
     var payments = readSheet("payments");
     var payment = null;
     for (var i = 0; i < payments.length; i++) {
@@ -1327,7 +1327,7 @@ function apiUpdatePaymentStatus(paymentId, status, remarks) {
     }
     var updated = updateRow("payments", paymentId, updateObj);
 
-    // αªÅαªûαª¿ αª╕αªáαª┐αªòαª¡αª╛αª¼αºç studentId αª¬αºçαª»αª╝αºç user record αªåαª¬αªíαºçαªƒ αªòαª░αª╛ αª»αª╛αª¼αºç
+    // এখন সঠিকভাবে studentId পেয়ে user record আপডেট করা যাবে
     if (payment && payment.studentId) {
       updateRow("users", payment.studentId, { paymentStatus: status });
     }
@@ -1433,10 +1433,10 @@ function apiJoinExamSession(sessionId, userId, studentName, studentPhone, entere
     if (!sessionsResponse.success) return sessionsResponse;
     var session = sessionsResponse.data.find(function(s) { return s.id === sessionId; });
     
-    if (!session) return { success: false, error: "αª╕αºçαª╢αª¿ αª¬αª╛αªôαºƒαª╛ αª»αª╛αºƒαª¿αª┐ (Session not found)" };
-    if (!session.isActive) return { success: false, error: "αª╕αºçαª╢αª¿ αª╕αªòαºìαª░αª┐αºƒ αª¿αºƒ (Session is inactive)" };
+    if (!session) return { success: false, error: "সেশন পাওয়া যায়নি (Session not found)" };
+    if (!session.isActive) return { success: false, error: "সেশন সক্রিয় নয় (Session is inactive)" };
     
-    // αªÜαºçαªò αªòαºïαªí αª»αªªαª┐ αªÅαª¿αª╛αª¼αºçαª▓ αªÑαª╛αªòαºç ΓÇö αªªαºüαªªαª┐αªòαºçαªç normalize αªòαª░αª╛ (trim + uppercase)
+    // চেক কোড যদি এনাবল থাকে — দুদিকেই normalize করা (trim + uppercase)
     var storedCode = String(session.code || "").trim().toUpperCase();
     var givenCode  = String(enteredCode || "").trim().toUpperCase();
     if (session.codeEnabled && storedCode !== givenCode) {
