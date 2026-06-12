@@ -139,7 +139,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const val = Number(s);
         return isNaN(val) ? 500 : val;
       })(),
-      pendingMonths: (profile.pendingMonths !== undefined && profile.pendingMonths !== '' && profile.pendingMonths !== null) ? Number(profile.pendingMonths) : 0,
+      pendingMonths: (() => {
+        if (profile.pendingMonths === undefined || profile.pendingMonths === null) return 0;
+        const s = String(profile.pendingMonths).trim();
+        if (s === '') return 0;
+        const val = Number(s);
+        return isNaN(val) ? 0 : val;
+      })(),
       passcode: profile.passcode,
       paymentStatus: profile.paymentStatus,
       reapplyReason: profile.reapplyReason,

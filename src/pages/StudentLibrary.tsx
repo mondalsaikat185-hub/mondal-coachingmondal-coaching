@@ -369,20 +369,49 @@ export function StudentLibrary() {
         let byteArray: any = new Uint8Array(byteNumbers);
 
         try {
-           const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib');
+           const { PDFDocument, rgb, StandardFonts, degrees } = await import('pdf-lib');
            const pdfDoc = await PDFDocument.load(byteArray);
            const pages = pdfDoc.getPages();
            const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-           const watermarkText = `Downloaded by: ${user?.fullName || user?.displayName || user?.email || 'Student'} | ${new Date().toLocaleString('en-IN')}`;
-           
+           // Forensic watermark: student's identity tiled across every page.
+           // Goal is traceability ("ke leak korlo dhora porbe"), not blocking.
+           const studentName = user?.fullName || user?.displayName || user?.email || 'Student';
+           const studentPhone = cleanPhone(user?.phone || '');
+           const forensicLabel = studentPhone ? `${studentName} | ${studentPhone}` : studentName;
+           const headerText = `Downloaded by: ${studentName} | ${new Date().toLocaleString('en-IN')}`;
+
            for (const page of pages) {
              const { width, height } = page.getSize();
-             const textSize = 9;
-             const textWidth = font.widthOfTextAtSize(watermarkText, textSize);
-             page.drawText(watermarkText, {
-               x: width - textWidth - 15,
+
+             // 1) Tiled diagonal forensic watermark (whole page, light but uncroppable)
+             const tileSize = 16;
+             const tileWidth = font.widthOfTextAtSize(forensicLabel, tileSize);
+             const stepX = tileWidth + 90;
+             const stepY = 120;
+             let row = 0;
+             for (let y = -40; y < height + 80; y += stepY) {
+               const offsetX = (row % 2) * (stepX / 2);
+               for (let x = -60; x < width + 60; x += stepX) {
+                 page.drawText(forensicLabel, {
+                   x: x + offsetX,
+                   y: y,
+                   size: tileSize,
+                   font: font,
+                   color: rgb(0.55, 0.55, 0.55),
+                   opacity: 0.13,
+                   rotate: degrees(-30),
+                 });
+               }
+               row++;
+             }
+
+             // 2) Small header line with timestamp (kept from before)
+             const headerSize = 9;
+             const headerWidth = font.widthOfTextAtSize(headerText, headerSize);
+             page.drawText(headerText, {
+               x: width - headerWidth - 15,
                y: height - 20,
-               size: textSize,
+               size: headerSize,
                font: font,
                color: rgb(0.5, 0.5, 0.5),
                opacity: 0.4,
