@@ -41,6 +41,8 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [reviewLang, setReviewLang] = useState('en');
+  const [submittingResult, setSubmittingResult] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   // Load questions, passages and configs
   const quizData = useMemo(() => {
@@ -359,12 +361,12 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   };
 
   const handleComplete = async (answers: Record<number, number>) => {
+    if (submittingResult) return;
     if (hasSubmittedRef.current) return;
-    hasSubmittedRef.current = true;
 
+    setSubmittingResult(true);
+    setSubmissionError(null);
     setMobileDrawerOpen(false);
-    setScreen('RESULT');
-    clearQuizStorage();
     
     let score = 0;
     let correct = 0;
@@ -385,13 +387,13 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
        }
     });
 
-    setResultSummary({
+    const summary = {
        score,
        total: questions.length * config.marksCorrect,
        correct,
        wrong,
        skipped
-    });
+    };
 
     if (user && !isPreview) {
       try {
@@ -413,9 +415,22 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
            submittedAt: new Date().toISOString()
         } as any);
         clearCache(`result_check_${user.uid}_${exam.id}`);
-      } catch (saveErr) {
+        
+        hasSubmittedRef.current = true;
+        setResultSummary(summary);
+        clearQuizStorage();
+        setScreen('RESULT');
+      } catch (saveErr: any) {
         console.error('Result save failed:', saveErr);
+        setSubmissionError(saveErr?.message || 'Network connection error. Please try again.');
+      } finally {
+        setSubmittingResult(false);
       }
+    } else {
+      setResultSummary(summary);
+      clearQuizStorage();
+      setScreen('RESULT');
+      setSubmittingResult(false);
     }
   };
 
@@ -1283,6 +1298,73 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              </div>
           </div>
        )}
+
+        {/* Submitting Result Loading Overlay */}
+        {submittingResult && (
+           <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center p-4 bg-black/90 backdrop-blur-sm">
+              <div className="space-y-4 text-center">
+                 <div className="relative w-16 h-16 mx-auto">
+                    <div className="absolute inset-0 border-4 border-zinc-800 rounded-full"></div>
+                    <div className="absolute inset-0 border-4 border-yellow-500 rounded-full border-t-transparent animate-spin"></div>
+                 </div>
+                 <div className="space-y-1">
+                    <h3 className="serif text-lg font-bold text-white uppercase tracking-wider">Submitting Exam...</h3>
+                    <p className="text-xs text-zinc-400">
+                       আপনার উত্তরপত্র জমা দেওয়া হচ্ছে, দয়া করে অপেক্ষা করুন...
+                    </p>
+                    <p className="text-[10px] text-zinc-550 font-medium">
+                       Do not close the browser or refresh the page.
+                    </p>
+                 </div>
+              </div>
+           </div>
+        )}
+
+        {/* Submission Error Retry Overlay */}
+        {submissionError && (
+           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/95 backdrop-blur-md" />
+              <div className="relative max-w-md w-full bg-[#1c1c1f] border-2 border-red-950 p-6 rounded-2xl shadow-2xl text-center space-y-6">
+                 <div className="mx-auto w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 text-3xl">
+                    ⚠️
+                 </div>
+                 <div className="space-y-2">
+                    <h3 className="serif text-xl font-bold text-white uppercase tracking-tight">Submission Failed / সাবমিশন ব্যর্থ হয়েছে</h3>
+                    <p className="text-xs text-zinc-300 leading-relaxed">
+                       আপনার ইন্টারনেট সংযোগ দুর্বল হওয়ার কারণে অথবা সার্ভারে ত্রুটির কারণে পরীক্ষার ফলাফল জমা দেওয়া যায়নি। তবে আপনার সকল উত্তর সুরক্ষিত আছে।
+                    </p>
+                    <div className="bg-[#121214] p-3 rounded-xl border border-zinc-800 text-left space-y-1 my-3">
+                       <span className="block text-[9px] uppercase font-bold text-zinc-500 tracking-wider">Technical Details:</span>
+                       <code className="block text-[10px] text-red-400 font-mono break-all leading-normal">
+                          {submissionError}
+                       </code>
+                    </div>
+                    <p className="text-[11px] text-yellow-500 font-semibold">
+                       অনুগ্রহ করে পুনরায় সাবমিট করতে নিচের বাটনে ক্লিক করুন।
+                    </p>
+                 </div>
+                 
+                 <div className="grid grid-cols-1 gap-3 pt-2">
+                    <button 
+                      onClick={() => handleComplete(userAnswers)}
+                      className="w-full py-3 bg-yellow-500 hover:bg-yellow-600 text-zinc-950 text-xs font-black uppercase tracking-widest rounded-xl transition-all cursor-pointer border-none shadow-md flex items-center justify-center gap-2"
+                    >
+                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                      Retry Submit / পুনরায় জমা দিন
+                    </button>
+                    
+                    <button 
+                      onClick={() => {
+                         setSubmissionError(null);
+                      }}
+                      className="w-full py-2.5 bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 text-xs font-bold uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                    >
+                       Back to Exam / পরীক্ষায় ফিরে যান
+                    </button>
+                 </div>
+              </div>
+           </div>
+        )}
 
     </div>
   );
