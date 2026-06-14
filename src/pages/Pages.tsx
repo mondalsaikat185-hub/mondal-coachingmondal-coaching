@@ -60,17 +60,23 @@ export function getDueMonths(pendingMonthsCount: number, studentPayments: any[])
     .flatMap(p => p.month.split(',').map((m: string) => m.trim()));
     
   const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
-  const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
 
   const dueMonths: string[] = [];
-  // Next month after the last paid month
-  let startIndex = maxPaidIndex !== -1 ? maxPaidIndex + 1 : monthOptions.findIndex(m => m.startsWith(monthNames[new Date().getMonth()]));
-  if (startIndex === -1) startIndex = 12; // Fallback to current year start (January)
-
-  for (let i = 0; i < pendingMonthsCount; i++) {
-    const idx = startIndex + i;
-    if (idx < monthOptions.length) {
+  const today = new Date();
+  const currentMonthStr = `${monthNames[today.getMonth()]} ${today.getFullYear()}`;
+  const currentMonthIdx = monthOptions.indexOf(currentMonthStr);
+  
+  // Start checking from 12 months ago up to future months
+  const startCheckingIdx = Math.max(0, (currentMonthIdx !== -1 ? currentMonthIdx : 12) - 12);
+  let checkedCount = 0;
+  
+  for (let idx = startCheckingIdx; idx < monthOptions.length; idx++) {
+    if (!paidIndices.includes(idx)) {
       dueMonths.push(monthOptions[idx]);
+      checkedCount++;
+      if (checkedCount >= pendingMonthsCount) {
+        break;
+      }
     }
   }
 
@@ -1883,14 +1889,20 @@ export function StudentPayments() {
     
     // Validate Sequential Month Selection
     const paidMonths = payments
-      .filter(p => p.status !== 'rejected')
+      .filter(p => p.status === 'approved' || p.status === 'pending' || p.status === 'paid')
       .flatMap(p => p.month.split(',').map(m => m.trim()));
     const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
-    const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
     
     const selectedIndices = selectedMonths.map(m => monthOptions.indexOf(m)).sort((a, b) => a - b);
     
-    // Check if the selected months themselves are consecutive
+    // 1. Check if they are trying to pay an already paid/pending month
+    const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
+    if (alreadyPaid) {
+       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "You have already submitted a payment for one or more of the selected months." }));
+       return;
+    }
+    
+    // 2. Check if the selected months themselves are consecutive
     for (let i = 1; i < selectedIndices.length; i++) {
        if (selectedIndices[i] !== selectedIndices[i-1] + 1) {
           window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select strictly consecutive months." }));
@@ -1898,17 +1910,31 @@ export function StudentPayments() {
        }
     }
     
-    // Check if they start exactly after the last paid month
-    if (maxPaidIndex !== -1) {
-       // Check if they are trying to pay an already paid month
-       const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
-       if (alreadyPaid) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "You have already submitted a payment for one or more of the selected months." }));
-          return;
+    // 3. Force them to pay from the oldest unpaid month onwards
+    const today = new Date();
+    const currentMonthStr = `${monthNames[today.getMonth()]} ${today.getFullYear()}`;
+    const currentMonthIdx = monthOptions.indexOf(currentMonthStr);
+    const joinTime = user.createdAt ? new Date(user.createdAt).getTime() : 0;
+    
+    // Find all unpaid months from join time up to the current month
+    const dueIndices: number[] = [];
+    monthOptions.forEach((m, idx) => {
+       const mDate = new Date(m);
+       if (joinTime && mDate.getTime() < joinTime - 28 * 24 * 60 * 60 * 1000) {
+          return; // Skip months before user joined
        }
-       
-       if (selectedIndices[0] !== maxPaidIndex + 1) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.` }));
+       if (idx > (currentMonthIdx !== -1 ? currentMonthIdx : 12)) {
+          return; // Skip future months for due month check (they are optional)
+       }
+       if (!paidIndices.includes(idx)) {
+          dueIndices.push(idx);
+       }
+    });
+
+    if (dueIndices.length > 0) {
+       const oldestUnpaidIdx = dueIndices[0];
+       if (selectedIndices[0] > oldestUnpaidIdx) {
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `You must pay consecutively. Your oldest unpaid month is ${monthOptions[oldestUnpaidIdx]}.` }));
           return;
        }
     }

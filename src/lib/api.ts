@@ -687,26 +687,32 @@ export const api = {
       return monthStr;
     }
 
-    // Check for the corrupted date string e.g. "10-06-2026-07-0000-0000-0000-0000-0000-Z"
-    // DD-MM-YYYY-something or DD-MM-YYYY
-    const corruptedMatch = monthStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
-    if (corruptedMatch) {
-      const monthNum = parseInt(corruptedMatch[2], 10); // 1-12
-      const year = parseInt(corruptedMatch[3], 10);
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June', 
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    // Check for DD-MM-YYYY or MM-DD-YYYY or D/M/YYYY or M/D/YYYY
+    const slashOrDashMatch = monthStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (slashOrDashMatch) {
+      const part1 = parseInt(slashOrDashMatch[1], 10); // usually month or day
+      const part2 = parseInt(slashOrDashMatch[2], 10); // usually day or month
+      const year = parseInt(slashOrDashMatch[3], 10);
       
-      if (monthNum >= 1 && monthNum <= 12) {
-        const monthNames = [
-          'January', 'February', 'March', 'April', 'May', 'June', 
-          'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-        // Shift month down by 1 month to correct Google Sheets timezone/index offset
-        let actualMonthNum = monthNum - 1;
-        let actualYear = year;
-        if (actualMonthNum === 0) {
-          actualMonthNum = 12;
-          actualYear = year - 1;
-        }
-        return `${monthNames[actualMonthNum - 1]} ${actualYear}`;
+      // Google Sheets format usually is M/D/YYYY (e.g. "4/1/2026" for April 1, 2026)
+      // If part1 is within 1-12 and part2 is 1 (standard start of month in offline entries), it is MM/DD/YYYY
+      if (part1 >= 1 && part1 <= 12 && part2 === 1) {
+        return `${monthNames[part1 - 1]} ${year}`;
+      }
+      
+      // General D/M/YYYY fallback where part2 is month:
+      if (part2 >= 1 && part2 <= 12) {
+        return `${monthNames[part2 - 1]} ${year}`;
+      }
+      
+      // M/D/YYYY fallback:
+      if (part1 >= 1 && part1 <= 12) {
+        return `${monthNames[part1 - 1]} ${year}`;
       }
     }
 
@@ -716,41 +722,15 @@ export const api = {
       const year = parseInt(isoMatch[1], 10);
       const monthNum = parseInt(isoMatch[2], 10); // 1-12
       if (monthNum >= 1 && monthNum <= 12) {
-        const monthNames = [
-          'January', 'February', 'March', 'April', 'May', 'June', 
-          'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-        const day = parseInt(isoMatch[3], 10);
-        let actualMonthNum = monthNum;
-        let actualYear = year;
-        if (day > 1) {
-          actualMonthNum = monthNum - 1;
-          if (actualMonthNum === 0) {
-            actualMonthNum = 12;
-            actualYear = year - 1;
-          }
-        }
-        return `${monthNames[actualMonthNum - 1]} ${actualYear}`;
+        return `${monthNames[monthNum - 1]} ${year}`;
       }
     }
 
     // Fallback to JS Date parsing
     const parsed = new Date(monthStr);
     if (!isNaN(parsed.getTime()) && monthStr.length > 8) {
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June', 
-        'July', 'August', 'September', 'October', 'November', 'December'
-      ];
-      const day = parsed.getDate();
-      let monthIdx = parsed.getMonth(); // 0-11
-      let year = parsed.getFullYear();
-      if (day > 1) {
-        monthIdx = monthIdx - 1;
-        if (monthIdx === -1) {
-          monthIdx = 11;
-          year = year - 1;
-        }
-      }
+      const monthIdx = parsed.getMonth(); // 0-11
+      const year = parsed.getFullYear();
       return `${monthNames[monthIdx]} ${year}`;
     }
 
