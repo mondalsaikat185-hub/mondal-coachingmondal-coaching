@@ -21,6 +21,95 @@ export function formatPassageText(text: string): string[] {
     .filter(Boolean);
 }
 
+export function formatMathAndChem(text: string): string {
+  if (!text) return '';
+  
+  let formatted = text;
+
+  // 1. Escape HTML entities first to prevent breaking rendering with math inequalities (e.g. < or >)
+  formatted = formatted
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // 2. Remove LaTeX math wrappers like $...$ only if it looks like a formula (contains ^, _, \, {, })
+  formatted = formatted.replace(/\$(.*?[\\^_\{\\}].*?)\$/g, '$1');
+  
+  // 3. Remove standard LaTeX wrappers like \( ... \) or \[ ... \]
+  formatted = formatted.replace(/\\\(|\\\)/g, '');
+  formatted = formatted.replace(/\\\[|\\\]/g, '');
+
+  // 4. LaTeX bold/italic/text formatting
+  formatted = formatted.replace(/\\textbf\{([^\}]+)\}/g, '<strong>$1</strong>');
+  formatted = formatted.replace(/\\textit\{([^\}]+)\}/g, '<em>$1</em>');
+  formatted = formatted.replace(/\\mathrm\{([^\}]+)\}/g, '<span class="font-sans">$1</span>');
+  formatted = formatted.replace(/\\text\{([^\}]+)\}/g, '<span>$1</span>');
+
+  // 5. Fractions: \frac{a}{b} -> structured fractions
+  let prev;
+  do {
+    prev = formatted;
+    formatted = formatted.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, 
+      '<span class="inline-block align-middle text-center mx-1" style="font-size: 0.85em; line-height: 1.1;"><span class="block border-b border-zinc-650 pb-0.5">$1</span><span class="block pt-0.5">$2</span></span>'
+    );
+  } while (formatted !== prev);
+
+  // 6. Superscripts:
+  // Curly braces: x^{2+} -> x<sup>2+</sup>
+  formatted = formatted.replace(/\^\{([^\}]+)\}/g, '<sup>$1</sup>');
+  // No braces: x^2 or Na^+ or Mg^2+ -> x<sup>2</sup> or Na<sup>+</sup>
+  formatted = formatted.replace(/\^([0-9]+[+\-]+|[+\-]+|[0-9]+|[a-zA-Z])/g, '<sup>$1</sup>');
+
+  // 7. Subscripts:
+  // Curly braces: H_{2} -> H<sub>2</sub>
+  formatted = formatted.replace(/\_\{([^\}]+)\}/g, '<sub>$1</sub>');
+  // No braces: H_2 or x_i -> H<sub>2</sub> or x<sub>i</sub>
+  formatted = formatted.replace(/\_([0-9]+|[a-zA-Z]|[+\-]+)/g, '<sub>$1</sub>');
+
+  // 8. Math & Chemistry symbols replacement
+  const symbolMap: Record<string, string> = {
+    '\\\\rightarrow': '→',
+    '\\\\to': '→',
+    '\\\\leftarrow': '←',
+    '\\\\rightleftharpoons': '⇌',
+    '\\\\leftrightarrow': '↔',
+    '\\\\Rightarrow': '⇒',
+    '\\\\Leftarrow': '⇐',
+    '\\\\le': '≤',
+    '\\\\leq': '≤',
+    '\\\\ge': '≥',
+    '\\\\geq': '≥',
+    '\\\\times': '×',
+    '\\\\div': '÷',
+    '\\\\pm': '±',
+    '\\\\degree': '°',
+    '\\\\neq': '≠',
+    '\\\\approx': '≈',
+    '\\\\infty': '∞',
+    '\\\\alpha': 'α',
+    '\\\\beta': 'β',
+    '\\\\gamma': 'γ',
+    '\\\\delta': 'δ',
+    '\\\\Delta': 'Δ',
+    '\\\\theta': 'θ',
+    '\\\\pi': 'π',
+    '\\\\lambda': 'λ',
+    '\\\\omega': 'ω',
+    '\\\\mu': 'μ',
+    '\\\\phi': 'φ',
+    '\\\\sigma': 'σ',
+    '\\\\psi': 'ψ',
+    '\\\\eta': 'η',
+    '\\\\epsilon': 'ε',
+  };
+
+  Object.entries(symbolMap).forEach(([key, val]) => {
+    formatted = formatted.replace(new RegExp(key, 'g'), val);
+  });
+
+  return formatted;
+}
+
 export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: Exam, onBack: () => void, isPreview?: boolean }) {
   const { user } = useAuth();
   
@@ -789,16 +878,17 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                              </div>
                           )}
 
-                          <p className="text-sm text-zinc-200 font-semibold leading-relaxed whitespace-pre-wrap">
-                             {reviewQText}
-                          </p>
+                          <p 
+                            className="text-sm text-zinc-200 font-semibold leading-relaxed whitespace-pre-wrap"
+                            dangerouslySetInnerHTML={{ __html: formatMathAndChem(reviewQText) }}
+                          />
 
                           {/* Jumbled sentences list for Sentence Rearrangement */}
                           {q?.sentences && typeof q.sentences === 'object' && (
                              <div className="space-y-1 bg-[#121214] px-3 py-2 rounded-lg border border-zinc-850 text-xs text-zinc-400 font-mono mb-2">
                                 {Object.entries(q.sentences).map(([k, val]) => (
                                    <p key={`review-s-${idx}-${k}`}>
-                                      <b className="text-yellow-650">{k}:</b> {String(val)}
+                                      <b className="text-yellow-650">{k}:</b> <span dangerouslySetInnerHTML={{ __html: formatMathAndChem(String(val)) }} />
                                    </p>
                                 ))}
                              </div>
@@ -825,7 +915,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                                       <div className="flex justify-between items-center">
                                          <span>
                                             <b className="mr-2">{String.fromCharCode(65 + optIdx)}.</b> 
-                                            {optText}
+                                            <span dangerouslySetInnerHTML={{ __html: formatMathAndChem(optText) }} />
                                          </span>
                                          {pillText && (
                                             <span className={`text-[8px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded shadow-sm ${
@@ -844,7 +934,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                           {q?.sentences && correctOptionText && (
                              <div className="mt-3 bg-emerald-500/10 border-l-2 border-emerald-500 p-3 rounded-r-xl text-xs">
                                 <span className="font-bold text-[9px] uppercase tracking-wider text-emerald-400 block mb-0.5">Correct Sequence / সঠিক ক্রম</span>
-                                <p className="font-mono text-zinc-200 font-bold">{correctOptionText}</p>
+                                <p className="font-mono text-zinc-200 font-bold" dangerouslySetInnerHTML={{ __html: formatMathAndChem(correctOptionText) }} />
                              </div>
                           )}
 
@@ -854,7 +944,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                                 <h4 className="font-bold uppercase text-[8px] tracking-wider text-yellow-500 mb-1">
                                    Explanation / ব্যাখ্যা
                                 </h4>
-                                {reviewExpl}
+                                <div dangerouslySetInnerHTML={{ __html: formatMathAndChem(reviewExpl) }} />
                              </div>
                           )}
                        </div>
@@ -1018,9 +1108,10 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                    )}
 
                    {/* Question statement */}
-                   <p className={`text-white font-medium leading-snug whitespace-pre-wrap text-left ${passage ? 'text-[11px] lg:text-base' : 'text-base sm:text-lg leading-relaxed'}`}>
-                      {qText}
-                   </p>
+                   <p 
+                      className={`text-white font-medium leading-snug whitespace-pre-wrap text-left ${passage ? 'text-[11px] lg:text-base' : 'text-base sm:text-lg leading-relaxed'}`}
+                      dangerouslySetInnerHTML={{ __html: formatMathAndChem(qText) }}
+                   />
 
                    {/* Parajumble sentences grid */}
                    {activeQuestion?.sentences && typeof activeQuestion.sentences === 'object' && (
@@ -1028,7 +1119,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                          {Object.entries(activeQuestion.sentences).map(([key, value]) => (
                             <div key={`pj-${currentIdx}-${key}`} className="flex items-start gap-1.5 text-left">
                                <b className="text-yellow-650 mr-1 shrink-0">{key}:</b> 
-                               <span>{String(value)}</span>
+                               <span dangerouslySetInnerHTML={{ __html: formatMathAndChem(String(value)) }} />
                             </div>
                          ))}
                       </div>
@@ -1056,7 +1147,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                                   <b className={`flex-shrink-0 ${passage ? 'text-[10px]' : ''} ${isSelected ? 'text-yellow-400' : 'text-zinc-505'}`}>
                                      {String.fromCharCode(65 + optIdx)}.
                                   </b> 
-                                  <span>{opt}</span>
+                                  <span dangerouslySetInnerHTML={{ __html: formatMathAndChem(opt) }} />
                                </span>
                                {isSelected && (
                                   <span className="text-[10px] uppercase font-bold text-yellow-400 tracking-wider">
