@@ -247,6 +247,10 @@ function readSheet(sheetName) {
           obj[headerKey] = displayValues[r][c];
         }
       } else {
+        // Resolve large strings stored in Drive if applicable
+        if (typeof val === 'string' && val.indexOf("gdrive_file_id:") === 0) {
+          val = readLargeString(val);
+        }
         obj[headerKey] = val;
       }
     }
@@ -300,14 +304,20 @@ function saveRow(sheetName, dataObj) {
   // αª╣αºçαªíαª╛αª░ αªàαª¿αºüαª»αª╛αª»αª╝αºÇ αªíαºçαªƒαª╛ αª╕αª╛αª£αª╛αª¿αºï
   var rowValues = [];
   for (var c = 0; c < headers.length; c++) {
-    var val = dataObj[headers[c]] !== undefined ? dataObj[headers[c]] : "";
+    var key = headers[c];
+    var val = dataObj[key] !== undefined ? dataObj[key] : "";
     
-    // αªàαª¼αª£αºçαªòαºìαªƒ αª¼αª╛ αªàαºìαª»αª╛αª░αºç αª╣αª▓αºç αª£αºçαª╕αª¿ αª╕αºìαªƒαºìαª░αª┐αªé αªòαª░αª╛
+    // object serialization
     if (typeof val === 'object' && val !== null) {
-      rowValues.push(JSON.stringify(val));
-    } else {
-      rowValues.push(val);
+      val = JSON.stringify(val);
     }
+    
+    // cell-limit overflow prevention
+    if (typeof val === 'string' && val.length > 45000) {
+      val = saveLargeString(dataObj.id, key, val, null);
+    }
+    
+    rowValues.push(val);
   }
   
   var nextRow = sheet.getLastRow() + 1;
@@ -386,6 +396,19 @@ function updateRow(sheetName, id, updateObj) {
       if (typeof val === 'object' && val !== null) {
         val = JSON.stringify(val);
       }
+      
+      // cell-limit overflow prevention
+      if (typeof val === 'string' && val.length > 45000) {
+        var existingVal = targetRowValues[c];
+        val = saveLargeString(id, key, val, existingVal);
+      } else {
+        // clean up Drive file if it was previously stored in Drive but is now short
+        var existingVal = targetRowValues[c];
+        if (typeof existingVal === 'string' && existingVal.indexOf("gdrive_file_id:") === 0) {
+          deleteLargeStringFile(existingVal);
+        }
+      }
+      
       targetRowValues[c] = val;
     }
     
@@ -425,6 +448,13 @@ function deleteRow(sheetName, id) {
   
   for (var r = 0; r < values.length; r++) {
     if (String(values[r][idColIdx]).trim() === String(id).trim()) {
+      // clean up Drive files before deleting the row
+      var rowVals = values[r];
+      rowVals.forEach(function(val) {
+        if (typeof val === 'string' && val.indexOf("gdrive_file_id:") === 0) {
+          deleteLargeStringFile(val);
+        }
+      });
       sheet.deleteRow(r + 2);
       SpreadsheetApp.flush();
       return true;
@@ -456,6 +486,13 @@ function deleteMultipleRows(sheetName, columnName, columnValue) {
     for (var r = 0; r < values.length; r++) {
       if (String(values[r][colIdx]).trim() === String(columnValue).trim()) {
         deletedCount++;
+        // clean up Drive files for deleted rows
+        var rowVals = values[r];
+        rowVals.forEach(function(val) {
+          if (typeof val === 'string' && val.indexOf("gdrive_file_id:") === 0) {
+            deleteLargeStringFile(val);
+          }
+        });
       } else {
         newValues.push(values[r]);
         newFormats.push(formats[r]);
@@ -1181,6 +1218,13 @@ function apiDeleteMultipleLibraryItems(itemIds) {
       var rowId = String(values[r][idColIdx]);
       if (itemIds.indexOf(rowId) !== -1) {
         deletedCount++;
+        // clean up Drive files for deleted library items
+        var rowVals = values[r];
+        rowVals.forEach(function(val) {
+          if (typeof val === 'string' && val.indexOf("gdrive_file_id:") === 0) {
+            deleteLargeStringFile(val);
+          }
+        });
       } else {
         newValues.push(values[r]);
         newFormats.push(formats[r]);
@@ -1821,5 +1865,91 @@ function apiFixStudentId(oldId, newId) {
     return { success: true, updatedRows: updatedRows };
   } catch (err) {
     return { success: false, error: err.toString() };
+  }
+}
+
+// =========================================================================
+// HELPER FUNCTIONS FOR CELL LIMIT OVERFLOW PREVENTION (DRIVE STORAGE)
+// =========================================================================
+
+function saveLargeString(id, key, value, existingFileId) {
+  var fileName = "large_cell_" + id + "_" + key + ".txt";
+  var file;
+  var fileId;
+  
+  if (existingFileId && existingFileId.indexOf("gdrive_file_id:") === 0) {
+    fileId = existingFileId.replace("gdrive_file_id:", "");
+    try {
+      file = DriveApp.getFileById(fileId);
+      file.setContent(value);
+      
+      // Update cache
+      var cache = CacheService.getScriptCache();
+      if (value.length < 90000) {
+        cache.put(fileId, value, 21600);
+      } else {
+        cache.remove(fileId);
+      }
+      
+      return existingFileId;
+    } catch (e) {
+      // old file not found or permission issue, fallback to create new file
+    }
+  }
+  
+  var folderName = "MondalCoachingData";
+  var folders = DriveApp.getFoldersByName(folderName);
+  var folder;
+  if (folders.hasNext()) {
+    folder = folders.next();
+  } else {
+    folder = DriveApp.createFolder(folderName);
+  }
+  
+  file = folder.createFile(fileName, value, "text/plain");
+  fileId = file.getId();
+  
+  // Update cache
+  var cache = CacheService.getScriptCache();
+  if (value.length < 90000) {
+    cache.put(fileId, value, 21600);
+  }
+  
+  return "gdrive_file_id:" + fileId;
+}
+
+function readLargeString(placeholder) {
+  if (typeof placeholder !== 'string' || placeholder.indexOf("gdrive_file_id:") !== 0) {
+    return placeholder;
+  }
+  var fileId = placeholder.replace("gdrive_file_id:", "");
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(fileId);
+  if (cached !== null) {
+    return cached;
+  }
+  
+  try {
+    var file = DriveApp.getFileById(fileId);
+    var content = file.getAs("text/plain").getDataAsString();
+    if (content.length < 90000) {
+      cache.put(fileId, content, 21600);
+    }
+    return content;
+  } catch (e) {
+    Logger.log("Failed to read large cell file: " + fileId + ", error: " + e.toString());
+    return "";
+  }
+}
+
+function deleteLargeStringFile(val) {
+  if (typeof val === 'string' && val.indexOf("gdrive_file_id:") === 0) {
+    try {
+      var fileId = val.replace("gdrive_file_id:", "");
+      CacheService.getScriptCache().remove(fileId);
+      DriveApp.getFileById(fileId).setTrashed(true);
+    } catch(e) {
+      Logger.log("Failed to delete large cell file: " + val + ", error: " + e.toString());
+    }
   }
 }
