@@ -580,6 +580,17 @@ export const api = {
     }
   },
 
+  getLibraryItemDetails: async (itemId: string): Promise<LibraryItem> => {
+    if (USE_REAL_API) {
+      return runGasMethod<LibraryItem>("apiGetLibraryItemDetails", itemId);
+    } else {
+      const db = getMockDB();
+      const item = db.library.find(i => i.id === itemId);
+      if (!item) throw new Error("Item not found");
+      return item;
+    }
+  },
+
   saveLibraryItem: async (item: Omit<LibraryItem, 'id' | 'createdAt'> & { id?: string }): Promise<LibraryItem> => {
     if (USE_REAL_API) {
       return runGasMethod<LibraryItem>("apiSaveLibraryItem", item);

@@ -247,10 +247,8 @@ function readSheet(sheetName) {
           obj[headerKey] = displayValues[r][c];
         }
       } else {
-        // Resolve large strings stored in Drive if applicable
-        if (typeof val === 'string' && val.indexOf("gdrive_file_id:") === 0) {
-          val = readLargeString(val);
-        }
+        // BUG FIX: Do not resolve large strings here to prevent memory overflow and timeouts.
+        // It will be resolved individually in specific API endpoints (like apiGetLibraryItemDetails) when needed.
         obj[headerKey] = val;
       }
     }
@@ -1135,8 +1133,41 @@ function apiGetLibrary() {
       item.isEncrypted = item.isEncrypted === true || item.isEncrypted === "true";
       item.isChunked = item.isChunked === true || item.isChunked === "true";
       if (item.chunkCount) item.chunkCount = Number(item.chunkCount);
+      // Delete quizData to reduce payload size and memory footprint for the library list
+      delete item.quizData;
     });
     return { success: true, data: list };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetLibraryItemDetails(itemId) {
+  try {
+    var list = readSheet("library");
+    var foundItem = null;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === itemId) {
+        foundItem = list[i];
+        break;
+      }
+    }
+    if (!foundItem) return { success: false, error: "Item not found" };
+
+    // Resolve large strings for this specific item
+    if (typeof foundItem.quizData === 'string' && foundItem.quizData.indexOf("gdrive_file_id:") === 0) {
+      foundItem.quizData = readLargeString(foundItem.quizData);
+    }
+    if (typeof foundItem.contentUrl === 'string' && foundItem.contentUrl.indexOf("gdrive_file_id:") === 0) {
+      foundItem.contentUrl = readLargeString(foundItem.contentUrl);
+    }
+    
+    foundItem.isFolder = foundItem.isFolder === true || foundItem.isFolder === "true";
+    foundItem.isEncrypted = foundItem.isEncrypted === true || foundItem.isEncrypted === "true";
+    foundItem.isChunked = foundItem.isChunked === true || foundItem.isChunked === "true";
+    if (foundItem.chunkCount) foundItem.chunkCount = Number(foundItem.chunkCount);
+    
+    return { success: true, data: foundItem };
   } catch (err) {
     return { success: false, error: err.toString() };
   }

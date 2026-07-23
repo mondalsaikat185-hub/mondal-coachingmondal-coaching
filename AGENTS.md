@@ -22,3 +22,5 @@ The user is highly constrained by the GCP/Firebase free tier (50k reads/day). Yo
 3. **Minimize Re-renders**: Avoid `useEffect` loops that accidentally re-trigger Firebase queries. Be extremely careful with dependency arrays.
 4. **Batch/Client-side Filtering**: If a collection is small enough, read it once, cache it, and filter on the client rather than running multiple overlapping queries.
 5. **No Infinite Loops**: Carefully guard all recursive functions or `while` loops that read from data structures (like folder breadcrumbs) to prevent infinite loops causing massive reads or crashes.
+
+## Imported Claude Cowork project instructions

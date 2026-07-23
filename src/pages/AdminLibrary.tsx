@@ -217,6 +217,19 @@ export function AdminLibrary() {
     }
   };
 
+  const handlePreviewItem = async (item: LibraryItem) => {
+    setLoading(true);
+    try {
+      const fullItem = await api.getLibraryItemDetails(item.id);
+      setPreviewItem(fullItem);
+    } catch (err: any) {
+      console.error(err);
+      alert("Failed to load exam details: " + String(err.message || err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleFileExtraction = (e: React.ChangeEvent<HTMLInputElement>) => {
      const uploadFile = e.target.files?.[0];
      if (!uploadFile) return;
@@ -953,7 +966,7 @@ export function AdminLibrary() {
                            <Eye className="w-3.5 h-3.5" /> Preview
                          </a>
                       ) : (
-                         <button onClick={() => setPreviewItem(item)} className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 font-bold text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 whitespace-nowrap">
+                         <button onClick={() => handlePreviewItem(item)} className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 border border-zinc-300 dark:border-zinc-700 font-bold text-xs hover:bg-zinc-200 dark:hover:bg-zinc-700 whitespace-nowrap">
                            <Eye className="w-3.5 h-3.5" /> Preview
                          </button>
                       )}

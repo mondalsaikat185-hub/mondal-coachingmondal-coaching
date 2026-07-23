@@ -90,7 +90,34 @@ export function StudentLibrary() {
   const viewMode = (searchParams.get('mode') as 'folders' | 'latest') || 'folders';
   const currentFolderId = searchParams.get('folder') || null;
   const previewId = searchParams.get('preview') || null;
-  const previewItem = items.find(i => i.id === previewId) || null;
+  const basePreviewItem = items.find(i => i.id === previewId) || null;
+  const [previewItem, setPreviewItemState] = useState<LibraryItem | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (basePreviewItem) {
+      if (basePreviewItem.type === 'exam' && basePreviewItem.examType !== 'Online Link') {
+        const fetchDetails = async () => {
+          setPreviewLoading(true);
+          try {
+             const fullItem = await api.getLibraryItemDetails(basePreviewItem.id!);
+             setPreviewItemState(fullItem);
+          } catch(e) {
+             console.error(e);
+             alert("Failed to load exam details.");
+             setPreviewItemState(basePreviewItem); // fallback
+          } finally {
+             setPreviewLoading(false);
+          }
+        };
+        fetchDetails();
+      } else {
+        setPreviewItemState(basePreviewItem);
+      }
+    } else {
+      setPreviewItemState(null);
+    }
+  }, [basePreviewItem?.id]);
 
   const setViewMode = (mode: 'folders' | 'latest') => {
     setSearchParams(prev => { prev.set('mode', mode); return prev; });
@@ -767,6 +794,15 @@ export function StudentLibrary() {
          setLibraryMode(null);
       }
   };
+
+  if (previewLoading) {
+     return (
+       <div className="flex flex-col items-center justify-center min-h-[50vh]">
+         <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+         <p className="font-bold text-zinc-500 uppercase tracking-widest text-sm">Loading Exam Data...</p>
+       </div>
+     );
+  }
 
   if (previewItem) {
       if (previewItem.type !== 'exam') {
