@@ -455,6 +455,25 @@ export function AdminLibrary() {
            if (examType === 'Online Link') {
               payload.contentUrl = contentUrl;
            } else {
+              try {
+                  // Validate JSON format before saving
+                  const parsed = JSON.parse(quizData);
+                  if (Array.isArray(parsed)) {
+                     if (parsed.length > 0 && typeof parsed[0] !== 'object') {
+                        throw new Error("JSON must be an array of question objects.");
+                     }
+                  } else if (parsed && typeof parsed === 'object') {
+                     if (!Array.isArray(parsed.questions)) {
+                        throw new Error("JSON object must contain a 'questions' array.");
+                     }
+                  } else {
+                     throw new Error("Data must be a valid JSON array or object.");
+                  }
+              } catch (e: any) {
+                  alert("⚠️ JSON Validation Error: \n\n" + e.message + "\n\nFormat টি সঠিক নয়। দয়া করে নিশ্চিত করুন যে পুরো ডেটাটি একটি থার্ড ব্র্যাকেট '[' দিয়ে শুরু হয়ে ']' দিয়ে শেষ হয়েছে (যদি Array হয়)।");
+                  setSubmitting(false);
+                  return;
+              }
               payload.quizData = quizData;
            }
            payload.timeLimit = timeLimit;
