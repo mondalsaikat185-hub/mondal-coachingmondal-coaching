@@ -143,6 +143,7 @@ export function AdminLibrary() {
   const [contentUrl, setContentUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [pdfPassword, setPdfPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [autoExtractMsg, setAutoExtractMsg] = useState('');
 
   // Drag and Drop
