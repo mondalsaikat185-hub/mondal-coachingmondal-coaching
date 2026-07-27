@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api, Batch } from '../lib/api';
 import { createExamSession, endExamSession } from '../lib/exam-session-utils';
 import { PageHeader } from './Pages';
-import { Loader2, Plus, Eye, Share2, Trash2, FileText, FileDown, BookOpen, Folder, FolderPlus, ChevronRight, Pencil } from 'lucide-react';
+import { Loader2, Plus, Eye, Share2, Trash2, FileText, FileDown, BookOpen, Folder, FolderPlus, ChevronRight, Pencil, GripVertical } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 
@@ -21,6 +21,7 @@ export interface LibraryItem {
   marksCorrect?: number;
   marksWrong?: number;
   allowMultipleAttempts?: boolean;
+  sequence?: number;
   scheduledStartTime?: string;
   createdAt?: any;
   isChunked?: boolean;
@@ -142,15 +143,17 @@ export function AdminLibrary() {
   const [contentUrl, setContentUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [pdfPassword, setPdfPassword] = useState('');
-  
-  const [submitting, setSubmitting] = useState(false);
+  const [autoExtractMsg, setAutoExtractMsg] = useState('');
+
+  // Drag and Drop
+  const [draggedFileId, setDraggedFileId] = useState<string | null>(null);
+  const [dragOverFileId, setDragOverFileId] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState('');
   const [folderName, setFolderName] = useState('');
   
   const [editItemId, setEditItemId] = useState<string | null>(null);
   const [editItemTitle, setEditItemTitle] = useState('');
   const [endingSession, setEndingSession] = useState(false);
-  const [autoExtractMsg, setAutoExtractMsg] = useState('');
 
   const [loadedFolders, setLoadedFolders] = useState<Set<string | null>>(new Set());
 
@@ -442,6 +445,7 @@ export function AdminLibrary() {
         }
 
         const payload: any = {
+           id: editItemId || undefined,
            title,
            type: itemType,
            parentId: currentFolderId || null,
@@ -470,7 +474,7 @@ export function AdminLibrary() {
                      throw new Error("Data must be a valid JSON array or object.");
                   }
               } catch (e: any) {
-                  alert("⚠️ JSON Validation Error: \n\n" + e.message + "\n\nFormat টি সঠিক নয়। দয়া করে নিশ্চিত করুন যে পুরো ডেটাটি একটি থার্ড ব্র্যাকেট '[' দিয়ে শুরু হয়ে ']' দিয়ে শেষ হয়েছে (যদি Array হয়)।");
+                  alert("⚠️ JSON Validation Error: \n\n" + e.message + "\n\nFormat টি সঠিক নয়। দয়া করে নিশ্চিত করুন যে পুরো ডেটাটি একটি থার্ড ব্র্যাকেট '[' দিয়ে শুরু হয়েছে ']' দিয়ে শেষ হয়েছে (যদি Array হয়)।");
                   setSubmitting(false);
                   return;
               }
@@ -567,6 +571,7 @@ export function AdminLibrary() {
   };
 
   const resetForm = () => {
+     setEditItemId(null);
      setTitle('');
      setTrackingId('');
      setQuizData('');
@@ -622,19 +627,37 @@ export function AdminLibrary() {
      }
   };
 
-  const handleEditSubmit = async (e: React.FormEvent) => {
-     e.preventDefault();
-     if (!editItemId || !editItemTitle.trim()) return;
+  const handleEditItemClick = async (item: LibraryItem) => {
+     setLoading(true);
      try {
-        setSubmitting(true);
-        await api.saveLibraryItem({ id: editItemId, title: editItemTitle.trim() } as any);
-        setEditItemId(null);
-        setEditItemTitle('');
-        handleRefreshFolder();
-     } catch (err: any) {
-        alert("Error updating: " + String(err.message || err));
+       // If it's an exam, we need to fetch full details so we get quizData
+       const fullItem = item.type === 'exam' && item.examType !== 'Online Link' 
+           ? await api.getLibraryItemDetails(item.id) 
+           : item;
+           
+       setEditItemId(item.id);
+       setItemType(item.type);
+       setTitle(item.title);
+       setTrackingId(item.trackingId || '');
+       
+       if (item.type === 'exam') {
+         setExamType(item.examType || 'Bilingual MCQ');
+         setQuizData(fullItem.quizData || '');
+         setTimeLimit(item.timeLimit || 30);
+         setMarksCorrect(item.marksCorrect || 1);
+         setMarksWrong(item.marksWrong || 0.25);
+         setAllowMultipleAttempts(item.allowMultipleAttempts || false);
+         setContentUrl(item.contentUrl || '');
+       } else {
+         setLinkUrl(item.contentUrl || '');
+         setContentUrl(item.contentUrl || '');
+       }
+       setIsUploadModalOpen(true);
+     } catch (e) {
+       console.error(e);
+       alert("Failed to load item details.");
      } finally {
-        setSubmitting(false);
+       setLoading(false);
      }
   };
 
@@ -738,7 +761,70 @@ export function AdminLibrary() {
     if (t.seconds) return t.seconds * 1000;
     return new Date(t).getTime() || 0;
   };
-  const files = currentItems.filter(i => !i.isFolder).sort((a,b) => getMs(b.createdAt) - getMs(a.createdAt));
+
+  const files = currentItems
+     .filter(i => !i.isFolder)
+     .sort((a,b) => {
+        const seqA = typeof a.sequence === 'number' ? a.sequence : 999999;
+        const seqB = typeof b.sequence === 'number' ? b.sequence : 999999;
+        if (seqA !== seqB) return seqA - seqB;
+        return getMs(b.createdAt) - getMs(a.createdAt);
+     });
+
+  const handleDragStart = (e: React.DragEvent, fileId: string) => {
+     setDraggedFileId(fileId);
+     e.dataTransfer.effectAllowed = "move";
+  };
+  
+  const handleDragOver = (e: React.DragEvent, fileId: string) => {
+     e.preventDefault();
+     setDragOverFileId(fileId);
+  };
+  
+  const handleDragEnd = () => {
+     setDraggedFileId(null);
+     setDragOverFileId(null);
+  };
+  
+  const handleDrop = async (e: React.DragEvent, targetFileId: string) => {
+     e.preventDefault();
+     if (!draggedFileId || draggedFileId === targetFileId) {
+        setDraggedFileId(null);
+        setDragOverFileId(null);
+        return;
+     }
+
+     const newFiles = [...files];
+     const draggedIndex = newFiles.findIndex(f => f.id === draggedFileId);
+     const targetIndex = newFiles.findIndex(f => f.id === targetFileId);
+     
+     if (draggedIndex === -1 || targetIndex === -1) return;
+     
+     const [draggedItem] = newFiles.splice(draggedIndex, 1);
+     newFiles.splice(targetIndex, 0, draggedItem);
+     
+     const updates = newFiles.map((f, index) => {
+        return { id: f.id, sequence: index };
+     });
+     
+     // Optimistic UI update
+     setItems(prev => prev.map(p => {
+         const update = updates.find(u => u.id === p.id);
+         if (update) return { ...p, sequence: update.sequence };
+         return p;
+     }));
+
+     setDraggedFileId(null);
+     setDragOverFileId(null);
+
+     try {
+         await api.updateLibrarySequences(updates);
+     } catch (err) {
+         console.error("Failed to update sequence", err);
+         alert("Failed to save the new order.");
+         handleRefreshFolder();
+     }
+  };
 
   const toggleMultipleAttempts = async (item: LibraryItem) => {
      try {
@@ -929,7 +1015,7 @@ export function AdminLibrary() {
                        <button onClick={() => openShareModal(folder)} className="action-btn flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-800 px-3 py-1.5 font-bold text-xs hover:bg-emerald-200 whitespace-nowrap">
                          <Share2 className="w-3.5 h-3.5" /> Share
                        </button>
-                       <button onClick={(e) => { e.stopPropagation(); setEditItemId(folder.id); setEditItemTitle(folder.title); }} className="action-btn flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900 px-3 py-1.5 font-bold text-xs hover:bg-blue-100 whitespace-nowrap">
+                       <button onClick={(e) => { e.stopPropagation(); handleEditItemClick(folder); }} className="action-btn flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900 px-3 py-1.5 font-bold text-xs hover:bg-blue-100 whitespace-nowrap">
                          <Pencil className="w-3.5 h-3.5" /> Edit
                        </button>
                        <button onClick={(e) => { e.stopPropagation(); handleDelete(folder.id); }} disabled={submitting} className="action-btn flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900 px-3 py-1.5 font-bold text-xs hover:bg-red-100 ms-auto sm:ms-0">
@@ -940,9 +1026,20 @@ export function AdminLibrary() {
                ))}
                
                {files.map((item, index) => (
-            <div key={item.id} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div 
+               key={item.id} 
+               draggable 
+               onDragStart={(e) => handleDragStart(e, item.id)}
+               onDragOver={(e) => handleDragOver(e, item.id)}
+               onDragEnd={handleDragEnd}
+               onDrop={(e) => handleDrop(e, item.id)}
+               className={`bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-all ${draggedFileId === item.id ? 'opacity-50' : ''} ${dragOverFileId === item.id ? 'border-blue-500 scale-[1.01]' : ''}`}
+            >
                <div>
                   <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <div className="cursor-grab hover:text-blue-500 active:cursor-grabbing text-zinc-400 dark:text-zinc-500 mr-1" title="Drag to reorder">
+                       <GripVertical className="w-5 h-5" />
+                    </div>
                     <h4 className="font-black text-lg">{item.title}</h4>
                     <span className="text-[10px] bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded-full font-bold uppercase">
                       {item.type === 'exam' ? item.examType : 'PDF Note'}
@@ -1014,7 +1111,7 @@ export function AdminLibrary() {
                   <button onClick={() => openShareModal(item)} className="flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-800 px-3 py-1.5 font-bold text-xs hover:bg-emerald-200 whitespace-nowrap">
                     <Share2 className="w-3.5 h-3.5" /> Share
                   </button>
-                  <button onClick={() => { setEditItemId(item.id); setEditItemTitle(item.title); }} className="flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900 px-3 py-1.5 font-bold text-xs hover:bg-blue-100 whitespace-nowrap">
+                  <button onClick={() => handleEditItemClick(item)} className="flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900 px-3 py-1.5 font-bold text-xs hover:bg-blue-100 whitespace-nowrap">
                     <Pencil className="w-3.5 h-3.5" /> Edit
                   </button>
                   <button onClick={() => handleDelete(item.id)} disabled={submitting} className="flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900 px-3 py-1.5 font-bold text-xs hover:bg-red-100 whitespace-nowrap ms-auto sm:ms-0">
@@ -1027,24 +1124,7 @@ export function AdminLibrary() {
         )}
       </div>
 
-      {editItemId && (
-         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 w-full max-w-md p-6 relative">
-               <button onClick={() => { setEditItemId(null); setEditItemTitle(''); }} className="absolute top-4 right-4 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-white border-2 border-zinc-900 dark:border-zinc-100 font-black px-2.5 py-0.5">X</button>
-               <h2 className="text-xl font-black uppercase mb-4">Edit Resource Title</h2>
-               
-               <form onSubmit={handleEditSubmit} className="flex flex-col gap-4">
-                  <div>
-                     <label className="block text-xs font-bold uppercase mb-1">New Title *</label>
-                     <input type="text" value={editItemTitle} onChange={e => setEditItemTitle(e.target.value)} required className="w-full text-sm p-3 bg-white dark:bg-zinc-950 border-2 border-zinc-900 dark:border-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500" placeholder="e.g. History Notes Chapter 1" />
-                  </div>
-                  <button type="submit" disabled={submitting} className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-black uppercase py-4 border-2 border-transparent hover:-translate-y-0.5 transition-transform flex justify-center shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] hover:shadow-[6px_6px_0px_0px_rgba(161,161,170,1)]">
-                    {submitting ? <Loader2 className="w-6 h-6 animate-spin" /> : 'Save Changes'}
-                  </button>
-               </form>
-            </div>
-         </div>
-      )}
+
 
       {isFolderModalOpen && (
          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">

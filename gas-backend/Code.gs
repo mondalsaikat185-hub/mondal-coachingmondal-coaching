@@ -1189,6 +1189,22 @@ function apiSaveLibraryItem(itemData) {
   }
 }
 
+function apiUpdateLibrarySequences(updates) {
+  try {
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return { success: true };
+    }
+    updates.forEach(function(item) {
+      if (item.id && typeof item.sequence !== 'undefined') {
+        updateRow("library", item.id, { sequence: item.sequence });
+      }
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
 function apiDeleteLibraryItem(itemId) {
   try {
     ensureSheetHeaders("batches", ["id", "name", "assignedItemsMap", "scheduledStartTimeMap", "createdAt"]);

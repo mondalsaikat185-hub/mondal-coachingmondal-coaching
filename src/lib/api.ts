@@ -63,6 +63,7 @@ export interface LibraryItem {
   marksCorrect?: number;
   marksWrong?: number;
   allowMultipleAttempts?: boolean;
+  sequence?: number;
   quizData?: string;
 }
 
@@ -612,6 +613,19 @@ export const api = {
       db.library.push(newItem);
       saveMockDB(db);
       return newItem;
+    }
+  },
+
+  updateLibrarySequences: async (updates: { id: string, sequence: number }[]): Promise<void> => {
+    if (USE_REAL_API) {
+      await runGasMethod<void>("apiUpdateLibrarySequences", updates);
+    } else {
+      const db = getMockDB();
+      updates.forEach(update => {
+        const item = db.library.find(i => i.id === update.id);
+        if (item) item.sequence = update.sequence;
+      });
+      saveMockDB(db);
     }
   },
 
