@@ -190,7 +190,9 @@ export function AdminStudents() {
   
   const [activeBatchTab, setActiveBatchTab] = useState<string>('');
   const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
-  const [attendanceDateFilter, setAttendanceDateFilter] = useState('');
+  const [showCompleteProfileMessage, setShowCompleteProfileMessage] = useState(false);
+
+  const [editingStudentBatches, setEditingStudentBatches] = useState<{ uid: string; batchIds: Set<string> } | null>(null);
 
   useEffect(() => {
     if (!batches.length) return;
@@ -770,11 +772,22 @@ export function AdminStudents() {
                     {student.joinDate ? <div className="text-[10px] text-zinc-400 uppercase mt-1">Joined: {formatDateOnlySafe(student.joinDate)}</div> : null}
                   </td>
                   <td className="p-2">
-                    <div className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                      {student.batchId ? student.batchId.split(',').map(id => {
-                        const b = batches.find(bx => bx.id === id.trim());
-                        return b ? b.name : '';
-                      }).filter(Boolean).join(', ') : 'No Batch'}
+                    <div className="flex flex-col gap-1">
+                      <div className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                        {student.batchId ? student.batchId.split(',').map(id => {
+                          const b = batches.find(bx => bx.id === id.trim());
+                          return b ? b.name : '';
+                        }).filter(Boolean).join(', ') : 'No Batch'}
+                      </div>
+                      <button 
+                        onClick={() => {
+                          const currentBatches = student.batchId ? student.batchId.split(',').map(id => id.trim()).filter(Boolean) : [];
+                          setEditingStudentBatches({ uid: sId, batchIds: new Set(currentBatches) });
+                        }}
+                        className="text-[10px] bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-1 font-bold uppercase w-fit hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                      >
+                        ✎ Edit Batches
+                      </button>
                     </div>
                   </td>
                   <td className="p-2">
@@ -812,6 +825,52 @@ export function AdminStudents() {
           </div>
         );
       })()}
+
+      {/* Edit Batches Modal */}
+      {editingStudentBatches && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 border-4 border-black p-6 w-full max-w-md shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <h3 className="text-lg font-black uppercase mb-4 text-black dark:text-white">Edit Student Batches</h3>
+            <div className="flex flex-col gap-3 max-h-60 overflow-y-auto mb-6 p-2 border-2 border-zinc-200 dark:border-zinc-800">
+              {batches.map(b => {
+                const isChecked = editingStudentBatches.batchIds.has(b.id);
+                return (
+                  <label key={b.id} className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox"
+                      className="w-5 h-5 accent-black"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        const newSet = new Set(editingStudentBatches.batchIds);
+                        if (e.target.checked) newSet.add(b.id);
+                        else newSet.delete(b.id);
+                        setEditingStudentBatches({ ...editingStudentBatches, batchIds: newSet });
+                      }}
+                    />
+                    <span className="font-bold text-sm text-zinc-800 dark:text-zinc-200">{b.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setEditingStudentBatches(null)} className="px-4 py-2 font-bold uppercase text-xs border-2 border-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  const newBatchString = Array.from(editingStudentBatches.batchIds).join(', ');
+                  handleBatchChange(editingStudentBatches.uid, newBatchString);
+                  setEditingStudentBatches(null);
+                }} 
+                className="px-4 py-2 font-bold uppercase text-xs bg-yellow-400 text-black border-2 border-black hover:-translate-y-0.5 transition-transform"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
