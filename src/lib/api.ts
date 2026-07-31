@@ -116,8 +116,14 @@ export interface ExamResult {
   examId: string;
   studentId: string;
   studentName: string;
+  studentPhone?: string;
+  studentBatchId?: string;
   score: number;
   totalQuestions: number;
+  correctAnswers?: number;
+  wrongAnswers?: number;
+  skippedAnswers?: number;
+  answersMap?: string;
   answersJSON: string;
   submittedAt: string;
 }

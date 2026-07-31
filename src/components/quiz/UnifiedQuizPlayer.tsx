@@ -494,6 +494,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
            studentId: user.uid,
            studentName,
            studentPhone,
+           studentBatchId: (user as any).batchId || '',
            score,
            totalQuestions: questions.length,
            correctAnswers: correct,

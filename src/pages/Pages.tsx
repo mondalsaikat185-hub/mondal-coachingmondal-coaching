@@ -582,7 +582,7 @@ export function AdminStudents() {
 
             {activeBatchTab && (() => {
               const records = attendanceData[activeBatchTab] || [];
-              const rawBatchStudents = students.filter((s) => s.batchId === activeBatchTab);
+              const rawBatchStudents = students.filter((s) => s.batchId && s.batchId.split(',').map(id => id.trim()).includes(activeBatchTab));
               
               const filteredStudents = rawBatchStudents.filter(s => {
                 if (!attendanceSearchQuery) return true;
@@ -655,7 +655,7 @@ export function AdminStudents() {
             ? students.filter(s => s.status === 'active')
             : studentTab === 'at_risk'
               ? students.filter(s => s.status === 'active' && s.batchId && (studentAbsentCount[s.uid] || 0) >= 3)
-              : students.filter(s => s.status === 'active' && s.batchId === studentTab);
+              : students.filter(s => s.status === 'active' && s.batchId && s.batchId.split(',').map(id => id.trim()).includes(studentTab));
 
         const atRiskCount = students.filter(s => s.status === 'active' && s.batchId && (studentAbsentCount[s.uid] || 0) >= 3).length;
 
@@ -678,7 +678,7 @@ export function AdminStudents() {
                     studentTab === batch.id ? 'bg-blue-300 text-black' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
                   }`}
                 >
-                  {batch.name} ({students.filter(s => s.status === 'active' && s.batchId === batch.id).length})
+                  {batch.name} ({students.filter(s => s.status === 'active' && s.batchId && s.batchId.split(',').map(id => id.trim()).includes(batch.id)).length})
                 </button>
               ))}
               <button
@@ -770,16 +770,12 @@ export function AdminStudents() {
                     {student.joinDate ? <div className="text-[10px] text-zinc-400 uppercase mt-1">Joined: {formatDateOnlySafe(student.joinDate)}</div> : null}
                   </td>
                   <td className="p-2">
-                    <select
-                      value={student.batchId || ''}
-                      onChange={(e) => handleBatchChange(sId, e.target.value)}
-                      className="border-2 border-zinc-200 dark:border-zinc-800 p-1 bg-transparent text-sm w-full max-w-[150px] text-zinc-900 dark:text-zinc-100"
-                    >
-                      <option value="" className="text-zinc-900">No Batch</option>
-                      {batches.map(b => (
-                        <option key={b.id} value={b.id} className="text-zinc-900">{b.name}</option>
-                      ))}
-                    </select>
+                    <div className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                      {student.batchId ? student.batchId.split(',').map(id => {
+                        const b = batches.find(bx => bx.id === id.trim());
+                        return b ? b.name : '';
+                      }).filter(Boolean).join(', ') : 'No Batch'}
+                    </div>
                   </td>
                   <td className="p-2">
                     <span className={`px-2 py-1 text-[10px] font-bold uppercase ${
@@ -794,7 +790,7 @@ export function AdminStudents() {
                         <div className="flex justify-end gap-2">
                           {student.status === 'pending' && (
                             <>
-                              <button onClick={() => { handleStatusChange(sId, 'active'); setStudentTab(student.batchId || 'all'); }} className="p-1 px-2 border-2 border-emerald-600 bg-emerald-500 text-white font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform" title="Approve">
+                              <button onClick={() => { handleStatusChange(sId, 'active'); setStudentTab('all'); }} className="p-1 px-2 border-2 border-emerald-600 bg-emerald-500 text-white font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform" title="Approve">
                                 Approve
                               </button>
                               <button onClick={() => handleStatusChange(sId, 'rejected')} className="p-1 px-2 border-2 border-red-600 bg-red-500 text-white font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform" title="Reject">

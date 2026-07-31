@@ -57,7 +57,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
             // Filter by batchId: show if 'all', matches student's batch, or directly targeted
             notifs = notifs.filter((n: any) =>
                n.batchId === 'all' ||
-               n.batchId === (user as any).batchId ||
+               ((user as any).batchId && (user as any).batchId.split(',').map((id: string) => id.trim()).includes(n.batchId)) ||
                n.senderId === user.uid ||
                n.targetId === user.uid
             );

@@ -162,17 +162,30 @@ export function StudentLibrary() {
     try {
       // 1. Get batches and student's batch
       const allBatches = await api.getBatches();
-      const studentBatch = allBatches.find(b => b.id === user.batchId);
-      if (!studentBatch) {
+      const studentBatchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+      const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
+      
+      if (studentBatches.length === 0) {
         setItems([]);
         setLoading(false);
         return;
       }
-      setStudentBatch(studentBatch);
+
+      const combinedAssignedItemsMap: Record<string, any> = {};
+      const combinedScheduledMap: Record<string, any> = {};
+      
+      studentBatches.forEach(b => {
+         Object.assign(combinedAssignedItemsMap, b.assignedItemsMap || {});
+         Object.assign(combinedScheduledMap, b.scheduledStartTimeMap || {});
+      });
+
+      setStudentBatch({
+         assignedItemsMap: combinedAssignedItemsMap,
+         scheduledStartTimeMap: combinedScheduledMap
+      });
 
       // 2. Get assigned items mapping from batch
-      const assignedItemsMap = studentBatch.assignedItemsMap || {};
-      const assignedIds = Object.keys(assignedItemsMap);
+      const assignedIds = Object.keys(combinedAssignedItemsMap);
 
       // 3. Get central library items
       const libraryItems = await api.getLibrary();
@@ -580,7 +593,8 @@ export function StudentLibrary() {
 
          // Fetch active sessions from Sheets API
          const sessions = await api.getExamSessions();
-         const batchSessionDocs = sessions.filter(s => s.examId === item.id && s.batchId === (user as any).batchId);
+         const studentBatchIds = (user as any).batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+         const batchSessionDocs = sessions.filter(s => s.examId === item.id && studentBatchIds.includes(s.batchId));
          const activeSessionDocs = batchSessionDocs.filter(s => s.isActive === true);
          const endedSessionDocs = batchSessionDocs.filter(s => s.isActive === false);
 
@@ -615,7 +629,7 @@ export function StudentLibrary() {
                   activeSession.id,
                   activeSession,
                   user.uid,
-                  (user as any).batchId,
+                  activeSession.batchId,
                   user.fullName || user.displayName || undefined,
                   user.phone
               );
@@ -644,7 +658,7 @@ export function StudentLibrary() {
 
        const result = await verifyAndJoinSession(
           codeInputItem.id,
-          (user as any).batchId,
+          activeSession.batchId,
           user.uid,
           enteredCode,
           user.fullName || user.displayName || undefined,

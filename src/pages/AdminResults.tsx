@@ -158,7 +158,7 @@ export function AdminResults() {
 
   if (!examId) {
      // Filter by batch first
-     displayResults = displayResults.filter(r => r.studentBatchId === activeBatchId);
+     displayResults = displayResults.filter(r => r.studentBatchId && r.studentBatchId.split(',').map(id => id.trim()).includes(activeBatchId));
      
      // Get list of unique exam titles in this batch dynamically
      uniqueExams = Array.from(new Set(displayResults.map(r => r.examTitle).filter(d => Boolean(d))));

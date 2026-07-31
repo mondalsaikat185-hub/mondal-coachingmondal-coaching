@@ -1094,21 +1094,23 @@ function apiDeleteBatch(batchId) {
     // ব্যাচ ডিলিট করার আগে সেই ব্যাচের সমস্ত স্টুডেন্ট এবং তাদের সমস্ত রেকর্ড ফিজিক্যালি ডিলিট করো
     var users = readSheet("users");
     users.forEach(function(u) {
-      if (String(u.batchId) === String(batchId)) {
-        // ১. স্টুডেন্টের সমস্ত পেমেন্ট রেকর্ড ডিলিট করো
-        deleteMultipleRows("payments", "studentId", u.id);
-        
-        // ২. স্টুডেন্টের সমস্ত এটেনডেন্স রেকর্ড ডিলিট করো
-        deleteMultipleRows("attendance", "studentId", u.id);
-        
-        // ৩. স্টুডেন্টের সমস্ত পরীক্ষার রেজাল্ট ডিলিট করো
-        deleteMultipleRows("examResults", "studentId", u.id);
-        
-        // ৪. ExamSessions participantUids থেকে student সরাও
-        removeUserFromExamSessions(u.id);
-        
-        // ৫. ইউজার শিট থেকে স্টুডেন্টকে ডিলিট করো
-        deleteRow("users", u.id);
+      if (u.batchId) {
+        var batchIds = String(u.batchId).split(',').map(function(id) { return id.trim(); }).filter(Boolean);
+        var index = batchIds.indexOf(String(batchId));
+        if (index !== -1) {
+          if (batchIds.length === 1) {
+            // Student only belonged to this batch, delete them completely
+            deleteMultipleRows("payments", "studentId", u.id);
+            deleteMultipleRows("attendance", "studentId", u.id);
+            deleteMultipleRows("examResults", "studentId", u.id);
+            removeUserFromExamSessions(u.id);
+            deleteRow("users", u.id);
+          } else {
+            // Student belongs to other batches too, just remove this batchId
+            batchIds.splice(index, 1);
+            updateRow("users", u.id, { batchId: batchIds.join(', ') });
+          }
+        }
       }
     });
     

@@ -478,12 +478,34 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
               <input type="date" required value={formData.joinDate} onChange={e => setFormData({...formData, joinDate: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold uppercase" />
             </div>
 
-            <select required value={formData.batchId} onChange={e => setFormData({...formData, batchId: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold">
-              <option value="">Select Batch *</option>
-              {batches.map(b => (
-                <option key={b.id} value={b.id}>{b.name} - {b.class}</option>
-              ))}
-            </select>
+            <div className="flex flex-col gap-1.5 border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800">
+              <label className="text-xs font-black uppercase text-zinc-700 dark:text-zinc-300">Select Batches *</label>
+              <div className="flex flex-col gap-2 mt-1">
+                {batches.map(b => {
+                  const isChecked = formData.batchId.split(',').map(id => id.trim()).includes(b.id);
+                  return (
+                    <label key={b.id} className="flex items-center gap-2 font-bold cursor-pointer text-zinc-900 dark:text-zinc-100">
+                      <input 
+                        type="checkbox" 
+                        checked={isChecked} 
+                        onChange={(e) => {
+                          const currentBatches = formData.batchId.split(',').map(id => id.trim()).filter(Boolean);
+                          if (e.target.checked) {
+                            currentBatches.push(b.id);
+                          } else {
+                            const idx = currentBatches.indexOf(b.id);
+                            if (idx > -1) currentBatches.splice(idx, 1);
+                          }
+                          setFormData({...formData, batchId: currentBatches.join(', ')});
+                        }}
+                        className="w-4 h-4 accent-zinc-900 dark:accent-zinc-100"
+                      />
+                      {b.name} - {b.class}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
             
             <div className="flex justify-between items-center mt-2 gap-4">
               <button type="button" onClick={onClose} className="flex-1 p-3 font-bold border-2 border-zinc-900 uppercase hover:bg-zinc-100 text-zinc-900 dark:text-zinc-100">Cancel</button>
@@ -1678,16 +1700,21 @@ function StudentDashboard() {
         const ann = await api.getAnnouncement();
         setAnnouncement(ann);
            const allBatches = await api.getBatches();
-           const batch = allBatches.find(b => b.id === user.batchId);
-           if (!batch) return;
-           const assignedItemsMap = batch.assignedItemsMap || {};
-           const assignedIds = Object.keys(assignedItemsMap);
-           if (assignedIds.length === 0) return;
+           const studentBatchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+           const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
+           
+           const assignedIds = new Set<string>();
+           studentBatches.forEach(batch => {
+              const assignedItemsMap = batch.assignedItemsMap || {};
+              Object.keys(assignedItemsMap).forEach(id => assignedIds.add(id));
+           });
+           
+           if (assignedIds.size === 0) return;
 
            const libraryItems = await api.getLibrary();
            
            const accessible = new Set<string>();
-           assignedIds.forEach(id => {
+           Array.from(assignedIds).forEach(id => {
               if (libraryItems.some(i => i.id === id)) {
                  accessible.add(id);
               }
@@ -1718,11 +1745,19 @@ function StudentDashboard() {
         const fetchAttendance = async () => {
            try {
              const { getAllAttendanceForBatch } = await import('./lib/exam-session-utils');
-             const sBatchAtt = await getAllAttendanceForBatch(user.batchId, 3);
+             const studentBatchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+             
+             let allAtt: any[] = [];
+             for (const bId of studentBatchIds) {
+                const sBatchAtt = await getAllAttendanceForBatch(bId, 3);
+                allAtt = [...allAtt, ...sBatchAtt];
+             }
+             allAtt.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+             
              let recentAbsences = 0;
              let validExamsChecked = 0;
-             for (let i = 0; i < sBatchAtt.length && validExamsChecked < 3; i++) {
-                const attDateMs = new Date(sBatchAtt[i].date).getTime();
+             for (let i = 0; i < allAtt.length && validExamsChecked < 3; i++) {
+                const attDateMs = new Date(allAtt[i].date).getTime();
                 const msJoined = (user as any).createdAt ? new Date((user as any).createdAt).getTime() : 0;
                 if (msJoined && attDateMs < msJoined - 86400000) {
                    continue;
@@ -1730,8 +1765,8 @@ function StudentDashboard() {
                 
                 validExamsChecked++;
                 const studentExcusedDates = (user as any).excusedDates ? String((user as any).excusedDates).split(',').filter(Boolean) : [];
-                const isExcused = studentExcusedDates.includes(sBatchAtt[i].date);
-                if (!sBatchAtt[i].presentStudentIds.includes(user.uid) && !isExcused) {
+                const isExcused = studentExcusedDates.includes(allAtt[i].date);
+                if (!allAtt[i].presentStudentIds.includes(user.uid) && !isExcused) {
                    recentAbsences++;
                 } else {
                    break;
