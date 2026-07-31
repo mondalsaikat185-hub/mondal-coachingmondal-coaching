@@ -190,6 +190,7 @@ export function AdminStudents() {
   
   const [activeBatchTab, setActiveBatchTab] = useState<string>('');
   const [attendanceSearchQuery, setAttendanceSearchQuery] = useState('');
+  const [attendanceDateFilter, setAttendanceDateFilter] = useState('');
   const [showCompleteProfileMessage, setShowCompleteProfileMessage] = useState(false);
 
   const [editingStudentBatches, setEditingStudentBatches] = useState<{ uid: string; batchIds: Set<string> } | null>(null);
