@@ -26,7 +26,11 @@ export async function createExamSession(
     codeEnabled
   });
 
-  return { sessionId: session.id, accessCode };
+  // CRITICAL FIX: If the backend reused an existing active session, 
+  // we MUST use the code from that session, not the locally generated one!
+  const finalCode = session.code || accessCode;
+
+  return { sessionId: session.id, accessCode: finalCode };
 }
 
 // ─── End an exam session ─────────────────────────────────────────────────────
