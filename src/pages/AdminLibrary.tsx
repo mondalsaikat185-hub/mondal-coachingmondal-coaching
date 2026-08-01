@@ -122,6 +122,7 @@ export function AdminLibrary() {
   // Modals
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const uploadLockRef = useRef(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
   const [previewItem, setPreviewItem] = useState<LibraryItem | null>(null);
@@ -431,7 +432,9 @@ export function AdminLibrary() {
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
      e.preventDefault();
+     if (uploadLockRef.current) return;
      try {
+        uploadLockRef.current = true;
         setSubmitting(true);
 
         if (itemType === 'note' && !file && !linkUrl.trim()) {
@@ -476,6 +479,7 @@ export function AdminLibrary() {
                   }
               } catch (e: any) {
                   alert("⚠️ JSON Validation Error: \n\n" + e.message + "\n\nFormat টি সঠিক নয়। দয়া করে নিশ্চিত করুন যে পুরো ডেটাটি একটি থার্ড ব্র্যাকেট '[' দিয়ে শুরু হয়েছে ']' দিয়ে শেষ হয়েছে (যদি Array হয়)।");
+                  uploadLockRef.current = false;
                   setSubmitting(false);
                   return;
               }
@@ -488,6 +492,7 @@ export function AdminLibrary() {
            
            await api.saveLibraryItem(payload);
            
+           uploadLockRef.current = false;
            setIsUploadModalOpen(false);
            resetForm();
            handleRefreshFolder();
@@ -534,19 +539,23 @@ export function AdminLibrary() {
                 setUploadProgress('Saving to central library...');
                 await api.saveLibraryItem(payload);
 
+                uploadLockRef.current = false;
                 setIsUploadModalOpen(false);
                 resetForm();
                 setUploadProgress('');
                 handleRefreshFolder();
               } catch (err: any) {
+                 uploadLockRef.current = false;
                  console.error(err);
                  alert("Upload failed: " + String(err.message || err));
                  setUploadProgress('');
               } finally {
+                 uploadLockRef.current = false;
                  setSubmitting(false);
               }
            };
            reader.onerror = () => {
+              uploadLockRef.current = false;
               alert("Failed to read file");
               setUploadProgress('');
               setSubmitting(false);
@@ -556,16 +565,19 @@ export function AdminLibrary() {
         } else if (itemType === 'note' && linkUrl.trim()) {
            payload.contentUrl = linkUrl.trim();
            await api.saveLibraryItem(payload);
+           uploadLockRef.current = false;
            setIsUploadModalOpen(false);
            resetForm();
            handleRefreshFolder();
          }
 
      } catch (err: any) {
+        uploadLockRef.current = false;
         console.error(err);
         alert("Upload failed: " + String(err.message || err));
      } finally {
-        if (!file) {
+        if (!file || itemType === 'exam') {
+           uploadLockRef.current = false;
            setSubmitting(false);
         }
      }
@@ -842,9 +854,11 @@ export function AdminLibrary() {
      }
   };
 
+  const sessionStartLockRef = useRef(false);
   const handleStartSession = async (batchId: string) => {
-    if (!user || !sessionBatchPickerItem || startingSession) return;
+    if (!user || !sessionBatchPickerItem || sessionStartLockRef.current) return;
     try {
+      sessionStartLockRef.current = true;
       setStartingSession(true);
       const { sessionId, accessCode } = await createExamSession(
         sessionBatchPickerItem.id,
@@ -869,13 +883,16 @@ export function AdminLibrary() {
       console.error('Failed to start session:', err);
       alert("Failed to start session: " + String(err));
     } finally {
+      sessionStartLockRef.current = false;
       setStartingSession(false);
     }
   };
 
+  const sessionEndLockRef = useRef(false);
   const handleEndSession = async () => {
-    if (!activeSession || endingSession) return;
+    if (!activeSession || sessionEndLockRef.current) return;
     try {
+      sessionEndLockRef.current = true;
       setEndingSession(true);
       
       // Clear polling interval instantly to block any background state overrides
@@ -895,8 +912,11 @@ export function AdminLibrary() {
       // Proceed to notify spreadsheet database in background
       await endExamSession(sessId);
     } catch (err) {
-      console.error("Failed to end session:", err);
+      sessionEndLockRef.current = false;
+      console.error('Failed to end session:', err);
+      alert("Failed to end session.");
     } finally {
+      sessionEndLockRef.current = false;
       setEndingSession(false);
     }
   };
@@ -938,12 +958,13 @@ export function AdminLibrary() {
                  <button 
                    key={s.id}
                    onClick={() => {
-                      const ex = items.find(i => i.id === s.examId);
+                      // Use allLibraryItems so we can find the exam even if it's in another folder
+                      const ex = allLibraryItems.find(i => i.id === s.examId);
                       setActiveSession({
                         sessionId: s.id,
-                        accessCode: s.accessCode,
+                        accessCode: s.code || '', // FIX: s.code instead of s.accessCode
                         examId: s.examId,
-                        examTitle: ex?.title || 'Unknown Exam',
+                        examTitle: ex?.title || 'Live Exam Session', // Fallback title
                         participantUids: s.participantUids || [],
                         codeEnabled: s.codeEnabled ?? true
                       });

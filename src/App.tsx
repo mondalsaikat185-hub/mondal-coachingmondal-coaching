@@ -1194,23 +1194,33 @@ function AdminDashboard() {
     };
     computeFlags();
   }, [refreshTrigger]);
-
-  const handleContinueStudent = async (studentId: string) => {
+  const handleContinueStudent = async (studentId: string, batchId: string) => {
     setSubmittingAction(true);
     try {
-      const users = await api.getUsers();
+      const [users, sessions] = await Promise.all([
+        api.getUsers(),
+        api.getExamSessions()
+      ]);
       const student = users.find((u: any) => u.id === studentId);
       if (!student) return;
 
-      // Update student profile:
-      // 1. Set exemptReason to put the ❌ cross mark next to their name in the students table
-      // 2. Set createdAt to current time so they instantly start as a fresh student with 0 absences!
-      // BUG FIX: আগে ...student spread করা হত — যদি student.id corrupt থাকত তাহলে
-      // phone-based fallback-এ অন্য student-এর data overwrite হওয়ার ঝুঁকি ছিল।
-      // এখন শুধু id, createdAt, exemptReason পাঠানো হচ্ছে।
+      const batchSessions = sessions.filter((s: any) => s.batchId === batchId);
+      batchSessions.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      
+      const last3Sessions = batchSessions.slice(0, 3);
+      if (last3Sessions.length === 0) {
+        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "কোনো পরীক্ষা পাওয়া যায়নি।" }));
+        setSelectedAbsentee(null);
+        return;
+      }
+
+      const datesToExcuse = last3Sessions.map((s: any) => (s.createdAt || '').split('T')[0]).filter(Boolean);
+      const existingExcused = student.excusedDates ? String(student.excusedDates).split(',').map(d => d.trim()).filter(Boolean) : [];
+      const newExcused = Array.from(new Set([...existingExcused, ...datesToExcuse]));
+
       await api.saveUser({
         id: student.id,
-        createdAt: new Date().toISOString(),
+        excusedDates: newExcused.join(','),
         exemptReason: "চলমান রাখা হয়েছে"
       } as any);
       
@@ -1552,7 +1562,7 @@ function AdminDashboard() {
             <div className="flex flex-col gap-3">
               <button
                 disabled={submittingAction}
-                onClick={() => handleContinueStudent(selectedAbsentee.id)}
+                onClick={() => handleContinueStudent(selectedAbsentee.id, selectedAbsentee.batchId)}
                 className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black py-3 px-4 uppercase tracking-wide border-2 border-zinc-900 dark:border-zinc-100 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] dark:shadow-[3px_3px_0px_0px_rgba(255,255,255,1)] hover:-translate-y-0.5 active:translate-y-0 active:shadow-none transition-all flex flex-col items-center justify-center"
               >
                 <span className="text-sm">🔄 চলমান রাখুন (Continue)</span>
@@ -1642,152 +1652,87 @@ function StudentDashboard() {
   useEffect(() => {
     if (!user?.uid) return;
 
-    const fetchPayment = async () => {
+    const fetchDashboardData = async () => {
       try {
-        let pData: Payment[] = [];
-        try {
-            const allPayments = await api.getPayments();
-            const studentPayments = allPayments.filter(p => p.studentId === user.uid);
-            studentPayments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            setPayments(studentPayments);
-            if (studentPayments.length > 0) {
-               pData.push(studentPayments[0] as any);
-            }
-        } catch (err) {
-            console.error("Failed to get student payment:", err);
-        }
-
-        if (pData.length > 0) {
-          const latest = pData[0];
-          if (latest.status === "pending") {
-            setPaymentStatus({
-              status: "pending",
-              label: "Pending Review",
-              color: "text-yellow-600 dark:text-yellow-400",
-            });
-          } else if (latest.status === "rejected") {
-            setPaymentStatus({
-              status: "rejected",
-              label: "Rejected",
-              color: "text-red-600 dark:text-red-400",
-              remarks: (latest as any).remarks || "",
-            });
+        if (!user || !user.batchId) return;
+        const batchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+        
+        // --- 1. Fetch Everything Together ---
+        const [db, allAttendance] = await Promise.all([
+          api.getStudentDashboardData(batchIds, user.uid),
+          api.getAttendance() // Attendance is still fetched separately as it's large
+        ]);
+        
+        // --- 2. Process Announcements ---
+        if (db.announcements) setAnnouncement(db.announcements);
+        
+        // --- 3. Process Payments ---
+        const studentPayments = db.payments || [];
+        if (studentPayments.length > 0) {
+          studentPayments.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          const latest = studentPayments[0];
+          if ((latest as any).status === "rejected") {
+            setPaymentStatus({ status: "rejected", label: "Rejected", color: "text-red-600 dark:text-red-400", remarks: (latest as any).remarks || "" });
           } else if ((user as any).pendingMonths > 0) {
-            setPaymentStatus({
-              status: "pending",
-              label: "Payment Pending",
-              color: "text-red-600 dark:text-red-400",
-            });
+            setPaymentStatus({ status: "pending", label: "Payment Pending", color: "text-red-600 dark:text-red-400" });
           } else {
-            setPaymentStatus({
-              status: "paid",
-              label: "All Paid Up",
-              color: "text-emerald-600 dark:text-emerald-400",
-            });
+            setPaymentStatus({ status: "paid", label: "All Paid Up", color: "text-emerald-600 dark:text-emerald-400" });
           }
-        } else {
-          if ((user as any).pendingMonths > 0) {
-            setPaymentStatus({
-              status: "pending",
-              label: "Payment Pending",
-              color: "text-red-600 dark:text-red-400",
-            });
-          }
+        } else if ((user as any).pendingMonths > 0) {
+          setPaymentStatus({ status: "pending", label: "Payment Pending", color: "text-red-600 dark:text-red-400" });
         }
+        
+        // --- 4. Process Assignments (Library) ---
+        const libraryItems = db.library || [];
+        libraryItems.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const eData = libraryItems.filter((i: any) => i.type === 'exam');
+        const nData = libraryItems.filter((i: any) => i.type === 'note' || i.type === 'pdf');
+        setExams(eData.slice(0, 3) as any);
+        setNotes(nData.slice(0, 5) as any);
+        
+        // --- 5. Process Attendance ---
+        try {
+          const sessions = db.examSessions || [];
+          const batchSessionIds = new Set(sessions.map((s: any) => s.id));
+          const batchAttendance = allAttendance.filter((a: any) => batchSessionIds.has(a.sessionId));
+          
+          const groupedByDate: Record<string, string[]> = {};
+          batchAttendance.forEach((a: any) => {
+            const dateStr = a.joinedTime ? a.joinedTime.split('T')[0] : new Date().toLocaleDateString('en-CA');
+            if (!groupedByDate[dateStr]) groupedByDate[dateStr] = [];
+            if (!groupedByDate[dateStr].includes(a.studentId)) groupedByDate[dateStr].push(a.studentId);
+          });
+          
+          const allAtt = Object.entries(groupedByDate).map(([date, studentIds]) => ({ date, presentStudentIds: studentIds }));
+          allAtt.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          
+          let recentAbsences = 0;
+          let validExamsChecked = 0;
+          for (let i = 0; i < allAtt.length && validExamsChecked < 3; i++) {
+             const attDateMs = new Date(allAtt[i].date).getTime();
+             const msJoined = (user as any).createdAt ? new Date((user as any).createdAt).getTime() : 0;
+             if (msJoined && attDateMs < msJoined - 86400000) continue;
+             
+             validExamsChecked++;
+             const studentExcusedDates = (user as any).excusedDates ? String((user as any).excusedDates).split(',').filter(Boolean) : [];
+             const isExcused = studentExcusedDates.includes(allAtt[i].date);
+             if (!allAtt[i].presentStudentIds.includes(user.uid) && !isExcused) {
+                recentAbsences++;
+             } else if (!isExcused) {
+                break;
+             }
+          }
+          setAbsentCount(recentAbsences);
+        } catch(err) {
+          console.error("Attendance process error:", err);
+        }
+        
       } catch (error) {
-        console.error("Dashboard fetch error:", error);
+        console.error("Dashboard Unified fetch error:", error);
       }
     };
-    fetchPayment();
-
-    if (user.batchId) {
-      try {
-        const fetchAssignments = async () => {
-        const ann = await api.getAnnouncement();
-        setAnnouncement(ann);
-           const allBatches = await api.getBatches();
-           const studentBatchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
-           const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
-           
-           const assignedIds = new Set<string>();
-           studentBatches.forEach(batch => {
-              const assignedItemsMap = batch.assignedItemsMap || {};
-              Object.keys(assignedItemsMap).forEach(id => assignedIds.add(id));
-           });
-           
-           if (assignedIds.size === 0) return;
-
-           const libraryItems = await api.getLibrary();
-           
-           const accessible = new Set<string>();
-           Array.from(assignedIds).forEach(id => {
-              if (libraryItems.some(i => i.id === id)) {
-                 accessible.add(id);
-              }
-           });
-           
-           const addChildren = (pId: string) => {
-              libraryItems.forEach(i => {
-                 if (i.parentId === pId && !accessible.has(i.id)) {
-                    accessible.add(i.id);
-                    addChildren(i.id);
-                 }
-              });
-           };
-           Array.from(accessible).forEach(id => addChildren(id));
-
-           const accessibleFiles = libraryItems.filter(i => accessible.has(i.id) && !i.isFolder);
-           
-           accessibleFiles.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-           
-           const eData = accessibleFiles.filter(i => i.type === 'exam');
-           const nData = accessibleFiles.filter(i => i.type === 'note' || i.type === 'pdf');
-           
-           setExams(eData.slice(0, 3) as any);
-           setNotes(nData.slice(0, 5) as any);
-        };
-        fetchAssignments();
-        
-        const fetchAttendance = async () => {
-           try {
-             const { getAllAttendanceForBatch } = await import('./lib/exam-session-utils');
-             const studentBatchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
-             
-             let allAtt: any[] = [];
-             for (const bId of studentBatchIds) {
-                const sBatchAtt = await getAllAttendanceForBatch(bId, 3);
-                allAtt = [...allAtt, ...sBatchAtt];
-             }
-             allAtt.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-             
-             let recentAbsences = 0;
-             let validExamsChecked = 0;
-             for (let i = 0; i < allAtt.length && validExamsChecked < 3; i++) {
-                const attDateMs = new Date(allAtt[i].date).getTime();
-                const msJoined = (user as any).createdAt ? new Date((user as any).createdAt).getTime() : 0;
-                if (msJoined && attDateMs < msJoined - 86400000) {
-                   continue;
-                }
-                
-                validExamsChecked++;
-                const studentExcusedDates = (user as any).excusedDates ? String((user as any).excusedDates).split(',').filter(Boolean) : [];
-                const isExcused = studentExcusedDates.includes(allAtt[i].date);
-                if (!allAtt[i].presentStudentIds.includes(user.uid) && !isExcused) {
-                   recentAbsences++;
-                } else {
-                   break;
-                }
-             }
-             setAbsentCount(recentAbsences);
-           } catch(err) {
-             console.error("Attendance fetch error:", err);
-           }
-        };
-        fetchAttendance();
-      } catch (error) {
-        console.error("Dashboard assignments fetch error:", error);
-      }
-    }
+    
+    fetchDashboardData();
   }, [user?.uid, user?.batchId]);
 
   if (user?.status === "pending") {

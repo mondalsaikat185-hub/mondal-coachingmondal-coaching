@@ -198,7 +198,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
         return;
      }
 
-     const endTime = localStorage.getItem(`quiz_endtime_${exam.id}`);
+     const endTime = localStorage.getItem(`quiz_endtime_${user?.uid || 'guest'}_${exam.id}`);
      if (endTime) {
         const remaining = Math.max(0, Math.floor((parseInt(endTime) - Date.now()) / 1000));
         if (remaining > 0) {
@@ -206,13 +206,13 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
            setScreen('QUIZ');
            
            // Restore answers
-           const savedAnswers = localStorage.getItem(`quiz_answers_${exam.id}`);
+           const savedAnswers = localStorage.getItem(`quiz_answers_${user?.uid || 'guest'}_${exam.id}`);
            if (savedAnswers) {
              try { setUserAnswers(JSON.parse(savedAnswers)); } catch (e) {}
            }
            
            // Restore states
-           const savedStates = localStorage.getItem(`quiz_states_${exam.id}`);
+           const savedStates = localStorage.getItem(`quiz_states_${user?.uid || 'guest'}_${exam.id}`);
            if (savedStates) {
              try { setQuestionStates(JSON.parse(savedStates)); } catch (e) { setQuestionStates(initialStates); }
            } else {
@@ -220,14 +220,14 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
            }
 
            // Restore active question index
-           const savedIdx = localStorage.getItem(`quiz_currentidx_${exam.id}`);
+           const savedIdx = localStorage.getItem(`quiz_currentidx_${user?.uid || 'guest'}_${exam.id}`);
            if (savedIdx) {
              try { setCurrentIdx(parseInt(savedIdx)); } catch (e) {}
            }
         } else {
            // Auto-submit the saved answers!
            if (!alreadySubmitted) {
-              const savedAnswers = localStorage.getItem(`quiz_answers_${exam.id}`);
+              const savedAnswers = localStorage.getItem(`quiz_answers_${user?.uid || 'guest'}_${exam.id}`);
               let parsedAnswers = {};
               if (savedAnswers) {
                 try { parsedAnswers = JSON.parse(savedAnswers); } catch (e) {}
@@ -244,10 +244,10 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   }, [exam.id, isPreview, questions.length, checkingResult, alreadySubmitted]);
 
   const clearQuizStorage = () => {
-    localStorage.removeItem(`quiz_endtime_${exam.id}`);
-    localStorage.removeItem(`quiz_answers_${exam.id}`);
-    localStorage.removeItem(`quiz_states_${exam.id}`);
-    localStorage.removeItem(`quiz_currentidx_${exam.id}`);
+    localStorage.removeItem(`quiz_endtime_${user?.uid || 'guest'}_${exam.id}`);
+    localStorage.removeItem(`quiz_answers_${user?.uid || 'guest'}_${exam.id}`);
+    localStorage.removeItem(`quiz_states_${user?.uid || 'guest'}_${exam.id}`);
+    localStorage.removeItem(`quiz_currentidx_${user?.uid || 'guest'}_${exam.id}`);
   };
 
   const userAnswersRef = useRef(userAnswers);
@@ -290,7 +290,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   // Countdown timer effect
   useEffect(() => {
     if (screen === 'QUIZ') {
-      const endTimeStr = localStorage.getItem(`quiz_endtime_${exam.id}`);
+      const endTimeStr = localStorage.getItem(`quiz_endtime_${user?.uid || 'guest'}_${exam.id}`);
       if (!endTimeStr) return;
       
       const updateTimer = () => {
@@ -310,18 +310,18 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   // State synchronization helper
   const saveStateToLocalStorage = (answers: Record<number, number>, states: string[], idx: number) => {
     if (isPreview) return;
-    localStorage.setItem(`quiz_answers_${exam.id}`, JSON.stringify(answers));
-    localStorage.setItem(`quiz_states_${exam.id}`, JSON.stringify(states));
-    localStorage.setItem(`quiz_currentidx_${exam.id}`, idx.toString());
+    localStorage.setItem(`quiz_answers_${user?.uid || 'guest'}_${exam.id}`, JSON.stringify(answers));
+    localStorage.setItem(`quiz_states_${user?.uid || 'guest'}_${exam.id}`, JSON.stringify(states));
+    localStorage.setItem(`quiz_currentidx_${user?.uid || 'guest'}_${exam.id}`, idx.toString());
   };
 
   const startQuiz = () => {
     setScreen('QUIZ');
     
-    let endTime = localStorage.getItem(`quiz_endtime_${exam.id}`);
+    let endTime = localStorage.getItem(`quiz_endtime_${user?.uid || 'guest'}_${exam.id}`);
     if (!endTime) {
        endTime = (Date.now() + config.totalTime * 1000).toString();
-       localStorage.setItem(`quiz_endtime_${exam.id}`, endTime);
+       localStorage.setItem(`quiz_endtime_${user?.uid || 'guest'}_${exam.id}`, endTime);
     }
     
     const initialStates = Array(questions.length).fill('unvisited');
@@ -450,8 +450,8 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   };
 
   const handleComplete = async (answers: Record<number, number>) => {
-    if (submittingResult) return;
     if (hasSubmittedRef.current) return;
+    hasSubmittedRef.current = true; // Lock immediately to prevent double submissions!
 
     setSubmittingResult(true);
     setSubmissionError(null);
@@ -506,11 +506,11 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
         } as any);
         clearCache(`result_check_${user.uid}_${exam.id}`);
         
-        hasSubmittedRef.current = true;
         setResultSummary(summary);
         clearQuizStorage();
         setScreen('RESULT');
       } catch (saveErr: any) {
+        hasSubmittedRef.current = false; // Unlock if failed so they can retry
         console.error('Result save failed:', saveErr);
         setSubmissionError(saveErr?.message || 'Network connection error. Please try again.');
       } finally {

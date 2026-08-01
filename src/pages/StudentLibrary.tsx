@@ -149,6 +149,8 @@ export function StudentLibrary() {
   const [enteredCode, setEnteredCode] = useState('');
   const [codeError, setCodeError] = useState('');
   const [codeLoading, setCodeLoading] = useState(false);
+  const codeSubmitLockRef = useRef(false);
+  const downloadLockRef = useRef(false);
 
   const [weeksToShow, setWeeksToShow] = useState(2);
   const [libraryMode, setLibraryMode] = useState<'EXAM' | 'NOTE' | null>(null);
@@ -285,7 +287,9 @@ export function StudentLibrary() {
   };
 
   const handleDownloadUrl = async (item: LibraryItem) => {
+    if (downloadLockRef.current) return;
     try {
+      downloadLockRef.current = true;
       setDownloadingId(item.id);
 
       const fileIdMatch = item.contentUrl?.match(/[-\w]{25,}/);
@@ -381,6 +385,7 @@ export function StudentLibrary() {
       });
       console.error(error);
     } finally {
+      downloadLockRef.current = false;
       setDownloadingId(null);
     }
   };
@@ -389,7 +394,9 @@ export function StudentLibrary() {
 
   const handleDownloadChunked = async (item: LibraryItem) => {
      if (!item.isChunked || !item.chunkCount || !item.id) return;
+     if (downloadLockRef.current) return;
      try {
+        downloadLockRef.current = true;
         setDownloadingId(item.id);
 
         let base64String = chunkedPdfCache.current.get(item.id);
@@ -525,6 +532,7 @@ export function StudentLibrary() {
      } catch (err) {
         console.error('Download failed:', err);
      } finally {
+        downloadLockRef.current = false;
         setDownloadingId(null);
      }
   };
@@ -551,7 +559,6 @@ export function StudentLibrary() {
      } catch (err: any) {
        if ((err as any)?.name === 'AbortError') return; // User cancelled share — ignore
        console.error("Share failed:", err);
-       // alert() ব্যবহার না করে modal message দেখাও (iOS-এ alert block হয়)
        setDownloadMessage({
          title: '❌ Share ব্যর্থ হয়েছে',
          body: `শেয়ার করা যায়নি। সরাসরি Chrome বা Safari-এ অ্যাপ খুলুন।\n\nত্রুটি: ${err.message || err}`,
@@ -596,37 +603,10 @@ export function StudentLibrary() {
          // Fetch active sessions from Sheets API
          const sessions = await api.getExamSessions();
          const studentBatchIds = (user as any).batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
-         const batchSessionDocs = sessions.filter(s => s.examId === item.id && studentBatchIds.includes(s.batchId));
-         const activeSessionDocs = batchSessionDocs.filter(s => s.isActive === true);
-         const endedSessionDocs = batchSessionDocs.filter(s => s.isActive === false);
+         // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic (always pick the newest session)
+         const activeSession = sessions.slice().reverse().find((s: any) => s.examId === item.id && studentBatchIds.includes(s.batchId) && s.isActive);
 
-         if (batchSessionDocs.length === 0) {
-            setPreviewItem(item);
-            return;
-         }
-
-         if (activeSessionDocs.length === 0) {
-            if (endedSessionDocs.length > 0) {
-               setPreviewItem(item);
-            } else {
-               setDownloadMessage({
-                 title: '🔒 পরীক্ষা শুরু হয়নি',
-                 body: 'এই পরীক্ষা এখনো শুরু হয়নি। অ্যাডমিন লাইভ সেশন শুরু করলে আপনি যোগ দিতে পারবেন।',
-                 isWarning: true
-               });
-            }
-            return;
-         }
-
-         const activeSession = activeSessionDocs[0];
-         const participants = activeSession.participantUids || [];
-         if (participants.includes(user.uid)) {
-            sessionStorage.setItem(alreadyJoinedKey, 'true');
-            setPreviewItem(item);
-            return;
-         }
-
-         if (activeSession.codeEnabled === false) {
+         if (activeSession && !activeSession.codeEnabled) {
               const result = await joinSessionWithoutCode(
                   activeSession.id,
                   activeSession,
@@ -642,6 +622,22 @@ export function StudentLibrary() {
               return;
          }
 
+         if (!activeSession) {
+             setDownloadMessage({
+               title: '🔒 পরীক্ষা শুরু হয়নি',
+               body: 'এই পরীক্ষা এখনো শুরু হয়নি। অ্যাডমিন লাইভ সেশন শুরু করলে আপনি যোগ দিতে পারবেন।',
+               isWarning: true
+             });
+             return;
+         }
+
+         const participants = activeSession.participantUids || [];
+         if (participants.includes(user.uid)) {
+            sessionStorage.setItem(alreadyJoinedKey, 'true');
+            setPreviewItem(item);
+            return;
+         }
+
          // Require code modal
          setCodeInputItem(item);
          setEnteredCode('');
@@ -654,9 +650,22 @@ export function StudentLibrary() {
 
   const handleCodeSubmit = async () => {
      if (!codeInputItem || !user || !(user as any).batchId) return;
+     if (codeSubmitLockRef.current) return; // Prevent double clicking
+     
      try {
+       codeSubmitLockRef.current = true;
        setCodeLoading(true);
        setCodeError('');
+       const sessions = await api.getExamSessions();
+       const studentBatchIds = (user as any).batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+       // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic
+       const activeSession = sessions.slice().reverse().find((s: any) => s.examId === codeInputItem.id && studentBatchIds.includes(s.batchId) && s.isActive);
+       
+       if (!activeSession) {
+          setCodeError('❌ এই session আর সক্রিয় নেই।');
+          setCodeLoading(false);
+          return;
+       }
 
        const result = await verifyAndJoinSession(
           codeInputItem.id,
@@ -695,6 +704,8 @@ export function StudentLibrary() {
        console.error("Code verification failed:", err);
        setCodeError('❌ একটি সমস্যা হয়েছে। দয়া করে আবার চেষ্টা করুন।');
        setCodeLoading(false);
+     } finally {
+       codeSubmitLockRef.current = false;
      }
   };
 
@@ -801,6 +812,12 @@ export function StudentLibrary() {
         hour: '2-digit', minute: '2-digit', hour12: true
      });
   };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+         console.warn("Tab switching/leaving the exam window was detected.");
+      }
+    };
 
   const handleBackNavigation = () => {
       if (currentFolderId) {

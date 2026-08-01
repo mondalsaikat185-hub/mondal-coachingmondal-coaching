@@ -1234,6 +1234,11 @@ function apiDeleteLibraryItem(itemId) {
         });
       }
     });
+    
+    // Memory Leak Fix: Delete associated exam sessions and results
+    deleteMultipleRows("examSessions", "examId", itemId);
+    deleteMultipleRows("examResults", "examId", itemId);
+    
     return { success: success };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1337,6 +1342,12 @@ function apiDeleteMultipleLibraryItems(itemIds) {
           SpreadsheetApp.flush();
         }
       }
+    }
+    
+    // Memory Leak Fix: Delete associated exam sessions and results for all deleted items
+    for (var k = 0; k < itemIds.length; k++) {
+      deleteMultipleRows("examSessions", "examId", itemIds[k]);
+      deleteMultipleRows("examResults", "examId", itemIds[k]);
     }
     
     return { success: true, count: deletedCount };
@@ -1579,17 +1590,18 @@ function apiJoinExamSession(sessionId, userId, studentName, studentPhone, entere
     var uids = session.participantUids || [];
     if (uids.indexOf(userId) === -1) {
       uids.push(userId);
-            updateRow("examSessions", sessionId, { participantUids: JSON.stringify(uids) });
+      updateRow("examSessions", sessionId, { participantUids: JSON.stringify(uids) });
+      
+      // Save attendance ONLY if it's the first time joining this session
+      var attendanceEntry = {
+        sessionId: sessionId,
+        studentId: userId,
+        studentName: studentName || "Student",
+        studentPhone: studentPhone || "0000000000",
+        joinedTime: new Date().toISOString()
+      };
+      saveRow("attendance", attendanceEntry);
     }
-
-    var attendanceEntry = {
-      sessionId: sessionId,
-      studentId: userId,
-      studentName: studentName || "Student",
-      studentPhone: studentPhone || "0000000000",
-      joinedTime: new Date().toISOString()
-    };
-    saveRow("attendance", attendanceEntry);
 
     return { success: true };
   } catch (err) {

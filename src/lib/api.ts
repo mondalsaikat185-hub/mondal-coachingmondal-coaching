@@ -157,6 +157,8 @@ export function cleanPhone(p: any): string {
     examResults: { data: ExamResult[], time: number } | null;
   } = { batches: null, library: null, users: null, payments: null, examSessions: null, examResults: null };
 
+  const inFlightRequests: Record<string, Promise<any>> = {};
+
   // =========================================================================
   // 1. FETCH BASED GAS METHOD EXECUTOR (REPLACES google.script.run)
   // =========================================================================
@@ -169,47 +171,60 @@ export function cleanPhone(p: any): string {
       alert("CRITICAL ERROR: Please add your Google Apps Script Web App URL in src/lib/api.ts!");
       throw new Error("Missing GAS Web App URL");
     }
-  
-    try {
-      const fetchResponse = await fetch(GAS_WEB_APP_URL, {
-        method: "POST",
-        body: JSON.stringify({ action: methodName, args: args, token: SECURITY_TOKEN }),
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8"
-        }
-      });
-  
-      const json = await fetchResponse.json();
-  
-      if (!json.success) {
-        throw new Error(json.error || "API Gateway Error");
-      }
-  
-      const response = json.data;
-  
-      if (response && typeof response === "object") {
-        if (response.success === false) {
-          if (response.error) {
-            throw new Error(response.error);
-          } else if (Object.keys(response).length === 1) {
-            return false as T;
-          }
-        } else if (response.success === true) {
-          if (response.data !== undefined) {
-            return response.data as T;
-          } else if (response.payload !== undefined) {
-            return response as T;
-          } else if (Object.keys(response).length === 1) {
-            return true as T;
-          }
-        }
-      }
-      
-      return response as T;
-    } catch (err: any) {
-      console.error("API Call Failed:", methodName, err);
-      throw err;
+
+    // Deduplicate in-flight requests to save Google Apps Script quota
+    const requestKey = `${methodName}_${JSON.stringify(args)}`;
+    if (inFlightRequests[requestKey]) {
+      return inFlightRequests[requestKey] as Promise<T>;
     }
+  
+    const requestPromise = (async () => {
+      try {
+        const fetchResponse = await fetch(GAS_WEB_APP_URL, {
+          method: "POST",
+          body: JSON.stringify({ action: methodName, args: args, token: SECURITY_TOKEN }),
+          headers: {
+            "Content-Type": "text/plain;charset=utf-8"
+          }
+        });
+    
+        const json = await fetchResponse.json();
+    
+        if (!json.success) {
+          throw new Error(json.error || "API Gateway Error");
+        }
+    
+        const response = json.data;
+    
+        if (response && typeof response === "object") {
+          if (response.success === false) {
+            if (response.error) {
+              throw new Error(response.error);
+            } else if (Object.keys(response).length === 1) {
+              return false as T;
+            }
+          } else if (response.success === true) {
+            if (response.data !== undefined) {
+              return response.data as T;
+            } else if (response.payload !== undefined) {
+              return response as T;
+            } else if (Object.keys(response).length === 1) {
+              return true as T;
+            }
+          }
+        }
+        
+        return response as T;
+      } catch (err: any) {
+        console.error("API Call Failed:", methodName, err);
+        throw err;
+      } finally {
+        delete inFlightRequests[requestKey];
+      }
+    })();
+
+    inFlightRequests[requestKey] = requestPromise;
+    return requestPromise;
 }
 
 // =========================================================================
@@ -600,6 +615,27 @@ export const api = {
       db.batches = db.batches.filter(b => b.id !== batchId);
       saveMockDB(db);
       return db.batches.length < initialLength;
+    }
+  },
+  // --- 📦 UNIFIED DASHBOARD API ---
+  getStudentDashboardData: async (batchIds: string[], studentId: string): Promise<any> => {
+    if (USE_REAL_API) {
+      const data = await runGasMethod<any>("apiGetStudentDashboardData", batchIds, studentId);
+      // Cache the returned data fragments so other views don't re-fetch them unnecessarily
+      if (data.announcements !== undefined) globalApiCache.announcement = { data: data.announcements, time: Date.now() };
+      
+      // We don't cache batches, library, or payments globally because they are filtered subsets!
+      // But we return them for the dashboard to use immediately.
+      return data;
+    } else {
+      // Mock fallback: just make the separate calls
+      return {
+        announcements: await api.getAnnouncement(),
+        batches: await api.getBatches(),
+        library: await api.getLibrary(),
+        examSessions: await api.getExamSessions(),
+        payments: await api.getPayments()
+      };
     }
   },
 

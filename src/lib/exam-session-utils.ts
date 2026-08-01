@@ -60,19 +60,28 @@ export async function verifyAndJoinSession(
   }
 
   // Join session & record attendance
-  const res = await api.joinExamSession(
-    activeSession.id,
-    studentUid,
-    studentName || "Student",
-    studentPhone || "0000000000",
-    enteredCode.toUpperCase().trim()
-  );
+  try {
+    const res = await api.joinExamSession(
+      activeSession.id,
+      studentUid,
+      studentName || "Student",
+      studentPhone || "0000000000",
+      enteredCode.toUpperCase().trim()
+    );
 
-  if (res.success) {
-    return 'ok';
-  } else if (res.error === 'wrong_code') {
-    return 'wrong_code';
-  } else {
+    // runGasMethod unwraps {success: true} into boolean true, or returns the full object if it has other fields
+    if (res === true || (res && typeof res === 'object' && res.success !== false)) {
+      return 'ok';
+    } else if (res === false || (res && res.error === 'wrong_code')) {
+      return 'wrong_code';
+    } else {
+      return 'session_inactive';
+    }
+  } catch (err: any) {
+    if (err.message === 'wrong_code') {
+      return 'wrong_code';
+    }
+    console.error("verifyAndJoinSession error:", err);
     return 'session_inactive';
   }
 }

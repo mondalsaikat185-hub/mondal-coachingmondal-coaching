@@ -39,9 +39,11 @@ export function ProfileSetup() {
     fetchBatches();
   }, []);
 
+  const profileSubmitLockRef = useRef(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || profileSubmitLockRef.current) return;
 
     const missingFields = [];
     if (!fullName.trim()) missingFields.push("Full Name");
@@ -58,6 +60,7 @@ export function ProfileSetup() {
     }
 
     try {
+      profileSubmitLockRef.current = true;
       setLoading(true);
 
       const statusUpdate =
@@ -99,9 +102,11 @@ export function ProfileSetup() {
 
       navigate("/student");
     } catch (error: any) {
-      console.error("Profile submission error:", error);
-      alert("আবেদন সাবমিট করতে ব্যর্থ হয়েছে (Failed to submit application)");
+      profileSubmitLockRef.current = false;
+      console.error(error);
+      alert("An error occurred while saving your profile. Please try again.");
     } finally {
+      profileSubmitLockRef.current = false;
       setLoading(false);
     }
   };

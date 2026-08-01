@@ -1837,6 +1837,32 @@ export function StudentPayments() {
       setSelectedMonths([...selectedMonths, m]);
     }
   };
+  const currentYear = new Date().getFullYear();
+  const currentMonthStr = `${monthNames[new Date().getMonth()]} ${currentYear}`;
+  
+  // Calculate oldest unpaid month on mount or when payments load
+  useEffect(() => {
+    if (!user || payments.length === 0) return;
+    const paidMonths = payments
+      .filter(p => p.status === 'approved' || p.status === 'pending' || p.status === 'paid')
+      .flatMap(p => p.month.split(',').map(m => m.trim()));
+    const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
+    
+    const joinTime = user.createdAt ? new Date(user.createdAt).getTime() : 0;
+    const currentMonthIdx = monthOptions.indexOf(currentMonthStr);
+    
+    const dueIndices: number[] = [];
+    monthOptions.forEach((m, idx) => {
+       const mDate = new Date(m);
+       if (joinTime && mDate.getTime() < joinTime - 28 * 24 * 60 * 60 * 1000) return;
+       if (idx > (currentMonthIdx !== -1 ? currentMonthIdx : 24)) return;
+       if (!paidIndices.includes(idx)) dueIndices.push(idx);
+    });
+    
+    if (dueIndices.length > 0 && selectedMonths.length === 0) {
+       setSelectedMonths([monthOptions[dueIndices[0]]]);
+    }
+  }, [payments, user]);
 
   const handleRazorpayCheckout = async () => {
     if (selectedMonths.length === 0 || !user) {
