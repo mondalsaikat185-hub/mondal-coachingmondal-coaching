@@ -1523,7 +1523,7 @@ export function AdminPayments() {
 
   if (selectedBatchId) {
      const bName = selectedBatchId === 'unassigned' ? 'Unassigned' : batches.find(b => b.id === selectedBatchId)?.name;
-     const bStudents = students.filter(s => selectedBatchId === 'unassigned' ? !s.batchId : s.batchId === selectedBatchId);
+     const bStudents = students.filter(s => selectedBatchId === 'unassigned' ? !s.batchId : (s.batchId && s.batchId.split(',').map(id => id.trim()).includes(selectedBatchId)));
      
      return (
        <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full">
@@ -1614,7 +1614,7 @@ export function AdminPayments() {
         {batches.map(b => (
            <button key={b.id} onClick={() => setSelectedBatchId(b.id)} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] hover:-translate-y-1 transition-transform text-left">
               <h3 className="text-xl font-black uppercase text-yellow-600 dark:text-yellow-400 mb-2">{b.name}</h3>
-              <p className="text-sm font-bold text-zinc-500">{students.filter(s => s.batchId === b.id).length} Students</p>
+              <p className="text-sm font-bold text-zinc-500">{students.filter(s => s.batchId && s.batchId.split(',').map(id => id.trim()).includes(b.id)).length} Students</p>
            </button>
         ))}
         <button onClick={() => setSelectedBatchId('unassigned')} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] hover:-translate-y-1 transition-transform text-left opacity-70">

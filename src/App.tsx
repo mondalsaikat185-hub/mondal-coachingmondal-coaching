@@ -1119,7 +1119,13 @@ function AdminDashboard() {
         const students = users.filter((u: any) => u.role !== 'admin' && u.status === 'active');
         const flags: any[] = [];
 
-        const batchIds = [...new Set(students.map((s: any) => s.batchId).filter(Boolean))];
+        const batchIdsSet = new Set<string>();
+        students.forEach((s: any) => {
+          if (s.batchId) {
+            s.batchId.split(',').forEach((id: string) => batchIdsSet.add(id.trim()));
+          }
+        });
+        const batchIds = Array.from(batchIdsSet).filter(Boolean);
 
         const { getAllAttendanceForBatch } = await import('./lib/exam-session-utils');
         
@@ -1142,7 +1148,7 @@ function AdminDashboard() {
           // Must have at least 3 unique exam dates in this batch to ever trigger a 3 consecutive absence alert!
           if (sBatchAtt.length < 3) return;
 
-          const batchStudents = students.filter((s: any) => s.batchId === batchId);
+          const batchStudents = students.filter((s: any) => s.batchId && s.batchId.split(',').map((id: string) => id.trim()).includes(batchId));
 
           batchStudents.forEach((student: any) => {
             let recentAbsences = 0;
