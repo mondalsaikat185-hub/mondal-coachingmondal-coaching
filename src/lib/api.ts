@@ -655,6 +655,7 @@ export const api = {
   },
 
   updateLibrarySequences: async (updates: { id: string, sequence: number }[]): Promise<void> => {
+    globalApiCache.library = null;
     if (USE_REAL_API) {
       await runGasMethod<void>("apiUpdateLibrarySequences", updates);
     } else {
@@ -689,6 +690,8 @@ export const api = {
   },
 
   deleteMultipleLibraryItems: async (itemIds: string[]): Promise<{ success: boolean; count?: number }> => {
+    globalApiCache.library = null;
+    globalApiCache.batches = null;
     if (USE_REAL_API) {
       return runGasMethod<{ success: boolean; count?: number }>("apiDeleteMultipleLibraryItems", itemIds);
     } else {
@@ -712,6 +715,7 @@ export const api = {
   },
 
   shareLibraryItem: async (itemId: string, batchIdsMap: Record<string, boolean>, scheduledStartTimeMap?: Record<string, string>): Promise<boolean> => {
+    globalApiCache.batches = null;
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiShareLibraryItem", itemId, batchIdsMap, scheduledStartTimeMap || {});
     } else {
