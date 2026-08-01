@@ -1257,16 +1257,15 @@ function AdminDashboard() {
         return;
       }
 
-      // Mark the student as present in each of the last 3 sessions
-      for (const session of last3Sessions) {
-        await api.joinExamSession(
-          session.id,
-          student.id,
-          student.name || student.phone || "Student",
-          student.phone || "0000000000",
-          session.code || "" // FIX: Pass the actual session code instead of empty string to bypass the backend code enforcement
-        );
-      }
+      const datesToExcuse = last3Sessions.map((s: any) => (s.createdAt || '').split('T')[0]).filter(Boolean);
+      const existingExcused = student.excusedDates ? String(student.excusedDates).split(',').map(d => d.trim()).filter(Boolean) : [];
+      const newExcused = Array.from(new Set([...existingExcused, ...datesToExcuse]));
+
+      await api.saveUser({
+        id: student.id,
+        excusedDates: newExcused.join(','),
+        exemptReason: "উপস্থিতি ম্যানুয়ালি পূর্ণ করা হয়েছে"
+      } as any);
 
       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "ছাত্রের অনুপস্থিত পরীক্ষাগুলোর উপস্থিতি সফলভাবে পূর্ণ করা হয়েছে!" }));
       setSelectedAbsentee(null);
