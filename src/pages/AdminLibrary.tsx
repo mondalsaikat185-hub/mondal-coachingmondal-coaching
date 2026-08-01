@@ -958,8 +958,8 @@ export function AdminLibrary() {
                  <button 
                    key={s.id}
                    onClick={() => {
-                      // Use allLibraryItems so we can find the exam even if it's in another folder
-                      const ex = allLibraryItems.find(i => i.id === s.examId);
+                      // If the exam is in a different folder, we use a fallback title
+                      const ex = items.find(i => i.id === s.examId);
                       setActiveSession({
                         sessionId: s.id,
                         accessCode: s.code || '', // FIX: s.code instead of s.accessCode

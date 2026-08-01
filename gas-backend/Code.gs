@@ -1538,7 +1538,7 @@ function apiGetExamSessions() {
 
 function apiCreateExamSession(sessionData) {
   try {
-    // Enforce single active session constraint per exam/batch: return existing active session if found
+    // Enforce single active session constraint per exam/batch: KILL existing active session if found
     var sessionsResponse = apiGetExamSessions();
     if (sessionsResponse.success) {
       var existingActive = sessionsResponse.data.find(function(s) {
@@ -1547,7 +1547,8 @@ function apiCreateExamSession(sessionData) {
                s.isActive;
       });
       if (existingActive) {
-        return { success: true, data: existingActive };
+        // KILL the old session so the new one can take over with the new code
+        updateRow("examSessions", existingActive.id, { isActive: false });
       }
     }
 
