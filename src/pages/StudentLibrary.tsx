@@ -160,8 +160,12 @@ export function StudentLibrary() {
     }
     setLoading(true);
     try {
-      // 1. Get batches and student's batch
-      const allBatches = await api.getBatches();
+      // 1. Get batches and central library items concurrently
+      const [allBatches, libraryItems] = await Promise.all([
+        api.getBatches(),
+        api.getLibrary()
+      ]);
+      
       const studentBatchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
       const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
       
@@ -187,8 +191,6 @@ export function StudentLibrary() {
       // 2. Get assigned items mapping from batch
       const assignedIds = Object.keys(combinedAssignedItemsMap);
 
-      // 3. Get central library items
-      const libraryItems = await api.getLibrary();
       setAllItems(libraryItems);
 
       // 4. Resolve accessible items (assigned root items + descendants recursively + ancestors)

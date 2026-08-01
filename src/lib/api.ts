@@ -147,7 +147,16 @@ export function cleanPhone(p: any): string {
   return digits;
 }  // Environment Detection
   const USE_REAL_API = true;
-  
+  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  const globalApiCache: {
+    batches: { data: Batch[], time: number } | null;
+    library: { data: LibraryItem[], time: number } | null;
+    users: { data: AppUser[], time: number } | null;
+    payments: { data: PaymentRecord[], time: number } | null;
+    examSessions: { data: ExamSession[], time: number } | null;
+    examResults: { data: ExamResult[], time: number } | null;
+  } = { batches: null, library: null, users: null, payments: null, examSessions: null, examResults: null };
+
   // =========================================================================
   // 1. FETCH BASED GAS METHOD EXECUTOR (REPLACES google.script.run)
   // =========================================================================
@@ -352,7 +361,12 @@ export const api = {
   
   getUsers: async (): Promise<UserProfile[]> => {
     if (USE_REAL_API) {
-      return runGasMethod<UserProfile[]>("apiGetUsers");
+      if (globalApiCache.users && Date.now() - globalApiCache.users.time < CACHE_TTL) {
+        return globalApiCache.users.data;
+      }
+      const data = await runGasMethod<UserProfile[]>("apiGetUsers");
+      globalApiCache.users = { data, time: Date.now() };
+      return data;
     } else {
       return getMockDB().users;
     }
@@ -367,6 +381,7 @@ export const api = {
   },
 
   saveUser: async (user: Omit<UserProfile, 'id'> & { id?: string }): Promise<UserProfile> => {
+    globalApiCache.users = null;
     if (USE_REAL_API) {
       return runGasMethod<UserProfile>("apiSaveUser", user);
     } else {
@@ -396,6 +411,7 @@ export const api = {
   },
 
   updateUserStatus: async (userId: string, status: UserProfile['status'], rejectReason?: string): Promise<UserProfile> => {
+    globalApiCache.users = null;
     if (USE_REAL_API) {
       const res = await runGasMethod<UserProfile>("apiUpdateUserStatus", userId, status, rejectReason);
       if (!(res as any) || (res as any).success === false) {
@@ -416,6 +432,7 @@ export const api = {
   },
 
   updateUserPasscode: async (userId: string, passcode: string): Promise<UserProfile> => {
+    globalApiCache.users = null;
     if (USE_REAL_API) {
       return runGasMethod<UserProfile>("apiUpdateUserPasscode", userId, passcode);
     } else {
@@ -446,6 +463,7 @@ export const api = {
   },
 
   registerUser: async (userData: Partial<UserProfile>): Promise<{ success: boolean; status: string; message?: string; data?: any }> => {
+    globalApiCache.users = null;
     if (USE_REAL_API) {
       return runGasMethod<{ success: boolean; status: string; message?: string; data?: any }>("apiRegisterUser", userData);
     } else {
@@ -519,6 +537,7 @@ export const api = {
     return true;
   },
   deleteUser: async (userId: string): Promise<boolean> => {
+    globalApiCache.users = null;
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiDeleteUser", userId);
     } else {
@@ -534,13 +553,19 @@ export const api = {
 
   getBatches: async (): Promise<Batch[]> => {
     if (USE_REAL_API) {
-      return runGasMethod<Batch[]>("apiGetBatches");
+      if (globalApiCache.batches && Date.now() - globalApiCache.batches.time < CACHE_TTL) {
+        return globalApiCache.batches.data;
+      }
+      const data = await runGasMethod<Batch[]>("apiGetBatches");
+      globalApiCache.batches = { data, time: Date.now() };
+      return data;
     } else {
       return getMockDB().batches;
     }
   },
 
   saveBatch: async (batch: Omit<Batch, 'id' | 'createdAt'> & { id?: string }): Promise<Batch> => {
+    globalApiCache.batches = null;
     if (USE_REAL_API) {
       return runGasMethod<Batch>("apiSaveBatch", batch);
     } else {
@@ -566,6 +591,7 @@ export const api = {
   },
 
   deleteBatch: async (batchId: string): Promise<boolean> => {
+    globalApiCache.batches = null;
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiDeleteBatch", batchId);
     } else {
@@ -581,7 +607,12 @@ export const api = {
 
   getLibrary: async (): Promise<LibraryItem[]> => {
     if (USE_REAL_API) {
-      return runGasMethod<LibraryItem[]>("apiGetLibrary");
+      if (globalApiCache.library && Date.now() - globalApiCache.library.time < CACHE_TTL) {
+        return globalApiCache.library.data;
+      }
+      const data = await runGasMethod<LibraryItem[]>("apiGetLibrary");
+      globalApiCache.library = { data, time: Date.now() };
+      return data;
     } else {
       return getMockDB().library;
     }
@@ -598,7 +629,8 @@ export const api = {
     }
   },
 
-  saveLibraryItem: async (item: Omit<LibraryItem, 'id' | 'createdAt'> & { id?: string }): Promise<LibraryItem> => {
+  saveLibraryItem: async (item: Partial<LibraryItem>): Promise<LibraryItem> => {
+    globalApiCache.library = null;
     if (USE_REAL_API) {
       return runGasMethod<LibraryItem>("apiSaveLibraryItem", item);
     } else {
@@ -636,6 +668,7 @@ export const api = {
   },
 
   deleteLibraryItem: async (itemId: string): Promise<boolean> => {
+    globalApiCache.library = null;
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiDeleteLibraryItem", itemId);
     } else {
@@ -771,7 +804,11 @@ export const api = {
   getPayments: async (): Promise<PaymentRecord[]> => {
     let payments: PaymentRecord[];
     if (USE_REAL_API) {
+      if (globalApiCache.payments && Date.now() - globalApiCache.payments.time < CACHE_TTL) {
+        return globalApiCache.payments.data;
+      }
       payments = await runGasMethod<PaymentRecord[]>("apiGetPayments");
+      globalApiCache.payments = { data: payments, time: Date.now() };
     } else {
       payments = getMockDB().payments;
     }
@@ -782,6 +819,7 @@ export const api = {
   },
 
   addPayment: async (payment: Omit<PaymentRecord, 'id' | 'createdAt'>): Promise<PaymentRecord> => {
+    globalApiCache.payments = null;
     let savedPayment: PaymentRecord;
     if (USE_REAL_API) {
       savedPayment = await runGasMethod<PaymentRecord>("apiAddPayment", payment);
@@ -810,6 +848,7 @@ export const api = {
   },
 
   updatePaymentStatus: async (paymentId: string, status: PaymentRecord['status'], remarks: string = ''): Promise<PaymentRecord> => {
+    globalApiCache.payments = null;
     let updatedPayment: PaymentRecord;
     if (USE_REAL_API) {
       updatedPayment = await runGasMethod<PaymentRecord>("apiUpdatePaymentStatus", paymentId, status, remarks);
@@ -864,6 +903,7 @@ export const api = {
   },
 
   updatePaymentAmount: async (paymentId: string, amount: number): Promise<PaymentRecord> => {
+    globalApiCache.payments = null;
     let updatedPayment: PaymentRecord;
     if (USE_REAL_API) {
       updatedPayment = await runGasMethod<PaymentRecord>("apiUpdatePaymentAmount", paymentId, amount);
@@ -897,13 +937,19 @@ export const api = {
 
   getExamSessions: async (): Promise<ExamSession[]> => {
     if (USE_REAL_API) {
-      return runGasMethod<ExamSession[]>("apiGetExamSessions");
+      if (globalApiCache.examSessions && Date.now() - globalApiCache.examSessions.time < CACHE_TTL) {
+        return globalApiCache.examSessions.data;
+      }
+      const data = await runGasMethod<ExamSession[]>("apiGetExamSessions");
+      globalApiCache.examSessions = { data, time: Date.now() };
+      return data;
     } else {
       return getMockDB().examSessions;
     }
   },
 
   createExamSession: async (session: Omit<ExamSession, 'id' | 'isActive' | 'participantUids' | 'createdAt'>): Promise<ExamSession> => {
+    globalApiCache.examSessions = null;
     if (USE_REAL_API) {
       return runGasMethod<ExamSession>("apiCreateExamSession", session);
     } else {
@@ -922,6 +968,7 @@ export const api = {
   },
 
   endExamSession: async (sessionId: string): Promise<ExamSession> => {
+    globalApiCache.examSessions = null;
     if (USE_REAL_API) {
       return runGasMethod<ExamSession>("apiEndExamSession", sessionId);
     } else {
@@ -969,6 +1016,7 @@ export const api = {
   },
 
   submitExamResult: async (result: Omit<ExamResult, 'id' | 'submittedAt'>): Promise<ExamResult> => {
+    globalApiCache.examResults = null;
     if (USE_REAL_API) {
       return runGasMethod<ExamResult>("apiSubmitExamResult", result);
     } else {
@@ -986,13 +1034,19 @@ export const api = {
 
   getExamResults: async (): Promise<ExamResult[]> => {
     if (USE_REAL_API) {
-      return runGasMethod<ExamResult[]>("apiGetExamResults");
+      if (globalApiCache.examResults && Date.now() - globalApiCache.examResults.time < CACHE_TTL) {
+        return globalApiCache.examResults.data;
+      }
+      const data = await runGasMethod<ExamResult[]>("apiGetExamResults");
+      globalApiCache.examResults = { data, time: Date.now() };
+      return data;
     } else {
       return getMockDB().examResults;
     }
   },
 
   deleteExamResult: async (id: string): Promise<boolean> => {
+    globalApiCache.examResults = null;
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiDeleteExamResult", id);
     } else {
@@ -1005,6 +1059,7 @@ export const api = {
   },
 
   deleteMultipleExamResults: async (ids: string[]): Promise<{ success: boolean; count?: number }> => {
+    globalApiCache.examResults = null;
     if (USE_REAL_API) {
       return runGasMethod<{ success: boolean; count?: number }>("apiDeleteMultipleExamResults", ids);
     } else {
