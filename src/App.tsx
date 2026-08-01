@@ -1264,7 +1264,7 @@ function AdminDashboard() {
           student.id,
           student.name || student.phone || "Student",
           student.phone || "0000000000",
-          ""
+          session.code || "" // FIX: Pass the actual session code instead of empty string to bypass the backend code enforcement
         );
       }
 
