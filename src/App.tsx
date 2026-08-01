@@ -756,7 +756,7 @@ function TopNav() {
           notifs = notifs.filter(
             (n: any) =>
               n.batchId === "all" ||
-              n.batchId === (user as any).batchId ||
+              ((user as any).batchId && (user as any).batchId.split(',').map((id: string) => id.trim()).includes(n.batchId)) ||
               n.senderId === user.uid ||
               n.targetId === user.uid,
           );
@@ -1179,7 +1179,7 @@ function AdminDashboard() {
                 id: student.id,
                 name: student.name || student.phone,
                 phone: student.phone || '',
-                batchId: student.batchId,
+                batchId: batchId,
                 batchName: batchMap[batchId] || batchId,
                 missedCount: 3
               });
@@ -2194,7 +2194,7 @@ function StudentSimulatorWrapper() {
     const fetchStudents = async () => {
       try {
         const allUsers = await api.getUsers();
-        const students = allUsers.filter(u => u.batchId === simulatedBatchId && u.role !== 'admin');
+        const students = allUsers.filter((u: any) => u.batchId && u.batchId.split(',').map((id: string) => id.trim()).includes(simulatedBatchId) && u.role !== 'admin');
         setBatchStudents(students);
         if (!students.some((s) => s.id === simulatedStudentId)) {
           setSimulatedStudentId("");

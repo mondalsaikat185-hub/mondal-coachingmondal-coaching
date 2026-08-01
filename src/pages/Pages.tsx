@@ -224,30 +224,39 @@ export function AdminStudents() {
           }
           
           // Calculate absent count
-          const sBatchAtt = attendanceData[s.batchId!] || [];
-          let recentAbsences = 0;
-          let validExamsChecked = 0;
+          let maxRecentAbsences = 0;
+          const studentBatchIds = s.batchId ? s.batchId.split(',').map(id => id.trim()).filter(Boolean) : [];
           
-          for (let i = 0; i < sBatchAtt.length && validExamsChecked < 3; i++) {
-             // Only count exams if they occurred on or after the student joined
-             const attDateMs = new Date(sBatchAtt[i].date).getTime();
-             const msJoined = s.createdAt?.toMillis?.() || (s.createdAt?.seconds ? s.createdAt.seconds * 1000 : 0) || (s.createdAt ? new Date(s.createdAt).getTime() : 0);
-             // Give a 24-hour leniency window for timezones
-             if (msJoined && attDateMs < msJoined - 86400000) {
-                 continue; // skip exams before they joined
-             }
+          studentBatchIds.forEach(batchId => {
+            const sBatchAtt = attendanceData[batchId] || [];
+            let recentAbsences = 0;
+            let validExamsChecked = 0;
+            
+            for (let i = 0; i < sBatchAtt.length && validExamsChecked < 3; i++) {
+               // Only count exams if they occurred on or after the student joined
+               const attDateMs = new Date(sBatchAtt[i].date).getTime();
+               const msJoined = s.createdAt?.toMillis?.() || (s.createdAt?.seconds ? s.createdAt.seconds * 1000 : 0) || (s.createdAt ? new Date(s.createdAt).getTime() : 0);
+               // Give a 24-hour leniency window for timezones
+               if (msJoined && attDateMs < msJoined - 86400000) {
+                   continue; // skip exams before they joined
+               }
 
-             validExamsChecked++;
-             const studentExcusedDates = s.excusedDates ? s.excusedDates.split(',').filter(Boolean) : [];
-             const isExcused = studentExcusedDates.includes(sBatchAtt[i].date);
-             
-             if (!sBatchAtt[i].presentStudentIds.includes(s.uid) && !isExcused) {
-                recentAbsences++;
-             } else {
-                break; // they were present or excused recently
-             }
-          }
-          newAbsentCount[s.uid] = recentAbsences;
+               validExamsChecked++;
+               const studentExcusedDates = s.excusedDates ? s.excusedDates.split(',').filter(Boolean) : [];
+               const isExcused = studentExcusedDates.includes(sBatchAtt[i].date);
+               
+               if (!sBatchAtt[i].presentStudentIds.includes(s.uid) && !isExcused) {
+                  recentAbsences++;
+               } else {
+                  break; // they were present or excused recently
+               }
+            }
+            if (recentAbsences > maxRecentAbsences) {
+               maxRecentAbsences = recentAbsences;
+            }
+          });
+          
+          newAbsentCount[s.uid] = maxRecentAbsences;
         });
 
         setStudentAbsentCount(newAbsentCount);
