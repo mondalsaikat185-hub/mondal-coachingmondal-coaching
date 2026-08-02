@@ -867,6 +867,16 @@ export function AdminLibrary() {
   const sessionStartLockRef = useRef(false);
   const handleStartSession = async (batchId: string) => {
     if (!user || !sessionBatchPickerItem || sessionStartLockRef.current) return;
+    
+    // ENFORCE: Only one live session at a time!
+    if (activeSessionsList.length > 0) {
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { 
+        detail: "⚠️ আপনার আগে থেকেই একটি Live Session চলছে! নতুন সেশন শুরু করার আগে দয়া করে পুরনো সেশনটি 'Close' করুন।" 
+      }));
+      setSessionBatchPickerItem(null);
+      return;
+    }
+
     try {
       sessionStartLockRef.current = true;
       setStartingSession(true);
