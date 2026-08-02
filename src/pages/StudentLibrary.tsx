@@ -623,11 +623,10 @@ export function StudentLibrary() {
          }
 
          if (!activeSession) {
-             setDownloadMessage({
-               title: '🔒 পরীক্ষা শুরু হয়নি',
-               body: 'এই পরীক্ষা এখনো শুরু হয়নি। অ্যাডমিন লাইভ সেশন শুরু করলে আপনি যোগ দিতে পারবেন।',
-               isWarning: true
-             });
+             // NORMAL EXAM: No live session is currently active for this exam and batch.
+             // As per Admin's logic, scheduled/normal exams should be freely accessible
+             // (the scheduled time lock is already handled above this).
+             setPreviewItem(item);
              return;
          }
 
