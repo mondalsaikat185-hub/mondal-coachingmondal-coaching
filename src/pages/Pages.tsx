@@ -127,6 +127,45 @@ export function AdminStudents() {
   const [selectedStudentForModal, setSelectedStudentForModal] = useState<AppUser | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const [editingStudentProfile, setEditingStudentProfile] = useState<AppUser | null>(null);
+  const [editProfileName, setEditProfileName] = useState('');
+  const [editProfilePhone, setEditProfilePhone] = useState('');
+  const [editProfilePasscode, setEditProfilePasscode] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  const handleSaveProfile = async () => {
+    if (!editingStudentProfile) return;
+    setIsSavingProfile(true);
+    try {
+      await api.saveUser({
+        id: editingStudentProfile.id,
+        name: editProfileName,
+        phone: editProfilePhone,
+        passcode: editProfilePasscode,
+      } as any);
+      
+      setStudents(prev => prev.map(s => {
+        if (s.id === editingStudentProfile.id || s.uid === editingStudentProfile.uid) {
+          return {
+            ...s,
+            fullName: editProfileName,
+            displayName: editProfileName,
+            phone: editProfilePhone,
+            passcode: editProfilePasscode,
+          };
+        }
+        return s;
+      }));
+      
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Student profile updated successfully!" }));
+      setEditingStudentProfile(null);
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Error saving profile: " + String(err) }));
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStudentName || !newStudentEmail || !newStudentBatch || !newStudentPhone) return;
@@ -822,6 +861,15 @@ export function AdminStudents() {
                             </>
                           )}
                           
+                             <button onClick={() => {
+                                setEditingStudentProfile(student);
+                                setEditProfileName(student.fullName || student.displayName || '');
+                                setEditProfilePhone(student.phone || '');
+                                setEditProfilePasscode(student.passcode || '');
+                              }} className="p-1 px-2 border-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform flex items-center justify-center" title="Edit Profile">
+                                ✎ Edit
+                             </button>
+
                              <button onClick={() => handleDeleteStudent(sId)} className="p-1 px-2 border-2 border-red-600 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold text-xs uppercase hover:-translate-y-0.5 transition-transform flex items-center justify-center" title="Delete Student">
                                <Trash2 className="w-3.5 h-3.5" />
                              </button>
@@ -875,6 +923,62 @@ export function AdminStudents() {
                 className="px-4 py-2 font-bold uppercase text-xs bg-yellow-400 text-black border-2 border-black hover:-translate-y-0.5 transition-transform"
               >
                 Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Profile Modal */}
+      {editingStudentProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 border-4 border-black p-6 w-full max-w-md shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]">
+            <h3 className="text-lg font-black uppercase mb-4 text-black dark:text-white">Edit Student Profile</h3>
+            
+            <div className="flex flex-col gap-3 mb-6">
+              <div>
+                <label className="text-xs font-bold uppercase mb-1 block">Full Name</label>
+                <input 
+                  type="text" 
+                  value={editProfileName} 
+                  onChange={e => setEditProfileName(e.target.value)}
+                  className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 bg-transparent focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase mb-1 block">Phone Number</label>
+                <input 
+                  type="text" 
+                  value={editProfilePhone} 
+                  onChange={e => setEditProfilePhone(e.target.value)}
+                  className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 bg-transparent focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase mb-1 block">Passcode (For Login)</label>
+                <input 
+                  type="text" 
+                  value={editProfilePasscode} 
+                  onChange={e => setEditProfilePasscode(e.target.value)}
+                  className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 bg-transparent focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button 
+                onClick={() => setEditingStudentProfile(null)} 
+                disabled={isSavingProfile}
+                className="px-4 py-2 font-bold uppercase text-xs border-2 border-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveProfile} 
+                disabled={isSavingProfile}
+                className="px-4 py-2 font-bold uppercase text-xs bg-blue-500 text-white border-2 border-black hover:-translate-y-0.5 transition-transform flex items-center gap-2 disabled:opacity-50"
+              >
+                {isSavingProfile ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </div>
