@@ -46,6 +46,7 @@ function formatToDatetimeLocal(dateStr: string | undefined): string {
 export function AdminLibrary() {
   const { user } = useAuth();
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [allLibraryItems, setAllLibraryItems] = useState<LibraryItem[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [itemAssignments, setItemAssignments] = useState<{id: string, libraryItemId: string, batchId: string, scheduledStartTime?: string}[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +73,7 @@ export function AdminLibrary() {
      
      activeSessionIntervalRef.current = setInterval(async () => {
         try {
-           const sessions = await api.getExamSessions();
+           const sessions = await api.getExamSessions(true);
            const session = sessions.find(s => s.id === sessionId);
            if (session) {
               setActiveSession((prev) =>
@@ -93,14 +94,22 @@ export function AdminLibrary() {
     const fetchActiveSessions = async () => {
       try {
         const sessions = await api.getExamSessions();
-        const active = sessions.filter(s => s.isActive).slice(0, 10);
+        const active = sessions.filter(s => s.isActive);
         setActiveSessionsList(active);
       } catch (err) {
         console.error("Failed to fetch active sessions:", err);
       }
     };
     fetchActiveSessions();
-    const interval = setInterval(fetchActiveSessions, 30 * 1000);
+    const interval = setInterval(async () => {
+      try {
+        const sessions = await api.getExamSessions(true);
+        const active = sessions.filter(s => s.isActive);
+        setActiveSessionsList(active);
+      } catch (err) {
+        console.error("Failed to poll active sessions:", err);
+      }
+    }, 10 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -170,6 +179,7 @@ export function AdminLibrary() {
     setLoading(true);
     try {
         const libraryItems = await api.getLibrary();
+        setAllLibraryItems(libraryItems);
         const fetchedItems = libraryItems.filter(item => {
           const parent = item.parentId === '' ? null : item.parentId;
           return parent === folderId;
@@ -958,8 +968,8 @@ export function AdminLibrary() {
                  <button 
                    key={s.id}
                    onClick={() => {
-                      // If the exam is in a different folder, we use a fallback title
-                      const ex = items.find(i => i.id === s.examId);
+                      // If the exam is in a different folder, we use allLibraryItems to find the true title!
+                      const ex = allLibraryItems.find(i => i.id === s.examId);
                       setActiveSession({
                         sessionId: s.id,
                         accessCode: s.code || '', // FIX: s.code instead of s.accessCode

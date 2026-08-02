@@ -975,11 +975,11 @@ export const api = {
 
   // --- 📝 EXAMS & ATTENDANCE ---
 
-  getExamSessions: async (): Promise<ExamSession[]> => {
+  getExamSessions: async (forceRefresh = false): Promise<ExamSession[]> => {
+    if (!forceRefresh && globalApiCache.examSessions && Date.now() - globalApiCache.examSessions.time < CACHE_TTL) {
+      return globalApiCache.examSessions.data;
+    }
     if (USE_REAL_API) {
-      if (globalApiCache.examSessions && Date.now() - globalApiCache.examSessions.time < CACHE_TTL) {
-        return globalApiCache.examSessions.data;
-      }
       const data = await runGasMethod<ExamSession[]>("apiGetExamSessions");
       globalApiCache.examSessions = { data, time: Date.now() };
       return data;
