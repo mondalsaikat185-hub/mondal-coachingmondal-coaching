@@ -1197,24 +1197,21 @@ function AdminDashboard() {
   const handleContinueStudent = async (studentId: string, batchId: string) => {
     setSubmittingAction(true);
     try {
-      const [users, sessions] = await Promise.all([
+      const { getAllAttendanceForBatch } = await import('./lib/exam-session-utils');
+      const [users, att] = await Promise.all([
         api.getUsers(),
-        api.getExamSessions()
+        getAllAttendanceForBatch(batchId, 3)
       ]);
       const student = users.find((u: any) => u.id === studentId);
       if (!student) return;
 
-      const batchSessions = sessions.filter((s: any) => s.batchId === batchId);
-      batchSessions.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      
-      const last3Sessions = batchSessions.slice(0, 3);
-      if (last3Sessions.length === 0) {
+      if (att.length === 0) {
         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "কোনো পরীক্ষা পাওয়া যায়নি।" }));
         setSelectedAbsentee(null);
         return;
       }
 
-      const datesToExcuse = last3Sessions.map((s: any) => (s.createdAt || '').split('T')[0]).filter(Boolean);
+      const datesToExcuse = att.map(a => a.date);
       const existingExcused = student.excusedDates ? String(student.excusedDates).split(',').map(d => d.trim()).filter(Boolean) : [];
       const newExcused = Array.from(new Set([...existingExcused, ...datesToExcuse]));
 
@@ -1238,26 +1235,21 @@ function AdminDashboard() {
   const handleCompleteAttendance = async (studentId: string, batchId: string) => {
     setSubmittingAction(true);
     try {
-      const [users, sessions] = await Promise.all([
+      const { getAllAttendanceForBatch } = await import('./lib/exam-session-utils');
+      const [users, att] = await Promise.all([
         api.getUsers(),
-        api.getExamSessions()
+        getAllAttendanceForBatch(batchId, 3)
       ]);
       const student = users.find((u: any) => u.id === studentId);
       if (!student) return;
 
-      // Filter sessions for this batch
-      const batchSessions = sessions.filter((s: any) => s.batchId === batchId);
-      // Sort sessions descending by date/createdAt to find the last 3 sessions
-      batchSessions.sort((a: any, b: any) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      
-      const last3Sessions = batchSessions.slice(0, 3);
-      if (last3Sessions.length === 0) {
+      if (att.length === 0) {
         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "কোনো পরীক্ষা পাওয়া যায়নি যার উপস্থিতি পূর্ণ করা যাবে।" }));
         setSelectedAbsentee(null);
         return;
       }
 
-      const datesToExcuse = last3Sessions.map((s: any) => (s.createdAt || '').split('T')[0]).filter(Boolean);
+      const datesToExcuse = att.map(a => a.date);
       const existingExcused = student.excusedDates ? String(student.excusedDates).split(',').map(d => d.trim()).filter(Boolean) : [];
       const newExcused = Array.from(new Set([...existingExcused, ...datesToExcuse]));
 

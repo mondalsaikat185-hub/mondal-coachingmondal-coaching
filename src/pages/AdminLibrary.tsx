@@ -65,6 +65,8 @@ export function AdminLibrary() {
 
   const [activeSessionsList, setActiveSessionsList] = useState<any[]>([]);
   const activeSessionIntervalRef = useRef<any>(null);
+  const sessionStartLockRef = useRef(false);
+  const sessionEndLockRef = useRef(false);
 
   const startActiveSessionPolling = (sessionId: string) => {
      if (activeSessionIntervalRef.current) {
@@ -864,7 +866,6 @@ export function AdminLibrary() {
      }
   };
 
-  const sessionStartLockRef = useRef(false);
   const handleStartSession = async (batchId: string) => {
     if (!user || !sessionBatchPickerItem || sessionStartLockRef.current) return;
     
@@ -908,7 +909,6 @@ export function AdminLibrary() {
     }
   };
 
-  const sessionEndLockRef = useRef(false);
   const handleEndSession = async () => {
     if (!activeSession || sessionEndLockRef.current) return;
     try {
@@ -977,12 +977,20 @@ export function AdminLibrary() {
                return (
                  <button 
                    key={s.id}
-                   onClick={() => {
-                      // If the exam is in a different folder, we use allLibraryItems to find the true title!
-                      const ex = allLibraryItems.find(i => i.id === s.examId);
+                   onClick={async () => {
+                      let ex = allLibraryItems.find(i => i.id === s.examId);
+                      if (!ex) {
+                         try {
+                            const lib = await api.getLibrary();
+                            setAllLibraryItems(lib);
+                            ex = lib.find(i => i.id === s.examId);
+                         } catch(err) {
+                            console.error("Failed to fetch library on maximize", err);
+                         }
+                      }
                       setActiveSession({
                         sessionId: s.id,
-                        accessCode: s.code || '', // FIX: s.code instead of s.accessCode
+                        accessCode: s.code || '',
                         examId: s.examId,
                         examTitle: ex?.title || 'Live Exam Session', // Fallback title
                         participantUids: s.participantUids || [],
