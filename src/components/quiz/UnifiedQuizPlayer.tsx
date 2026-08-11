@@ -143,7 +143,48 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   }, [exam.quizData]);
 
   const questionsRaw = (quizData !== null && typeof quizData === 'object' && !Array.isArray(quizData)) ? quizData.questions || [] : quizData;
-  const questions = Array.isArray(questionsRaw) ? questionsRaw : [];
+  
+  const normalizeQuestions = (rawQs: any[]) => {
+     return rawQs.map((q, idx) => {
+         if (q.bengali && q.english) {
+             const parseOptions = (opts: any) => {
+                 if (Array.isArray(opts)) return opts;
+                 if (opts && typeof opts === 'object') {
+                     return [opts.A, opts.B, opts.C, opts.D].filter(Boolean);
+                 }
+                 return [];
+             };
+             const getCorrectIndex = (ans: any) => {
+                 if (typeof ans === 'number') return ans;
+                 if (typeof ans === 'string') {
+                     const u = ans.toUpperCase();
+                     if (u === 'A') return 0;
+                     if (u === 'B') return 1;
+                     if (u === 'C') return 2;
+                     if (u === 'D') return 3;
+                 }
+                 return 0;
+             };
+             return {
+                 ...q,
+                 id: q.id || q.serial_number || String(idx + 1),
+                 question_bn: q.bengali.question || '',
+                 options_bn: parseOptions(q.bengali.options),
+                 explanation_bn: q.bengali.explanation || '',
+                 question_en: q.english.question || '',
+                 options_en: parseOptions(q.english.options),
+                 explanation_en: q.english.explanation || '',
+                 correctIndex: getCorrectIndex(q.bengali.answer || q.english.answer || 0)
+             };
+         }
+         return {
+             ...q,
+             id: q.id || q.serial_number || String(idx + 1)
+         };
+     });
+  };
+
+  const questions = Array.isArray(questionsRaw) ? normalizeQuestions(questionsRaw) : [];
   const passageRaw = (!Array.isArray(quizData) && quizData !== null) ? quizData.passage : '';
   const passage = typeof passageRaw === 'string' ? passageRaw : '';
 
