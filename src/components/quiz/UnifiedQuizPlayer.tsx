@@ -146,40 +146,46 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   
   const normalizeQuestions = (rawQs: any[]) => {
      return rawQs.map((q, idx) => {
-         if (q.bengali && q.english) {
-             const parseOptions = (opts: any) => {
-                 if (Array.isArray(opts)) return opts;
-                 if (opts && typeof opts === 'object') {
-                     return [opts.A, opts.B, opts.C, opts.D].filter(Boolean);
-                 }
-                 return [];
-             };
-             const getCorrectIndex = (ans: any) => {
-                 if (typeof ans === 'number') return ans;
-                 if (typeof ans === 'string') {
-                     const u = ans.toUpperCase();
-                     if (u === 'A') return 0;
-                     if (u === 'B') return 1;
-                     if (u === 'C') return 2;
-                     if (u === 'D') return 3;
-                 }
-                 return 0;
-             };
-             return {
-                 ...q,
-                 id: q.id || q.serial_number || String(idx + 1),
-                 question_bn: q.bengali.question || '',
-                 options_bn: parseOptions(q.bengali.options),
-                 explanation_bn: q.bengali.explanation || '',
-                 question_en: q.english.question || '',
-                 options_en: parseOptions(q.english.options),
-                 explanation_en: q.english.explanation || '',
-                 correctIndex: getCorrectIndex(q.bengali.answer || q.english.answer || 0)
-             };
-         }
+         const parseOptions = (opts: any) => {
+             if (Array.isArray(opts)) return opts;
+             if (opts && typeof opts === 'object') {
+                 return [opts.A, opts.B, opts.C, opts.D].filter(Boolean);
+             }
+             return [];
+         };
+         const getCorrectIndex = (ans: any) => {
+             if (typeof ans === 'number') return ans;
+             if (typeof ans === 'string') {
+                 const u = ans.trim().toUpperCase();
+                 if (u === 'A') return 0;
+                 if (u === 'B') return 1;
+                 if (u === 'C') return 2;
+                 if (u === 'D') return 3;
+             }
+             return 0;
+         };
+         
+         const qBn = q.question_bn || q?.bengali?.question || q.question || '';
+         const qEn = q.question_en || q?.english?.question || q.question || '';
+         
+         const optBn = q.options_bn || q?.bengali?.options || q.options || [];
+         const optEn = q.options_en || q?.english?.options || q.options || [];
+         
+         const expBn = q.explanation_bn || q?.bengali?.explanation || q.explanation || '';
+         const expEn = q.explanation_en || q?.english?.explanation || q.explanation || '';
+         
+         const answer = q.correctIndex !== undefined ? q.correctIndex : (q.correct_answer || q.answer || q?.bengali?.answer || q?.english?.answer);
+
          return {
              ...q,
-             id: q.id || q.serial_number || String(idx + 1)
+             id: q.id || q.serial_number || String(idx + 1),
+             question_bn: qBn,
+             options_bn: parseOptions(optBn),
+             explanation_bn: expBn,
+             question_en: qEn,
+             options_en: parseOptions(optEn),
+             explanation_en: expEn,
+             correctIndex: getCorrectIndex(answer)
          };
      });
   };
