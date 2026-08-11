@@ -1136,9 +1136,9 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           )}
 
           {/* Active Question Render panel */}
-          <div className={`quiz-question-panel flex flex-col overflow-hidden ${passage ? 'flex-shrink-0 max-h-[52%] lg:flex-none lg:col-span-5' : 'flex-1 lg:col-span-9'} lg:space-y-6 lg:justify-between`}>
+          <div className={`quiz-question-panel flex flex-col overflow-hidden ${passage ? 'flex-shrink-0 max-h-[52%] lg:flex-none lg:col-span-5 lg:max-h-[calc(100vh-160px)]' : 'flex-1 lg:col-span-9'} lg:space-y-6 lg:justify-between`}>
              <div className={`flex flex-col overflow-hidden ${passage ? 'flex-1' : ''} lg:bg-[#1c1c1f] lg:border lg:border-zinc-800 lg:p-6 lg:md:p-8 lg:rounded-2xl lg:shadow-lg lg:space-y-6`}>
-                <div className={`quiz-scroll-zone ${passage ? 'flex-1 overflow-y-auto px-4 pt-3 lg:px-0 lg:pt-0 lg:overflow-visible' : ''}`}>
+                <div className={`quiz-scroll-zone ${passage ? 'flex-1 overflow-y-auto px-4 pt-3 lg:px-0 lg:pt-0' : ''}`}>
                    <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2 mb-1">
                       <span className="text-[9px] uppercase font-bold tracking-widest text-[#eab308]">
                          Q {currentIdx + 1}/{questions.length}
