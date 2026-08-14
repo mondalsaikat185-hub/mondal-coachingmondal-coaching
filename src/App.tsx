@@ -482,14 +482,14 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
               <label className="text-xs font-black uppercase text-zinc-700 dark:text-zinc-300">Select Batches *</label>
               <div className="flex flex-col gap-2 mt-1">
                 {batches.map(b => {
-                  const isChecked = formData.batchId.split(',').map(id => id.trim()).includes(b.id);
+                  const isChecked = String(formData.batchId).split(',').map(id => id.trim()).includes(b.id);
                   return (
                     <label key={b.id} className="flex items-center gap-2 font-bold cursor-pointer text-zinc-900 dark:text-zinc-100">
                       <input 
                         type="checkbox" 
                         checked={isChecked} 
                         onChange={(e) => {
-                          const currentBatches = formData.batchId.split(',').map(id => id.trim()).filter(Boolean);
+                          const currentBatches = String(formData.batchId).split(',').map(id => id.trim()).filter(Boolean);
                           if (e.target.checked) {
                             currentBatches.push(b.id);
                           } else {
@@ -756,7 +756,7 @@ function TopNav() {
           notifs = notifs.filter(
             (n: any) =>
               n.batchId === "all" ||
-              ((user as any).batchId && (user as any).batchId.split(',').map((id: string) => id.trim()).includes(n.batchId)) ||
+              ((user as any).batchId && String((user as any).batchId).split(',').map((id: string) => id.trim()).includes(n.batchId)) ||
               n.senderId === user.uid ||
               n.targetId === user.uid,
           );
@@ -1122,7 +1122,7 @@ function AdminDashboard() {
         const batchIdsSet = new Set<string>();
         students.forEach((s: any) => {
           if (s.batchId) {
-            s.batchId.split(',').forEach((id: string) => batchIdsSet.add(id.trim()));
+            String(s.batchId).split(',').forEach((id: string) => batchIdsSet.add(id.trim()));
           }
         });
         const batchIds = Array.from(batchIdsSet).filter(Boolean);
@@ -1148,7 +1148,7 @@ function AdminDashboard() {
           // Must have at least 3 unique exam dates in this batch to ever trigger a 3 consecutive absence alert!
           if (sBatchAtt.length < 3) return;
 
-          const batchStudents = students.filter((s: any) => s.batchId && s.batchId.split(',').map((id: string) => id.trim()).includes(batchId));
+          const batchStudents = students.filter((s: any) => s.batchId && String(s.batchId).split(',').map((id: string) => id.trim()).includes(batchId));
 
           batchStudents.forEach((student: any) => {
             let recentAbsences = 0;
@@ -1646,7 +1646,7 @@ function StudentDashboard() {
     const fetchDashboardData = async () => {
       try {
         if (!user || !user.batchId) return;
-        const batchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+        const batchIds = String(user.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
         
         // --- 1. Fetch Everything Together ---
         const [db, allAttendance] = await Promise.all([
@@ -2130,7 +2130,7 @@ function StudentSimulatorWrapper() {
     const fetchStudents = async () => {
       try {
         const allUsers = await api.getUsers();
-        const students = allUsers.filter((u: any) => u.batchId && u.batchId.split(',').map((id: string) => id.trim()).includes(simulatedBatchId) && u.role !== 'admin');
+        const students = allUsers.filter((u: any) => u.batchId && String(u.batchId).split(',').map((id: string) => id.trim()).includes(simulatedBatchId) && u.role !== 'admin');
         setBatchStudents(students);
         if (!students.some((s) => s.id === simulatedStudentId)) {
           setSimulatedStudentId("");

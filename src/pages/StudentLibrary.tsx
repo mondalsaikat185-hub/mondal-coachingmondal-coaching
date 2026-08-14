@@ -168,7 +168,7 @@ export function StudentLibrary() {
         api.getLibrary()
       ]);
       
-      const studentBatchIds = user.batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+      const studentBatchIds = String(user.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
       const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
       
       if (studentBatches.length === 0) {
@@ -602,7 +602,7 @@ export function StudentLibrary() {
 
          // Fetch active sessions from Sheets API
          const sessions = await api.getExamSessions();
-         const studentBatchIds = (user as any).batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+         const studentBatchIds = String((user as any).batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
          // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic (always pick the newest session)
          const activeSession = sessions.slice().reverse().find((s: any) => s.examId === item.id && studentBatchIds.includes(s.batchId) && s.isActive);
 
@@ -656,7 +656,7 @@ export function StudentLibrary() {
        setCodeLoading(true);
        setCodeError('');
        const sessions = await api.getExamSessions();
-       const studentBatchIds = (user as any).batchId.split(',').map((id: string) => id.trim()).filter(Boolean);
+       const studentBatchIds = String((user as any).batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
        // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic
        const activeSession = sessions.slice().reverse().find((s: any) => s.examId === codeInputItem.id && studentBatchIds.includes(s.batchId) && s.isActive);
        

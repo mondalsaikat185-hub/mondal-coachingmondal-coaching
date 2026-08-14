@@ -57,7 +57,7 @@ export function getDueMonths(pendingMonthsCount: number, studentPayments: any[])
   // Find all paid/approved/pending months
   const paidMonths = studentPayments
     .filter(p => p.status === 'paid' || p.status === 'approved' || p.status === 'pending')
-    .flatMap(p => p.month.split(',').map((m: string) => m.trim()));
+    .flatMap(p => p.month ? String(p.month).split(',').map((m: string) => m.trim()) : []);
     
   const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
 
@@ -264,7 +264,7 @@ export function AdminStudents() {
           
           // Calculate absent count
           let maxRecentAbsences = 0;
-          const studentBatchIds = s.batchId ? s.batchId.split(',').map(id => id.trim()).filter(Boolean) : [];
+          const studentBatchIds = s.batchId ? String(s.batchId).split(',').map(id => id.trim()).filter(Boolean) : [];
           
           studentBatchIds.forEach(batchId => {
             const sBatchAtt = attendanceData[batchId] || [];
@@ -281,7 +281,7 @@ export function AdminStudents() {
                }
 
                validExamsChecked++;
-               const studentExcusedDates = s.excusedDates ? s.excusedDates.split(',').filter(Boolean) : [];
+               const studentExcusedDates = s.excusedDates ? String(s.excusedDates).split(',').filter(Boolean) : [];
                const isExcused = studentExcusedDates.includes(sBatchAtt[i].date);
                
                if (!sBatchAtt[i].presentStudentIds.includes(s.uid) && !isExcused) {
@@ -633,7 +633,7 @@ export function AdminStudents() {
 
             {activeBatchTab && (() => {
               const records = attendanceData[activeBatchTab] || [];
-              const rawBatchStudents = students.filter((s) => s.batchId && s.batchId.split(',').map(id => id.trim()).includes(activeBatchTab));
+              const rawBatchStudents = students.filter((s) => s.batchId && String(s.batchId).split(',').map(id => id.trim()).includes(activeBatchTab));
               
               const filteredStudents = rawBatchStudents.filter(s => {
                 if (!attendanceSearchQuery) return true;
@@ -706,7 +706,7 @@ export function AdminStudents() {
             ? students.filter(s => s.status === 'active')
             : studentTab === 'at_risk'
               ? students.filter(s => s.status === 'active' && s.batchId && (studentAbsentCount[s.uid] || 0) >= 3)
-              : students.filter(s => s.status === 'active' && s.batchId && s.batchId.split(',').map(id => id.trim()).includes(studentTab));
+              : students.filter(s => s.status === 'active' && s.batchId && String(s.batchId).split(',').map(id => id.trim()).includes(studentTab));
 
         const atRiskCount = students.filter(s => s.status === 'active' && s.batchId && (studentAbsentCount[s.uid] || 0) >= 3).length;
 
@@ -729,7 +729,7 @@ export function AdminStudents() {
                     studentTab === batch.id ? 'bg-blue-300 text-black' : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400'
                   }`}
                 >
-                  {batch.name} ({students.filter(s => s.status === 'active' && s.batchId && s.batchId.split(',').map(id => id.trim()).includes(batch.id)).length})
+                  {batch.name} ({students.filter(s => s.status === 'active' && s.batchId && String(s.batchId).split(',').map(id => id.trim()).includes(batch.id)).length})
                 </button>
               ))}
               <button
@@ -823,14 +823,14 @@ export function AdminStudents() {
                   <td className="p-2">
                     <div className="flex flex-col gap-1">
                       <div className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                        {student.batchId ? student.batchId.split(',').map(id => {
+                        {student.batchId ? String(student.batchId).split(',').map(id => {
                           const b = batches.find(bx => bx.id === id.trim());
                           return b ? b.name : '';
                         }).filter(Boolean).join(', ') : 'No Batch'}
                       </div>
                       <button 
                         onClick={() => {
-                          const currentBatches = student.batchId ? student.batchId.split(',').map(id => id.trim()).filter(Boolean) : [];
+                          const currentBatches = student.batchId ? String(student.batchId).split(',').map(id => id.trim()).filter(Boolean) : [];
                           setEditingStudentBatches({ uid: sId, batchIds: new Set(currentBatches) });
                         }}
                         className="text-[10px] bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-2 py-1 font-bold uppercase w-fit hover:bg-zinc-300 dark:hover:bg-zinc-700"
@@ -1636,7 +1636,7 @@ export function AdminPayments() {
 
   if (selectedBatchId) {
      const bName = selectedBatchId === 'unassigned' ? 'Unassigned' : batches.find(b => b.id === selectedBatchId)?.name;
-     const bStudents = students.filter(s => selectedBatchId === 'unassigned' ? !s.batchId : (s.batchId && s.batchId.split(',').map(id => id.trim()).includes(selectedBatchId)));
+     const bStudents = students.filter(s => selectedBatchId === 'unassigned' ? !s.batchId : (s.batchId && String(s.batchId).split(',').map(id => id.trim()).includes(selectedBatchId)));
      
      return (
        <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full">
@@ -1727,7 +1727,7 @@ export function AdminPayments() {
         {batches.map(b => (
            <button key={b.id} onClick={() => setSelectedBatchId(b.id)} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] hover:-translate-y-1 transition-transform text-left">
               <h3 className="text-xl font-black uppercase text-yellow-600 dark:text-yellow-400 mb-2">{b.name}</h3>
-              <p className="text-sm font-bold text-zinc-500">{students.filter(s => s.batchId && s.batchId.split(',').map(id => id.trim()).includes(b.id)).length} Students</p>
+              <p className="text-sm font-bold text-zinc-500">{students.filter(s => s.batchId && String(s.batchId).split(',').map(id => id.trim()).includes(b.id)).length} Students</p>
            </button>
         ))}
         <button onClick={() => setSelectedBatchId('unassigned')} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] hover:-translate-y-1 transition-transform text-left opacity-70">
@@ -1949,7 +1949,7 @@ export function StudentPayments() {
     if (!user || payments.length === 0) return;
     const paidMonths = payments
       .filter(p => p.status === 'approved' || p.status === 'pending' || p.status === 'paid')
-      .flatMap(p => p.month.split(',').map(m => m.trim()));
+      .flatMap(p => p.month ? String(p.month).split(',').map(m => m.trim()) : []);
     const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
     
     const joinTime = user.createdAt ? new Date(user.createdAt).getTime() : 0;
@@ -1980,9 +1980,7 @@ export function StudentPayments() {
     }
 
     // Reuse consecutive month validations:
-    const paidMonths = payments
-      .filter(p => p.status !== 'rejected')
-      .flatMap(p => p.month.split(',').map(m => m.trim()));
+    const paidMonths = payments.filter(p => p.studentId === user.uid && p.status !== 'rejected').flatMap(p => p.month ? String(p.month).split(',').map(m => m.trim()) : []);
     const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
     const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
     const selectedIndices = selectedMonths.map(m => monthOptions.indexOf(m)).sort((a, b) => a - b);
@@ -2085,7 +2083,7 @@ export function StudentPayments() {
     // Validate Sequential Month Selection
     const paidMonths = payments
       .filter(p => p.status === 'approved' || p.status === 'pending' || p.status === 'paid')
-      .flatMap(p => p.month.split(',').map(m => m.trim()));
+        .flatMap(p => p.month ? String(p.month).split(',').map(m => m.trim()) : []);
     const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
     
     const selectedIndices = selectedMonths.map(m => monthOptions.indexOf(m)).sort((a, b) => a - b);
