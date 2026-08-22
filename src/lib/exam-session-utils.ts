@@ -74,9 +74,9 @@ export async function verifyAndJoinSession(
     );
 
     // runGasMethod unwraps {success: true} into boolean true, or returns the full object if it has other fields
-    if (res === true || (res && typeof res === 'object' && res.success !== false)) {
+    if ((res as any) === true || (res && typeof res === 'object' && res.success !== false)) {
       return 'ok';
-    } else if (res === false || (res && res.error === 'wrong_code')) {
+    } else if ((res as any) === false || (res && res.error === 'wrong_code')) {
       return 'wrong_code';
     } else {
       return 'session_inactive';

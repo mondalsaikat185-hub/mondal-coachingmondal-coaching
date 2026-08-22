@@ -1750,7 +1750,7 @@ export function AdminPayments() {
                   if (window.confirm(`${s.fullName || s.email}-কে পেমেন্ট অ্যালার্ট পাঠাতে চান?`)) {
                     try {
                       const apiModule = await import('../lib/api');
-                      await apiModule.api.updateUser(s.id || (s as any).uid, { forcePaymentNudge: true });
+                      await apiModule.api.saveUser({ id: s.id || (s as any).uid, forcePaymentNudge: true } as any);
                       window.dispatchEvent(new CustomEvent('show-custom-alert', { detail: 'নোটিফিকেশন পাঠানো হয়েছে!' }));
                       const newSt = [...students];
                       const idx = newSt.findIndex(st => (st.id || (st as any).uid) === (s.id || (s as any).uid));
@@ -1774,7 +1774,7 @@ export function AdminPayments() {
                 onClick={async () => {
                   if (window.confirm(`অ্যালার্টটি কি রিমুভ করতে চান?`)) {
                     const apiModule = await import('../lib/api');
-                    await apiModule.api.updateUser(s.id || (s as any).uid, { forcePaymentNudge: false });
+                    await apiModule.api.saveUser({ id: s.id || (s as any).uid, forcePaymentNudge: false } as any);
                     const newSt = [...students];
                     const idx = newSt.findIndex(st => (st.id || (st as any).uid) === (s.id || (s as any).uid));
                     if(idx !== -1) {

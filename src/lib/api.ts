@@ -33,6 +33,7 @@ export interface UserProfile {
   pendingMonths?: number;
   excusedDates?: string;
   exemptReason?: string;
+  forcePaymentNudge?: boolean;
 }
 
 export interface Batch {
@@ -151,11 +152,12 @@ export function cleanPhone(p: any): string {
   const globalApiCache: {
     batches: { data: Batch[], time: number } | null;
     library: { data: LibraryItem[], time: number } | null;
-    users: { data: AppUser[], time: number } | null;
+    users: { data: UserProfile[], time: number } | null;
     payments: { data: PaymentRecord[], time: number } | null;
     examSessions: { data: ExamSession[], time: number } | null;
     examResults: { data: ExamResult[], time: number } | null;
-  } = { batches: null, library: null, users: null, payments: null, examSessions: null, examResults: null };
+    announcement: { data: string, time: number } | null;
+  } = { batches: null, library: null, users: null, payments: null, examSessions: null, examResults: null, announcement: null };
 
   const inFlightRequests: Record<string, Promise<any>> = {};
 
