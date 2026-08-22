@@ -1208,6 +1208,33 @@ export function AdminBatches() {
         </div>
       )}
     </div>
+  );
+}
+
+import { ExamType, InteractiveQuizPayload } from '../types/QuizData';
+
+export interface Note {
+  id: string;
+  title: string;
+  contentUrl?: string; // Optional link
+  createdAt?: any;
+}
+
+export interface Exam {
+  id: string;
+  title: string;
+  examDate: string;
+  examType?: ExamType; // e.g. 'Online Link', 'PDF Upload', 'Cloze Test', etc.
+  contentUrl?: string; // Optional link to question paper or form
+  analysisUrl?: string; // Link to detailed analysis or answer key
+  quizData?: string; // Stored JSON payload for interactive quizzes
+  batchId: string;
+  createdAt?: any;
+}
+
+export interface Payment {
+  id: string;
+  studentId: string;
   studentName: string;
   studentEmail: string;
   amount: number;
@@ -1693,7 +1720,7 @@ export function AdminPayments() {
            ))}
          </div>
          )}
-    </div>
+      </div>
 
     {/* PENDING FEES NOTIFICATIONS SECTION */}
     <div className="mb-8 border-4 border-red-500 bg-red-50 dark:bg-red-900/10 p-6 shadow-[6px_6px_0px_0px_rgba(239,68,68,1)]">
@@ -2517,3 +2544,7 @@ export function StudentPayments() {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
