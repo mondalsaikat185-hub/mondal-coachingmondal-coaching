@@ -1603,6 +1603,7 @@ function StudentDashboard() {
     color: "text-emerald-600 dark:text-emerald-400",
   });
   const [showNudge, setShowNudge] = useState(false);
+  const [showForceNudge, setShowForceNudge] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
   // Weekend (Saturday=6, Sunday=0) Overdue alert check
@@ -1612,7 +1613,13 @@ function StudentDashboard() {
   const [showWeekendNudge, setShowWeekendNudge] = useState(false);
 
   useEffect(() => {
-    // Check nudge popup
+    // 1. Force Nudge (Admin manual alert - extremely aggressive, repeats every app reload)
+    if (user && (user as any).forcePaymentNudge && (user as any).pendingMonths > 0) {
+      setShowForceNudge(true);
+      return; // Skip normal nudge if force nudge is showing
+    }
+
+    // 2. Normal Nudge (Shows once per browser tab session)
     if (
       user &&
       (user as any).monthlyFee > 0 &&
@@ -1624,7 +1631,7 @@ function StudentDashboard() {
         sessionStorage.setItem(sessionKey, "true");
       }
     }
-  }, [user?.uid, (user as any)?.monthlyFee, (user as any)?.pendingMonths]);
+  }, [user?.uid, (user as any)?.monthlyFee, (user as any)?.pendingMonths, (user as any)?.forcePaymentNudge]);
 
   useEffect(() => {
     const isSimulated = !!localStorage.getItem("simulatedStudentId");
@@ -1750,6 +1757,39 @@ function StudentDashboard() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full relative">
+      {showForceNudge && (
+        <div className="fixed inset-0 bg-red-900/90 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 border-8 border-red-600 dark:border-red-500 w-full max-w-md p-8 text-center transform transition-all scale-100 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
+            <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-500 rounded-full flex items-center justify-center mx-auto mb-6 border-4 border-red-600 dark:border-red-500 animate-bounce">
+              <span className="font-black text-5xl">⚠️</span>
+            </div>
+            <h2 className="text-3xl font-black uppercase mb-4 text-red-600 tracking-wider">
+              URGENT ALERT
+            </h2>
+            <div className="mb-6 bg-red-50 dark:bg-red-900/20 p-4 border-4 border-red-200 dark:border-red-800">
+              <p className="font-black text-lg text-red-800 dark:text-red-300 mb-2">
+                Your tuition fee for:
+              </p>
+              <p className="font-black text-xl text-red-600 dark:text-red-400 underline decoration-4 underline-offset-4 mb-2">
+                {getDueMonths((user as any).pendingMonths, payments)}
+              </p>
+              <p className="font-black text-lg text-red-800 dark:text-red-300">
+                is strictly overdue.
+              </p>
+            </div>
+            <p className="mb-8 text-sm text-zinc-600 dark:text-zinc-400 font-bold px-2">
+              অনুগ্রহ করে যত তাড়াতাড়ি সম্ভব বকেয়া ফিস ক্লিয়ার করুন।
+            </p>
+            <button
+              onClick={() => setShowForceNudge(false)}
+              className="w-full bg-red-600 text-white font-black uppercase py-4 border-4 border-red-800 hover:bg-red-700 hover:-translate-y-1 transition-all shadow-[6px_6px_0px_0px_rgba(153,27,27,1)] active:shadow-none active:translate-y-[6px] active:translate-x-[6px] text-lg"
+            >
+              I Understand ✖
+            </button>
+          </div>
+        </div>
+      )}
+
       {showNudge && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
           <div className="bg-white dark:bg-zinc-900 border-4 border-red-600 dark:border-red-500 w-full max-w-sm p-6 text-center transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(220,38,38,1)]">

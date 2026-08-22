@@ -1208,33 +1208,6 @@ export function AdminBatches() {
         </div>
       )}
     </div>
-  );
-}
-
-import { ExamType, InteractiveQuizPayload } from '../types/QuizData';
-
-export interface Note {
-  id: string;
-  title: string;
-  contentUrl?: string; // Optional link
-  createdAt?: any;
-}
-
-export interface Exam {
-  id: string;
-  title: string;
-  examDate: string;
-  examType?: ExamType; // e.g. 'Online Link', 'PDF Upload', 'Cloze Test', etc.
-  contentUrl?: string; // Optional link to question paper or form
-  analysisUrl?: string; // Link to detailed analysis or answer key
-  quizData?: string; // Stored JSON payload for interactive quizzes
-  batchId: string;
-  createdAt?: any;
-}
-
-export interface Payment {
-  id: string;
-  studentId: string;
   studentName: string;
   studentEmail: string;
   amount: number;
@@ -1720,9 +1693,85 @@ export function AdminPayments() {
            ))}
          </div>
          )}
-      </div>
+    </div>
 
-      <h3 className="font-black uppercase mb-4 opacity-70">Students by Batch</h3>
+    {/* PENDING FEES NOTIFICATIONS SECTION */}
+    <div className="mb-8 border-4 border-red-500 bg-red-50 dark:bg-red-900/10 p-6 shadow-[6px_6px_0px_0px_rgba(239,68,68,1)]">
+      <h3 className="font-black text-xl uppercase mb-4 text-red-800 dark:text-red-400 flex items-center gap-2">
+        Pending Fees Alerts 🔔
+      </h3>
+      <p className="text-sm text-red-700 dark:text-red-300 font-bold mb-6">
+        যাদের অনেক মাসের পেমেন্ট বাকি আছে তাদের এখান থেকে "Send Alert" পাঠান। তারা অ্যাপ খুললেই বড় লাল রঙের পপ-আপ দেখতে পাবে এবং পেমেন্ট না করা পর্যন্ত প্রতিবার অ্যাপ খুললে এই অ্যালার্ট আসবে।
+      </p>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[400px] overflow-y-auto pr-2">
+        {students
+          .filter(s => Number(s.pendingMonths) > 0)
+          .sort((a, b) => Number(b.pendingMonths) - Number(a.pendingMonths))
+          .map(s => (
+          <div key={s.id || (s as any).uid} className={`bg-white dark:bg-zinc-900 border-2 ${s.forcePaymentNudge ? 'border-zinc-300 dark:border-zinc-700 opacity-60' : 'border-zinc-900 dark:border-zinc-100'} p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] flex flex-col justify-between`}>
+            <div>
+              <div className="font-black uppercase text-lg mb-1">{s.fullName || s.email}</div>
+              <div className="text-xs font-bold text-zinc-500 mb-3">{s.phone}</div>
+            </div>
+            <div className="flex items-center justify-between mt-auto gap-2">
+              <span className={`text-[11px] font-black uppercase px-2 py-1 flex-1 text-center ${Number(s.pendingMonths) >= 2 ? 'bg-red-500 text-white animate-pulse shadow-[2px_2px_0px_0px_black]' : 'bg-yellow-300 text-black border-2 border-black shadow-[2px_2px_0px_0px_black]'}`}>
+                {s.pendingMonths} M DUE
+              </span>
+              <button 
+                onClick={async () => {
+                  if (window.confirm(`${s.fullName || s.email}-কে পেমেন্ট অ্যালার্ট পাঠাতে চান?`)) {
+                    try {
+                      const apiModule = await import('../lib/api');
+                      await apiModule.api.updateUser(s.id || (s as any).uid, { forcePaymentNudge: true });
+                      window.dispatchEvent(new CustomEvent('show-custom-alert', { detail: 'নোটিফিকেশন পাঠানো হয়েছে!' }));
+                      const newSt = [...students];
+                      const idx = newSt.findIndex(st => (st.id || (st as any).uid) === (s.id || (s as any).uid));
+                      if(idx !== -1) {
+                        newSt[idx] = { ...newSt[idx], forcePaymentNudge: true };
+                        setStudents(newSt);
+                      }
+                    } catch (e: any) {
+                      alert('Error: ' + e.message);
+                    }
+                  }
+                }}
+                disabled={s.forcePaymentNudge}
+                className={`text-[10px] font-black uppercase px-3 py-1.5 flex-1 transition-all flex items-center justify-center gap-1 ${s.forcePaymentNudge ? 'bg-zinc-200 text-zinc-500 border-2 border-zinc-300 cursor-not-allowed' : 'bg-blue-500 hover:bg-blue-400 text-white border-2 border-black shadow-[2px_2px_0px_0px_black] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none'}`}
+              >
+                {s.forcePaymentNudge ? 'Sent ✅' : 'Send Alert 🔔'}
+              </button>
+            </div>
+            {s.forcePaymentNudge && (
+              <button 
+                onClick={async () => {
+                  if (window.confirm(`অ্যালার্টটি কি রিমুভ করতে চান?`)) {
+                    const apiModule = await import('../lib/api');
+                    await apiModule.api.updateUser(s.id || (s as any).uid, { forcePaymentNudge: false });
+                    const newSt = [...students];
+                    const idx = newSt.findIndex(st => (st.id || (st as any).uid) === (s.id || (s as any).uid));
+                    if(idx !== -1) {
+                      newSt[idx] = { ...newSt[idx], forcePaymentNudge: false };
+                      setStudents(newSt);
+                    }
+                  }
+                }}
+                className="mt-3 text-[10px] bg-red-100 text-red-600 font-bold uppercase w-full py-1 border border-red-300 hover:bg-red-200"
+              >
+                Remove Alert ✖
+              </button>
+            )}
+          </div>
+        ))}
+        {students.filter(s => Number(s.pendingMonths) > 0).length === 0 && (
+          <div className="col-span-full text-zinc-500 font-bold italic border-2 border-dashed border-zinc-300 dark:border-zinc-700 p-8 text-center">
+            কোনো স্টুডেন্টের পেমেন্ট বকেয়া নেই! দারুন! 🎉
+          </div>
+        )}
+      </div>
+    </div>
+
+    <h3 className="font-black uppercase mb-4 opacity-70">Students by Batch</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
         {batches.map(b => (
            <button key={b.id} onClick={() => setSelectedBatchId(b.id)} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] hover:-translate-y-1 transition-transform text-left">
@@ -2468,7 +2517,3 @@ export function StudentPayments() {
             </div>
           )}
         </div>
-      </div>
-    </div>
-  );
-}

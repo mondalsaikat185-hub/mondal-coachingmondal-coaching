@@ -604,7 +604,7 @@ export function StudentLibrary() {
          const sessions = await api.getExamSessions();
          const studentBatchIds = String((user as any).batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
          // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic (always pick the newest session)
-         const activeSession = sessions.slice().reverse().find((s: any) => s.examId === item.id && studentBatchIds.includes(s.batchId) && s.isActive);
+         const activeSession = sessions.slice().reverse().find((s: any) => s.examId === item.id && (studentBatchIds.includes(s.batchId) || s.batchId === 'all') && s.isActive);
 
          if (activeSession && !activeSession.codeEnabled) {
               const result = await joinSessionWithoutCode(
@@ -658,7 +658,7 @@ export function StudentLibrary() {
        const sessions = await api.getExamSessions();
        const studentBatchIds = String((user as any).batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
        // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic
-       const activeSession = sessions.slice().reverse().find((s: any) => s.examId === codeInputItem.id && studentBatchIds.includes(s.batchId) && s.isActive);
+       const activeSession = sessions.slice().reverse().find((s: any) => s.examId === codeInputItem.id && (studentBatchIds.includes(s.batchId) || s.batchId === 'all') && s.isActive);
        
        if (!activeSession) {
           setCodeError('❌ এই session আর সক্রিয় নেই।');
