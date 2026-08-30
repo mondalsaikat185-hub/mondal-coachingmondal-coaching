@@ -779,7 +779,7 @@ export function AdminLibrary() {
     const parent = i.parentId === '' ? null : (i.parentId || null);
     return parent === currentFolderId;
   });
-  const folders = currentItems.filter(i => i.isFolder).sort((a,b) => (a.title || '').localeCompare(b.title || ''));
+  const folders = currentItems.filter(i => i.isFolder).sort((a,b) => String(a.title || '').localeCompare(String(b.title || '')));
   const getMs = (t: any) => {
     if (!t) return 0;
     if (typeof t.toMillis === 'function') return t.toMillis();

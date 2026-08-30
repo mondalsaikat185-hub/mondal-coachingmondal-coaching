@@ -773,7 +773,7 @@ export function StudentLibrary() {
       const hasMatchingContent = vis ? (mode === 'EXAM' ? vis.exam : vis.note) : false;
       
       if (!hasMatchingContent) {
-          const t = folder.title?.toLowerCase() || '';
+          const t = String(folder?.title || '').toLowerCase();
           if (mode === 'EXAM' && (t.includes('exam') || t.includes('test'))) return true;
           if (mode === 'NOTE' && !(t.includes('exam') || t.includes('test'))) return true;
           return false;
@@ -783,25 +783,26 @@ export function StudentLibrary() {
 
   const currentItems = items.filter(i => 
     searchQuery 
-     ? (i.title?.toLowerCase() || '').includes(searchQuery.toLowerCase()) && (libraryMode === 'NOTE' ? i.type !== 'exam' : i.type === 'exam')
-     : (i.parentId || null) === currentFolderId && (
-          (i.isFolder && isFolderVisible(i, libraryMode as 'EXAM' | 'NOTE')) || 
-          (!i.isFolder && (libraryMode === 'NOTE' ? i.type !== 'exam' : i.type === 'exam'))
+     ? String(i?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) && (libraryMode === 'NOTE' ? i?.type !== 'exam' : i?.type === 'exam')
+     : (i?.parentId || null) === currentFolderId && (
+          (i?.isFolder && isFolderVisible(i, libraryMode as 'EXAM' | 'NOTE')) || 
+          (!i?.isFolder && (libraryMode === 'NOTE' ? i?.type !== 'exam' : i?.type === 'exam'))
        )
   );
   
   const getMs = (t: any) => {
     if (!t) return 0;
+    if (typeof (t as any).toMillis === 'function') return (t as any).toMillis();
+    if (t.seconds) return t.seconds * 1000;
     return new Date(t).getTime() || 0;
   };
   
-  const folders = currentItems.filter(i => i.isFolder).sort((a,b) => (a.title || '').localeCompare(b.title || ''));
-  const files = currentItems.filter(i => !i.isFolder).sort((a,b) => getMs(b.createdAt) - getMs(a.createdAt));
+  const folders = currentItems.filter(i => i?.isFolder).sort((a,b) => String(a?.title || '').localeCompare(String(b?.title || '')));
+  const files = currentItems.filter(i => !i?.isFolder).sort((a,b) => getMs(b?.createdAt) - getMs(a?.createdAt));
 
   const allFilesSorted = searchQuery 
     ? files 
-    : items.filter(i => !i.isFolder && (libraryMode === 'NOTE' ? i.type !== 'exam' : i.type === 'exam')).sort((a,b) => getMs(b.createdAt) - getMs(a.createdAt));
-
+    : items.filter(i => !i?.isFolder && (libraryMode === 'NOTE' ? i?.type !== 'exam' : i?.type === 'exam')).sort((a,b) => getMs(b?.createdAt) - getMs(a?.createdAt));
   const formatDate = (timestamp: any) => {
      if (!timestamp) return 'No date';
      const d = safeToDate(timestamp);

@@ -637,8 +637,8 @@ export function AdminStudents() {
               
               const filteredStudents = rawBatchStudents.filter(s => {
                 if (!attendanceSearchQuery) return true;
-                const search = attendanceSearchQuery.toLowerCase();
-                return s.fullName?.toLowerCase().includes(search) || s.email.toLowerCase().includes(search);
+                const search = String(attendanceSearchQuery || '').toLowerCase();
+                return String(s.fullName || '').toLowerCase().includes(search) || String(s.email || '').toLowerCase().includes(search);
               });
               
               const filteredRecords = records.filter(r => {
