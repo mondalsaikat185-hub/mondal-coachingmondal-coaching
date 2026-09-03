@@ -73,6 +73,8 @@ export interface BilingualQuestion {
   options_en: string[];
   explanation_en?: string;
   correctIndex: number;
+  image?: string;
+  imageUrl?: string;
 }
 
 export interface BilingualQuizData {

@@ -185,7 +185,8 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              question_en: qEn,
              options_en: parseOptions(optEn),
              explanation_en: expEn,
-             correctIndex: getCorrectIndex(answer)
+             correctIndex: getCorrectIndex(answer),
+             image: q.image || q.imageUrl || q.img || ''
          };
      });
   };
@@ -931,6 +932,17 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                             dangerouslySetInnerHTML={{ __html: formatMathAndChem(reviewQText) }}
                           />
 
+                          {/* Review Question Diagram / Image */}
+                          {(q?.image || q?.imageUrl) && (
+                             <div className="my-3 flex justify-center items-center bg-white p-2 rounded-xl border border-zinc-700 shadow-md max-w-sm mx-auto">
+                               <img 
+                                 src={q.image || q.imageUrl} 
+                                 alt="Question Diagram" 
+                                 className="max-h-52 max-w-full object-contain rounded"
+                               />
+                             </div>
+                          )}
+
                           {/* Jumbled sentences list for Sentence Rearrangement */}
                           {q?.sentences && typeof q.sentences === 'object' && (
                              <div className="space-y-1 bg-[#121214] px-3 py-2 rounded-lg border border-zinc-850 text-xs text-zinc-400 font-mono mb-2">
@@ -1160,6 +1172,17 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                       className={`text-white font-medium leading-snug whitespace-pre-wrap text-left ${passage ? 'text-[11px] lg:text-base' : 'text-base sm:text-lg leading-relaxed'}`}
                       dangerouslySetInnerHTML={{ __html: formatMathAndChem(qText) }}
                    />
+
+                   {/* Question Diagram / Image */}
+                   {(activeQuestion?.image || activeQuestion?.imageUrl) && (
+                      <div className="my-3 flex justify-center items-center bg-white p-2 rounded-xl border border-zinc-700 shadow-md max-w-sm sm:max-w-md mx-auto">
+                        <img 
+                          src={activeQuestion.image || activeQuestion.imageUrl} 
+                          alt="Question Diagram" 
+                          className="max-h-60 max-w-full object-contain rounded"
+                        />
+                      </div>
+                   )}
 
                    {/* Parajumble sentences grid */}
                    {activeQuestion?.sentences && typeof activeQuestion.sentences === 'object' && (
