@@ -181,6 +181,11 @@ export function cleanPhone(p: any): string {
     }
   
     const requestPromise = (async () => {
+    let lastError: any = null;
+    let retries = 3;
+    let attempt = 0;
+
+    while (attempt < retries) {
       try {
         const fetchResponse = await fetch(GAS_WEB_APP_URL, {
           method: "POST",
@@ -189,19 +194,27 @@ export function cleanPhone(p: any): string {
             "Content-Type": "text/plain;charset=utf-8"
           }
         });
-    
-        const json = await fetchResponse.json();
-    
+
+        let json;
+        try {
+          json = await fetchResponse.json();
+        } catch (parseErr) {
+          throw new Error("Invalid response from server (likely overload)");
+        }
+
         if (!json.success) {
           throw new Error(json.error || "API Gateway Error");
         }
-    
+
         const response = json.data;
-    
+
         if (response && typeof response === "object") {
           if (response.success === false) {
             if (response.error) {
-              throw new Error(response.error);
+              // Don't retry logic errors from the app
+              const logicErr = new Error(response.error);
+              (logicErr as any).isLogicError = true;
+              throw logicErr;
             } else if (Object.keys(response).length === 1) {
               return false as T;
             }
@@ -215,15 +228,26 @@ export function cleanPhone(p: any): string {
             }
           }
         }
-        
+
         return response as T;
       } catch (err: any) {
-        console.error("API Call Failed:", methodName, err);
-        throw err;
-      } finally {
-        delete inFlightRequests[requestKey];
+        lastError = err;
+        // If it's a known logic error from backend (like wrong passcode), don't retry
+        if (err.isLogicError) break;
+        
+        attempt++;
+        if (attempt < retries) {
+          console.warn(`Retry ${attempt}/${retries} for ${methodName} due to: ${err.message}`);
+          await new Promise(r => setTimeout(r, 1000 * attempt)); // wait 1s, then 2s before retrying
+        }
       }
-    })();
+    }
+
+    console.error("API Call Failed after retries:", methodName, lastError);
+    throw lastError;
+  })().finally(() => {
+    delete inFlightRequests[requestKey];
+  });
 
     inFlightRequests[requestKey] = requestPromise;
     return requestPromise;
