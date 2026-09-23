@@ -68,20 +68,11 @@ export function AdminResults() {
         const examMap: Record<string, { title: string; marksCorrect: number }> = {};
         libraryData.forEach((item: any) => {
           if (item.type === 'exam') {
-            let marksCorrect = Number(item.marksCorrect) || 2;
-            if (item.quizData) {
-               try {
-                  const parsed = typeof item.quizData === 'string' ? JSON.parse(item.quizData) : item.quizData;
-                  if (parsed && parsed.config && parsed.config.marksCorrect !== undefined) {
-                     marksCorrect = Number(parsed.config.marksCorrect);
-                  }
-               } catch (e) {
-                  console.warn("Error parsing quizData config for", item.title, e);
-               }
-            }
+            const rawMarks = Number(item.marksCorrect);
+            const marksCorrect = (!isNaN(rawMarks) && rawMarks > 0) ? rawMarks : 2;
             examMap[item.id] = {
               title: item.title,
-              marksCorrect: isNaN(marksCorrect) ? 2 : marksCorrect
+              marksCorrect
             };
           }
         });
