@@ -9,11 +9,12 @@ declare const google: any;
 // GOOGLE APPS SCRIPT WEB APP URL (For Vercel Deployment)
 // =========================================================================
 // REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL
-export const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
-export const SECURITY_TOKEN = "MondalCoachingSecureToken2026!";
+export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbyyssI3GSo8eTfiRg9kVMXuc7chdvYuSN78K5lKRrQJ/exec";
+export const SESSION_TOKEN_KEY = "mc_session_token";
 
 export interface UserProfile {
   id: string;
+  sessionToken?: string;
   name: string;
   phone: string;
   email?: string;
@@ -187,9 +188,10 @@ export function cleanPhone(p: any): string {
 
     while (attempt < retries) {
       try {
+        const sessionToken = (typeof localStorage !== "undefined" ? localStorage.getItem(SESSION_TOKEN_KEY) : null) || "";
         const fetchResponse = await fetch(GAS_WEB_APP_URL, {
           method: "POST",
-          body: JSON.stringify({ action: methodName, args: args, token: SECURITY_TOKEN }),
+          body: JSON.stringify({ action: methodName, args: args, token: sessionToken }),
           headers: {
             "Content-Type": "text/plain;charset=utf-8"
           }
@@ -203,7 +205,10 @@ export function cleanPhone(p: any): string {
         }
 
         if (!json.success) {
-          throw new Error(json.error || "API Gateway Error");
+          const err: any = new Error(json.error || "API Gateway Error");
+          if (json.code) err.code = json.code;
+          err.isLogicError = true;
+          throw err;
         }
 
         const response = json.data;
@@ -410,6 +415,15 @@ export const api = {
       return data;
     } else {
       return getMockDB().users;
+    }
+  },
+
+  getMyProfile: async (): Promise<UserProfile> => {
+    if (USE_REAL_API) {
+      return runGasMethod<UserProfile>("apiGetMyProfile");
+    } else {
+      const db = getMockDB();
+      return db.users[0];
     }
   },
 
