@@ -1188,6 +1188,18 @@ export const api = {
     }
   },
 
+  hasSubmitted: async (examId: string, studentId: string): Promise<boolean> => {
+    if (USE_REAL_API) {
+      const res = await runGasMethod<boolean>("apiHasSubmitted", examId, studentId);
+      return !!res;
+    } else {
+      const db = getMockDB();
+      return (db.examResults || []).some(
+        r => r.examId === examId && r.studentId === studentId
+      );
+    }
+  },
+
   deleteExamResult: async (id: string): Promise<boolean> => {
     globalApiCache.examResults = null;
     if (USE_REAL_API) {

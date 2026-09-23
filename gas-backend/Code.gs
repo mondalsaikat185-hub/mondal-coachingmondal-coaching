@@ -1660,6 +1660,56 @@ function apiGetExamResults() {
   }
 }
 
+function apiHasSubmitted(examId, studentId) {
+  try {
+    if (!examId || !studentId) return { success: true, data: false };
+    var sheet = getSheet("examResults");
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: true, data: false };
+
+    var lastCol = sheet.getLastColumn();
+    if (lastCol === 0) return { success: true, data: false };
+
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var examIdCol = -1;
+    var studentIdCol = -1;
+
+    for (var c = 0; c < headers.length; c++) {
+      var h = String(headers[c]).trim().toLowerCase();
+      if (h === "examid") examIdCol = c + 1;
+      else if (h === "studentid") studentIdCol = c + 1;
+    }
+
+    if (examIdCol === -1 || studentIdCol === -1) {
+      return { success: true, data: false };
+    }
+
+    var targetExamId = String(examId).trim();
+    var targetStudentId = String(studentId).trim();
+
+    var finder = sheet.getRange(2, examIdCol, lastRow - 1, 1)
+                      .createTextFinder(targetExamId)
+                      .matchEntireCell(true);
+    var matches = finder.findAll();
+    if (!matches || matches.length === 0) {
+      return { success: true, data: false };
+    }
+
+    for (var i = 0; i < matches.length; i++) {
+      var rowNum = matches[i].getRow();
+      var val = String(sheet.getRange(rowNum, studentIdCol).getValue()).trim();
+      if (val === targetStudentId) {
+        return { success: true, data: true };
+      }
+    }
+
+    return { success: true, data: false };
+  } catch (err) {
+    Logger.log("apiHasSubmitted error: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
 function apiDeleteExamResult(resultId) {
   try {
     var success = deleteRow("examResults", resultId);

@@ -93,10 +93,18 @@ export function StudentLibrary() {
   const basePreviewItem = items.find(i => i.id === previewId) || null;
   const [previewItem, setPreviewItemState] = useState<LibraryItem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const preloadedDetailsRef = useRef<Map<string, LibraryItem>>(new Map());
 
   useEffect(() => {
     if (basePreviewItem) {
       if (basePreviewItem.type === 'exam' && basePreviewItem.examType !== 'Online Link') {
+        const preloaded = preloadedDetailsRef.current.get(basePreviewItem.id!);
+        if (preloaded) {
+          setPreviewItemState(preloaded);
+          setPreviewLoading(false);
+          return;
+        }
+
         const fetchDetails = async () => {
           setPreviewLoading(true);
           try {
@@ -609,16 +617,28 @@ export function StudentLibrary() {
          // check sessionStorage cache
          const alreadyJoinedKey = `joined_exam_${item.id}_${(user as any).batchId}`;
          const alreadyJoined = sessionStorage.getItem(alreadyJoinedKey);
+
+         // Fetch exam sessions and exam details in PARALLEL at item click
+         const sessionsPromise = (alreadyJoined === 'true') ? Promise.resolve(null) : api.getExamSessions();
+         const detailsPromise = api.getLibraryItemDetails(item.id);
+
+         const [sessions, fullDetails] = await Promise.all([
+            sessionsPromise,
+            detailsPromise.catch(e => { console.error('Prefetch details error:', e); return null; })
+         ]);
+
+         if (fullDetails) {
+            preloadedDetailsRef.current.set(item.id, fullDetails);
+         }
+
          if (alreadyJoined === 'true') {
             setPreviewItem(item);
             return;
          }
 
-         // Fetch active sessions from Sheets API
-         const sessions = await api.getExamSessions();
          const studentBatchIds = String((user as any).batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
          // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic (always pick the newest session)
-         const activeSession = sessions.slice().reverse().find((s: any) => s.examId === item.id && (studentBatchIds.includes(s.batchId) || s.batchId === 'all') && s.isActive);
+         const activeSession = (sessions || []).slice().reverse().find((s: any) => s.examId === item.id && (studentBatchIds.includes(s.batchId) || s.batchId === 'all') && s.isActive);
 
          if (activeSession && !activeSession.codeEnabled) {
               const result = await joinSessionWithoutCode(

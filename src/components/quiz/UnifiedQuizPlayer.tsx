@@ -209,6 +209,25 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     marksWrong: parsedConfig.marksWrong !== undefined ? -Math.abs(parsedConfig.marksWrong) : (rootConfig.marksWrong !== undefined ? -Math.abs(rootConfig.marksWrong) : -0.5)
   };
 
+  function getLocalSubmittedExams(userId: string): Set<string> {
+    try {
+      const raw = localStorage.getItem(`mc_submitted_exams_${userId}`);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return new Set(arr);
+      }
+    } catch (e) {}
+    return new Set();
+  }
+
+  function addLocalSubmittedExam(userId: string, examId: string): void {
+    try {
+      const set = getLocalSubmittedExams(userId);
+      set.add(examId);
+      localStorage.setItem(`mc_submitted_exams_${userId}`, JSON.stringify(Array.from(set)));
+    } catch (e) {}
+  }
+
   // Initialize and check attempts
   useEffect(() => {
     if (!user || isPreview) {
@@ -220,10 +239,20 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
           setCheckingResult(false);
           return;
        }
+
+       // 1. Check localStorage submitted list first (no GAS call if found)
+       const localSubmitted = getLocalSubmittedExams(user.uid);
+       if (localSubmitted.has(exam.id)) {
+          setAlreadySubmitted(true);
+          setCheckingResult(false);
+          return;
+       }
+
+       // 2. Not in local list -> call lightweight api.hasSubmitted
        try {
-          const results = await api.getExamResults();
-          const alreadySubmitted = results.some(r => r.studentId === user.uid && r.examId === exam.id);
-          if (alreadySubmitted) {
+          const submitted = await api.hasSubmitted(exam.id, user.uid);
+          if (submitted) {
+             addLocalSubmittedExam(user.uid, exam.id);
              setAlreadySubmitted(true);
           }
        } catch (err) {
@@ -553,6 +582,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
            submittedAt: new Date().toISOString()
         } as any);
         clearCache(`result_check_${user.uid}_${exam.id}`);
+        addLocalSubmittedExam(user.uid, exam.id);
         
         setResultSummary(summary);
         clearQuizStorage();
