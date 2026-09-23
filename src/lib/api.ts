@@ -9,7 +9,7 @@ declare const google: any;
 // GOOGLE APPS SCRIPT WEB APP URL (For Vercel Deployment)
 // =========================================================================
 // REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL
-export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxaGaTst2WWDMJhyRp03Niss0teYcvnTw05kL7mPVa4Jc1VqfZ_gs8dcf7OraXB1KGeXA/exec";
+export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbw2dJTHzNcC3ewl-qOVejm19bEy7cH1MBNiOmEHfB5H3xvrmgiQQYCxOorwtymhyRYqRA/exec";
 export const SESSION_TOKEN_KEY = "mc_session_token";
 
 export interface UserProfile {
@@ -72,14 +72,18 @@ export interface LibraryItem {
 export interface PaymentRecord {
   id: string;
   studentId: string;
+  studentName?: string;
+  studentEmail?: string;
   month: string;
   amount: number;
-  status: 'paid' | 'unpaid' | 'pending';
+  status: 'paid' | 'unpaid' | 'pending' | 'approved' | 'rejected';
+  paidVia?: 'upi' | 'cash';
+  decidedAt?: string;
   transactionId?: string;
   paidDate?: string;
   remarks?: string;
   proofImage?: string;
-  paymentMode?: 'manual' | 'proof_upload' | 'gateway';
+  paymentMode?: 'manual' | 'proof_upload' | 'gateway' | 'upi' | 'cash';
   createdAt: string;
 }
 
@@ -927,6 +931,29 @@ export const api = {
     };
   },
 
+  submitPaymentRequest: async (paymentData: Partial<PaymentRecord>): Promise<PaymentRecord> => {
+    globalApiCache.payments = null;
+    let savedPayment: PaymentRecord;
+    if (USE_REAL_API) {
+      savedPayment = await runGasMethod<PaymentRecord>("apiSubmitPaymentRequest", paymentData);
+    } else {
+      const db = getMockDB();
+      const newPay: PaymentRecord = {
+        ...paymentData,
+        id: makeId(),
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      } as PaymentRecord;
+      db.payments.push(newPay);
+      saveMockDB(db);
+      savedPayment = newPay;
+    }
+    return {
+      ...savedPayment,
+      month: api.cleanPaymentMonth(savedPayment.month)
+    };
+  },
+
   updatePaymentStatus: async (paymentId: string, status: PaymentRecord['status'], remarks: string = ''): Promise<PaymentRecord> => {
     globalApiCache.payments = null;
     let updatedPayment: PaymentRecord;
@@ -1270,32 +1297,7 @@ export const api = {
     }
   },
 
-  verifyGatewayPayment: async (paymentId: string, month: string, amount: number, studentId: string): Promise<{ success: boolean; error?: string }> => {
-    if (USE_REAL_API) {
-      return runGasMethod<{ success: boolean; error?: string }>("apiVerifyGatewayPayment", paymentId, month, amount, studentId);
-    } else {
-      // Mock gateway verification for local testing
-      const db = getMockDB();
-      const user = db.users.find(u => u.id === studentId);
-      const newPay = {
-        id: "pay_" + Math.random().toString(36).substr(2, 9),
-        studentId: studentId,
-        month: month,
-        amount: amount,
-        status: "approved" as any,
-        transactionId: paymentId,
-        paidDate: new Date().toISOString(),
-        createdAt: new Date().toISOString()
-      };
-      db.payments.push(newPay);
-      
-      // Update student's pendingMonths in local storage
-      if (user) {
-        const count = month.split(',').length;
-        (user as any).pendingMonths = Math.max(0, ((user as any).pendingMonths || 0) - count);
-      }
-      saveMockDB(db);
-      return { success: true };
-    }
-  }
+  verifyGatewayPayment: async (_paymentId: string, _month: string, _amount: number, _studentId: string): Promise<{ success: boolean; error?: string }> => {
+    return { success: false, error: "Payment gateway is permanently disabled. Please use UPI/Cash payment request." };
+  },
 };
