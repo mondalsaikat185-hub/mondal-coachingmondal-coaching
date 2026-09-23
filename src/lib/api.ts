@@ -9,7 +9,7 @@ declare const google: any;
 // GOOGLE APPS SCRIPT WEB APP URL (For Vercel Deployment)
 // =========================================================================
 // REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL
-export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbyyssI3GSo8eTfiRg9kVMXuc7chdvYuSN78K5lKRrQJ/exec";
+export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxaGaTst2WWDMJhyRp03Niss0teYcvnTw05kL7mPVa4Jc1VqfZ_gs8dcf7OraXB1KGeXA/exec";
 export const SESSION_TOKEN_KEY = "mc_session_token";
 
 export interface UserProfile {
