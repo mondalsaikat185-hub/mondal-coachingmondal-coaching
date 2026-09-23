@@ -614,12 +614,9 @@ export function StudentLibrary() {
             }
          }
 
-         // check sessionStorage cache
-         const alreadyJoinedKey = `joined_exam_${item.id}_${(user as any).batchId}`;
-         const alreadyJoined = sessionStorage.getItem(alreadyJoinedKey);
-
-         // Fetch exam sessions and exam details in PARALLEL at item click
-         const sessionsPromise = (alreadyJoined === 'true') ? Promise.resolve(null) : api.getExamSessions();
+         // Fetch exam sessions (ALWAYS fresh from server with forceRefresh = true)
+         // and exam details in PARALLEL at item click
+         const sessionsPromise = api.getExamSessions(true);
          const detailsPromise = api.getLibraryItemDetails(item.id);
 
          const [sessions, fullDetails] = await Promise.all([
@@ -631,14 +628,23 @@ export function StudentLibrary() {
             preloadedDetailsRef.current.set(item.id, fullDetails);
          }
 
+         const studentBatchIds = String((user as any).batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
+         // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic (always pick the newest session)
+         const activeSession = (sessions || []).slice().reverse().find((s: any) => s.examId === item.id && (studentBatchIds.includes(s.batchId) || s.batchId === 'all') && s.isActive);
+
+         if (!activeSession) {
+             // NORMAL EXAM: No live session is currently active for this exam and batch.
+             setPreviewItem(item);
+             return;
+         }
+
+         // Check if already joined THIS exam's session in this browser tab
+         const alreadyJoinedKey = `joined_exam_${item.id}_${(user as any).batchId}`;
+         const alreadyJoined = sessionStorage.getItem(alreadyJoinedKey);
          if (alreadyJoined === 'true') {
             setPreviewItem(item);
             return;
          }
-
-         const studentBatchIds = String((user as any).batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
-         // BUG FIX: Use .slice().reverse().find() to match verifyAndJoinSession logic (always pick the newest session)
-         const activeSession = (sessions || []).slice().reverse().find((s: any) => s.examId === item.id && (studentBatchIds.includes(s.batchId) || s.batchId === 'all') && s.isActive);
 
          if (activeSession && !activeSession.codeEnabled) {
               const result = await joinSessionWithoutCode(
