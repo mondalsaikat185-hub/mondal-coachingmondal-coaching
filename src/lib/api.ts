@@ -9,8 +9,8 @@ declare const google: any;
 // GOOGLE APPS SCRIPT WEB APP URL (For Vercel Deployment)
 // =========================================================================
 // REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL
-export const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
-export const SECURITY_TOKEN = "MondalCoachingSecureToken2026!";
+export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
+export const SECURITY_TOKEN = (import.meta.env.VITE_SECURITY_TOKEN as string) || "MondalCoachingSecureToken2026!";
 
 export interface UserProfile {
   id: string;
@@ -391,6 +391,65 @@ function saveMockDB(db: MockDB) {
 const makeId = () => "id_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
 
 // =========================================================================
+// Library Item LocalStorage Caching Helpers (24-Hour TTL)
+// =========================================================================
+const CACHE_24H_MS = 24 * 60 * 60 * 1000;
+
+function getLibraryItemCacheKey(itemId: string, itemTimestamp?: string): string {
+  if (!itemTimestamp) {
+    const libraryList = globalApiCache.library?.data;
+    const meta = libraryList?.find(i => i.id === itemId);
+    itemTimestamp = meta?.updatedAt || meta?.createdAt || 'v1';
+  }
+  return `mc_lib_${itemId}_${itemTimestamp}`;
+}
+
+function getCachedLibraryItemDetails(itemId: string): LibraryItem | null {
+  try {
+    const key = getLibraryItemCacheKey(itemId);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const entry = JSON.parse(raw);
+    if (!entry || typeof entry.timestamp !== 'number' || !entry.data) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    if (Date.now() - entry.timestamp > CACHE_24H_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return entry.data as LibraryItem;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCachedLibraryItemDetails(itemId: string, data: LibraryItem): void {
+  try {
+    const key = getLibraryItemCacheKey(itemId, data.updatedAt || data.createdAt);
+    localStorage.setItem(key, JSON.stringify({
+      timestamp: Date.now(),
+      data: data
+    }));
+  } catch (e) {
+    // Fail silently if localStorage quota is exceeded or storage is disabled
+  }
+}
+
+function removeLibraryItemCache(itemId: string): void {
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(`mc_lib_${itemId}`)) {
+        localStorage.removeItem(k);
+      }
+    }
+  } catch (e) {
+    // Fail silently
+  }
+}
+
+// =========================================================================
 // 3. EXPORTED UINFIED API ENGINE
 // =========================================================================
 
@@ -679,10 +738,17 @@ export const api = {
       return getMockDB().library;
     }
   },
-
   getLibraryItemDetails: async (itemId: string): Promise<LibraryItem> => {
     if (USE_REAL_API) {
-      return runGasMethod<LibraryItem>("apiGetLibraryItemDetails", itemId);
+      const cached = getCachedLibraryItemDetails(itemId);
+      if (cached) {
+        return cached;
+      }
+      const item = await runGasMethod<LibraryItem>("apiGetLibraryItemDetails", itemId);
+      if (item) {
+        setCachedLibraryItemDetails(itemId, item);
+      }
+      return item;
     } else {
       const db = getMockDB();
       const item = db.library.find(i => i.id === itemId);
@@ -693,8 +759,15 @@ export const api = {
 
   saveLibraryItem: async (item: Partial<LibraryItem>): Promise<LibraryItem> => {
     globalApiCache.library = null;
+    if (item.id) {
+      removeLibraryItemCache(item.id);
+    }
     if (USE_REAL_API) {
-      return runGasMethod<LibraryItem>("apiSaveLibraryItem", item);
+      const res = await runGasMethod<LibraryItem>("apiSaveLibraryItem", item);
+      if (res && res.id) {
+        removeLibraryItemCache(res.id);
+      }
+      return res;
     } else {
       const db = getMockDB();
       if (item.id) {
@@ -718,6 +791,9 @@ export const api = {
 
   updateLibrarySequences: async (updates: { id: string, sequence: number }[]): Promise<void> => {
     globalApiCache.library = null;
+    updates.forEach(u => {
+      if (u.id) removeLibraryItemCache(u.id);
+    });
     if (USE_REAL_API) {
       await runGasMethod<void>("apiUpdateLibrarySequences", updates);
     } else {
@@ -732,6 +808,7 @@ export const api = {
 
   deleteLibraryItem: async (itemId: string): Promise<boolean> => {
     globalApiCache.library = null;
+    removeLibraryItemCache(itemId);
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiDeleteLibraryItem", itemId);
     } else {
