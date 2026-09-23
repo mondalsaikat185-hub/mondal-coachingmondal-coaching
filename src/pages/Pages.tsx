@@ -1365,13 +1365,13 @@ export function AdminPayments() {
   };
 
   const updatePaymentStatus = async (id: string, status: 'approved' | 'rejected', remarks: string = '') => {
-    if (status === 'rejected' && !remarks.trim()) {
+    if (status === 'rejected' && !remarks) {
       setRejectingPaymentId(id);
       return;
     }
     try {
-      await api.updatePaymentStatus(id, status as any, remarks.trim());
-      setPayments(payments.map(p => p.id === id ? { ...p, status, remarks: remarks.trim() } : p));
+      await api.updatePaymentStatus(id, status as any, remarks);
+      setPayments(payments.map(p => p.id === id ? { ...p, status, remarks } : p));
       
       if (status === 'rejected') {
          const paymentToUpdate = payments.find(p => p.id === id);
@@ -1379,7 +1379,7 @@ export function AdminPayments() {
             await api.createNotification({
                senderId: user?.uid || 'admin',
                title: 'Payment Rejected',
-               message: `Your payment request for ${paymentToUpdate.month} has been rejected. Reason: ${remarks.trim()}`,
+               message: `Your payment request for ${paymentToUpdate.month} has been rejected. Reason: ${remarks}`,
                batchId: paymentToUpdate.studentId
             });
          }
@@ -1389,7 +1389,7 @@ export function AdminPayments() {
       }
     } catch (error) {
       console.error("updatePaymentStatus error:", error);
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to update payment status: " + String(error) }));
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to update payment status." }));
     }
   };
 
@@ -1410,27 +1410,44 @@ export function AdminPayments() {
     }
   };
 
+  const handleAddOfflinePayment = async () => {
+     if (!selectedStudentId || !offlineMonth || !offlineAmount) return;
+     const student = students.find(s => s.id === selectedStudentId);
+     if (!student) return;
+     setOfflineSubmitting(true);
+     try {
+       const offlinePay = {
+          studentId: student.id || student.uid,
+          studentName: student.fullName || student.displayName || student.email,
+          studentEmail: student.email || '',
+          amount: Number(offlineAmount),
+          month: offlineMonth,
+          status: 'approved' as any,
+          remarks: 'Offline Payment (Cash/Direct)'
+       };
+       const pRef = await api.addPayment(offlinePay as any);
+       
+       setPayments([{ id: pRef.id, ...offlinePay, createdAt: new Date().toISOString() } as any, ...payments]);
+       setAddingOfflinePayment(false);
+       setOfflineMonth('');
+       setOfflineAmount('');
+     } catch(err) {
+       console.error("handleAddOfflinePayment error:", err);
+       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to add offline payment." }));
+     } finally {
+       setOfflineSubmitting(false);
+     }
+  };
+
   const rejectModal = rejectingPaymentId ? (
     <div className="fixed inset-0 bg-black/80 flex justify-center items-center z-[100] p-4">
       <div className="bg-white dark:bg-zinc-900 border-4 border-red-600 dark:border-red-500 w-full max-w-md p-6 transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(220,38,38,1)]">
         <h3 className="font-black text-xl text-red-600 uppercase mb-4">Reject Payment Request</h3>
-        <p className="text-zinc-500 font-bold text-xs mb-2 uppercase">পেমেন্ট বাতিল করার কারণ লেখা বাধ্যতামূলক (Rejection reason is required):</p>
-        <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm bg-transparent mb-4 outline-none focus:border-red-500" placeholder="e.g. Transaction ID invalid / টাকা অ্যাকাউন্টে জমা পড়েনি" rows={3} />
+        <p className="text-zinc-500 font-bold text-xs mb-2 uppercase">Please provide a reason for the rejection.</p>
+        <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm bg-transparent mb-4 outline-none focus:border-red-500" placeholder="e.g. Transaction ID invalid" rows={3} />
         <div className="flex gap-4">
-          <button 
-            type="button" 
-            onClick={() => {
-              if (!rejectReason.trim()) {
-                window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "বাতিল করার কারণ (Remarks) দেওয়া বাধ্যতামূলক!" }));
-                return;
-              }
-              updatePaymentStatus(rejectingPaymentId, 'rejected', rejectReason.trim());
-            }} 
-            className="flex-1 border-2 border-red-600 bg-red-600 text-white shadow-[4px_4px_0px_0px_rgba(153,27,27,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform"
-          >
-            Reject
-          </button>
-          <button type="button" onClick={() => setRejectingPaymentId(null)} className="flex-1 border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-200 dark:bg-zinc-800 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform">Cancel</button>
+          <button onClick={() => updatePaymentStatus(rejectingPaymentId, 'rejected', rejectReason || 'Payment declined by admin.')} className="flex-1 border-2 border-red-600 bg-red-600 text-white shadow-[4px_4px_0px_0px_rgba(153,27,27,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform">Reject</button>
+          <button onClick={() => setRejectingPaymentId(null)} className="flex-1 border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-200 dark:bg-zinc-800 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform">Cancel</button>
         </div>
       </div>
     </div>
@@ -1542,14 +1559,38 @@ export function AdminPayments() {
              <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] h-[32rem] flex flex-col">
                 <div className="flex justify-between items-center mb-4 border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">
                   <h3 className="font-black uppercase">Payment Requests</h3>
+                  <button onClick={() => { setAddingOfflinePayment(!addingOfflinePayment); setOfflineAmount(String(student.monthlyFee || 500)); }} className="px-3 py-1 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs font-bold uppercase hover:-translate-y-0.5 transition-transform flex items-center gap-1">
+                     <Plus className="w-3.5 h-3.5" /> Offline
+                  </button>
                 </div>
+
+                {addingOfflinePayment && (
+                  <div className="mb-4 space-y-3 p-3 bg-zinc-100 dark:bg-zinc-800 border-2 border-zinc-900 dark:border-zinc-100">
+                     <div>
+                       <select value={offlineMonth} onChange={e => setOfflineMonth(e.target.value)} className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 bg-white dark:bg-zinc-900 text-sm focus:outline-none">
+                          <option value="">Select Month...</option>
+                          {monthOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                       </select>
+                     </div>
+                     <div>
+                       <div className="flex bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 text-sm">
+                          <span className="p-2 font-bold bg-zinc-200 dark:bg-zinc-800">₹</span>
+                          <input type="number" value={offlineAmount} onChange={e => setOfflineAmount(e.target.value)} className="w-full p-2 bg-transparent focus:outline-none font-bold" />
+                       </div>
+                     </div>
+                     <div className="flex gap-2">
+                        <button onClick={handleAddOfflinePayment} disabled={offlineSubmitting || !offlineMonth || !offlineAmount} className="flex-1 bg-green-500 text-black font-bold uppercase text-xs py-2 disabled:opacity-50">Save</button>
+                        <button onClick={() => setAddingOfflinePayment(false)} className="flex-1 bg-zinc-300 dark:bg-zinc-700 font-bold uppercase text-xs py-2 text-black dark:text-white">Cancel</button>
+                     </div>
+                  </div>
+                )}
 
                 <div className="flex-1 overflow-y-auto pr-2">
                   {studentPayments.length === 0 ? (
                      <div className="text-center text-zinc-500 font-bold py-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700">No payment history.</div>
                   ) : (
                      <div className="space-y-4">
-                        {studentPayments.map((p) => (
+                        {studentPayments.map((p, idx) => (
                            <div key={p.id} className="border-2 border-zinc-200 dark:border-zinc-800 p-3">
                               <div className="flex justify-between items-center mb-2">
                                  <span className="font-black uppercase text-sm">{p.month}</span>
@@ -1656,12 +1697,9 @@ export function AdminPayments() {
            <div className="text-zinc-600 dark:text-zinc-400 font-bold italic">You're all caught up! No pending payments to verify.</div>
          ) : (
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-           {allPending.map((p) => (
+           {allPending.map((p, idx) => (
               <div key={p.id} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)]">
-                <div className="flex justify-between items-start mb-1">
-                  <div className="text-xs font-bold uppercase text-zinc-500">{p.studentName || p.studentEmail}</div>
-                  <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-300">{(p as any).paidVia === 'cash' || (p as any).paymentMode === 'cash' ? '💵 Cash' : '📱 UPI'}</span>
-                </div>
+                <div className="text-xs font-bold uppercase text-zinc-500 mb-1">{p.studentName || p.studentEmail}</div>
                 <div className="flex justify-between items-center mb-3">
                   <span className="font-black">{p.month}</span>
                   {editingAmountId === p.id ? (
@@ -1853,11 +1891,12 @@ export function StudentPayments() {
     }
   };
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
-  const [paymentMode, setPaymentMode] = useState<'upi' | 'cash'>('upi');
   const [settings, setSettings] = useState({
     adminUpiId: '',
     enablePaymentSystem: true,
-    paymentMethod: 'manual'
+    paymentMethod: 'manual',
+    razorpayKeyId: '',
+    razorpayKeySecret: ''
   });
 
   const monthlyFeeAmount = Number(user?.monthlyFee) || 0;
@@ -1865,46 +1904,22 @@ export function StudentPayments() {
   
   const calculatedAmount = selectedMonths.length > 0 ? selectedMonths.length * (monthlyFeeAmount > 0 ? monthlyFeeAmount : 500) : (monthlyFeeAmount > 0 ? monthlyFeeAmount : 500);
 
-  const handleDownloadQR = () => {
-    const svg = document.getElementById('payment-qr-svg');
-    if (!svg) {
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "QR কোড পাওয়া যায়নি।" }));
-      return;
-    }
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-    img.onload = () => {
-      canvas.width = img.width + 40;
-      canvas.height = img.height + 40;
-      if (ctx) {
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 20, 20);
-        const pngFile = canvas.toDataURL("image/png");
-        const downloadLink = document.createElement("a");
-        downloadLink.download = `mondal-coaching-qr-${calculatedAmount}.png`;
-        downloadLink.href = pngFile;
-        downloadLink.click();
-      }
-    };
-    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
-  };
-
-  const handleCopyUPI = (id: string) => {
-    navigator.clipboard.writeText(id);
-    window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "UPI ID কপি করা হয়েছে!" }));
-  };
-
   useEffect(() => {
      if (!user) return;
+     
+     // Dynamically load Razorpay standard script for safe, smooth checkout
+     const rzpScript = document.createElement("script");
+     rzpScript.src = "https://checkout.razorpay.com/v1/checkout.js";
+     rzpScript.async = true;
+     document.body.appendChild(rzpScript);
      
      const loadSettings = async () => {
        try {
          let adminUpiId = 'mondal.saikat185@okaxis';
          let enablePaymentSystem = true;
          let paymentMethod = 'manual';
+         let razorpayKeyId = '';
+         let razorpayKeySecret = '';
 
          const cached = localStorage.getItem("mc_settings_general");
          if (cached) {
@@ -1913,6 +1928,8 @@ export function StudentPayments() {
              adminUpiId = data.adminUpiId || adminUpiId;
              enablePaymentSystem = data.enablePaymentSystem !== false;
              paymentMethod = data.paymentMethod || 'manual';
+             razorpayKeyId = data.razorpayKeyId || '';
+             razorpayKeySecret = data.razorpayKeySecret || '';
            } catch (e) {}
          }
 
@@ -1932,6 +1949,8 @@ export function StudentPayments() {
                  adminUpiId = gasSettings.adminUpiId || adminUpiId;
                  enablePaymentSystem = gasSettings.enablePaymentSystem !== false;
                  paymentMethod = gasSettings.paymentMethod || 'manual';
+                 razorpayKeyId = gasSettings.razorpayKeyId || '';
+                 razorpayKeySecret = gasSettings.razorpayKeySecret || '';
                }
              }
            } catch (err) {
@@ -1942,7 +1961,9 @@ export function StudentPayments() {
          setSettings({
            adminUpiId,
            enablePaymentSystem,
-           paymentMethod
+           paymentMethod,
+           razorpayKeyId,
+           razorpayKeySecret
          });
        } catch (err) {
          console.error("Failed to load settings:", err);
@@ -1979,6 +2000,12 @@ export function StudentPayments() {
      };
 
      fetchPayments();
+
+     return () => {
+       try {
+         document.body.removeChild(rzpScript);
+       } catch (e) {}
+     };
   }, [user?.uid]);
 
   const monthOptions = getMonthOptions();
@@ -2017,7 +2044,110 @@ export function StudentPayments() {
     }
   }, [payments, user]);
 
+  const handleRazorpayCheckout = async () => {
+    if (selectedMonths.length === 0 || !user) {
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select at least one month." }));
+      return;
+    }
 
+    if (isFeeWaived) {
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।" }));
+      return;
+    }
+
+    // Reuse consecutive month validations:
+    const paidMonths = payments.filter(p => p.studentId === user.uid && p.status !== 'rejected').flatMap(p => p.month ? String(p.month).split(',').map(m => m.trim()) : []);
+    const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
+    const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
+    const selectedIndices = selectedMonths.map(m => monthOptions.indexOf(m)).sort((a, b) => a - b);
+    
+    for (let i = 1; i < selectedIndices.length; i++) {
+       if (selectedIndices[i] !== selectedIndices[i-1] + 1) {
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select strictly consecutive months." }));
+          return;
+       }
+    }
+    
+    if (maxPaidIndex !== -1) {
+       const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
+       if (alreadyPaid) {
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "You have already submitted a payment for one or more of the selected months." }));
+          return;
+       }
+       if (selectedIndices[0] !== maxPaidIndex + 1) {
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.` }));
+          return;
+       }
+    }
+
+    if ((user as any).isSimulatedAdmin) {
+       const isRealStudent = localStorage.getItem('simulatedStudentId');
+       if (!isRealStudent) {
+         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select a real student from the dropdown above to test the payment gateway checkout flow." }));
+         return;
+       }
+    }
+
+    // Default test key ID if admin has not configured their own
+    const keyId = settings.razorpayKeyId || 'rzp_test_mX3qXFv3Xv9Xv9'; 
+
+    setSubmitting(true);
+    try {
+      const options = {
+        key: keyId,
+        amount: calculatedAmount * 100, // Amount in paise
+        currency: "INR",
+        name: "M-C Tuition Classes",
+        description: `Tuition Fees for ${selectedMonths.join(', ')}`,
+        image: user.profilePhotoUrl || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=200&auto=format&fit=crop",
+        handler: async function (response: any) {
+          try {
+            setSubmitting(true);
+            const verifyRes = await api.verifyGatewayPayment(
+              response.razorpay_payment_id,
+              selectedMonths.join(', '),
+              calculatedAmount,
+              user.uid
+            );
+
+            if (verifyRes.success) {
+              window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "পেমেন্ট সফল এবং অনুমোদিত হয়েছে! (Payment Successful and Instantly Approved!)" }));
+              setSelectedMonths([]);
+              setPaymentSuccess(true);
+              setTimeout(() => setPaymentSuccess(false), 3000);
+              
+              // Force local cache invalidation & reload to fetch updated user profile (pendingMonths etc.)
+              window.location.reload(); 
+            } else {
+              window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Verification failed: " + (verifyRes.error || "Unknown Error") }));
+            }
+          } catch (err) {
+            console.error("Verification error:", err);
+            window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Payment verification failed, please contact administrator with Payment ID: " + response.razorpay_payment_id }));
+          } finally {
+            setSubmitting(false);
+          }
+        },
+        prefill: {
+          name: user.fullName || user.displayName || "",
+          email: user.email || "",
+          contact: user.phone || ""
+        },
+        theme: {
+          color: "#eab308" // Yellow Neo-Brutalist Theme
+        }
+      };
+
+      // @ts-ignore
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      console.error("Razorpay Checkout failed to open:", err);
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to initialize Razorpay payment. Please try again." }));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2094,15 +2224,32 @@ export function StudentPayments() {
     try {
       setSubmitting(true);
       const paymentData: any = {
+        studentId: user.uid,
+        studentName: user.fullName || user.displayName || 'Unknown Student',
+        studentEmail: user.email || '',
         month: selectedMonths.join(', '),
         amount: calculatedAmount,
-        paidVia: paymentMode,
-        paymentMode: paymentMode,
-        transactionId: transactionId.trim(),
-        proofImage: proofImage,
+        status: 'pending',
+        paymentMode: settings.paymentMethod || 'manual',
       };
       
-      await api.submitPaymentRequest(paymentData);
+      // Attach proof data if using proof_upload mode
+      if (settings.paymentMethod === 'proof_upload') {
+        if (!proofImage) {
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Please upload a payment screenshot as proof.' }));
+          setSubmitting(false);
+          return;
+        }
+        if (!transactionId.trim()) {
+          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Please enter the Transaction ID / UTR Number.' }));
+          setSubmitting(false);
+          return;
+        }
+        paymentData.proofImage = proofImage;
+        paymentData.transactionId = transactionId.trim();
+      }
+      
+      await api.addPayment(paymentData);
       setSelectedMonths([]);
       setProofImage('');
       setImagePreview('');
@@ -2124,7 +2271,7 @@ export function StudentPayments() {
         remarks: (p as any).remarks || '',
         transactionId: (p as any).transactionId || '',
         proofImage: (p as any).proofImage || '',
-        paymentMode: (p as any).paidVia || (p as any).paymentMode || 'upi',
+        paymentMode: (p as any).paymentMode || 'manual',
         createdAt: p.createdAt
       }));
       const getMs = (t: any) => new Date(t).getTime() || 0;
@@ -2132,7 +2279,7 @@ export function StudentPayments() {
       setPayments(data);
     } catch (error) {
       console.error("handleSubmitPayment error:", error);
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to submit payment details: " + String(error) }));
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to submit payment details." }));
     } finally {
       setSubmitting(false);
     }
@@ -2171,145 +2318,141 @@ export function StudentPayments() {
              </div>
           ) : (
           <>
-          {/* Payment Method Selector */}
-          <div className="mb-4">
-            <label className="block text-xs font-black uppercase mb-2 dark:text-yellow-100">
-              কীভাবে ফি দিলেন? (Payment Method)
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setPaymentMode('upi')}
-                className={`py-2 px-3 border-2 border-zinc-900 font-bold text-xs uppercase flex items-center justify-center gap-1.5 transition-all shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] ${
-                  paymentMode === 'upi'
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    : 'bg-white text-zinc-900 hover:bg-zinc-100'
-                }`}
-              >
-                📱 UPI / Online
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaymentMode('cash')}
-                className={`py-2 px-3 border-2 border-zinc-900 font-bold text-xs uppercase flex items-center justify-center gap-1.5 transition-all shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] ${
-                  paymentMode === 'cash'
-                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                    : 'bg-white text-zinc-900 hover:bg-zinc-100'
-                }`}
-              >
-                💵 Cash (নগদ)
-              </button>
-            </div>
-          </div>
-
-          {paymentMode === 'cash' ? (
-            <div className="mb-4 p-4 bg-amber-50 dark:bg-zinc-800 border-2 border-zinc-900 text-center">
-              <div className="text-2xl mb-1">🤝</div>
-              <h4 className="font-black text-sm uppercase text-zinc-900 dark:text-white">সরাসরি নগদ (Cash) পেমেন্ট</h4>
-              <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mt-1">
-                আপনি শিক্ষককে সরাসরি নগদ অর্থ দিয়েছেন। নিচে সংশ্লিষ্ট মাস নির্বাচন করে রিকোয়েস্ট জমা দিন। শিক্ষক তা যাচাই করে অনুমোদন করবেন।
-              </p>
-            </div>
-          ) : (
-            <div className="mb-4 p-4 bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
-              <div className="text-xs font-bold uppercase mb-2 dark:text-yellow-100">Scan to Pay via UPI</div>
-              {settings.adminUpiId ? (
-                (() => {
-                  const upiId = (settings.adminUpiId || '').trim();
-                  const am = Number(calculatedAmount || 500).toFixed(2);
-                  const tn = encodeURIComponent('Tuition Fee');
-                  const pn = encodeURIComponent('Mondal Coaching');
-                  const genericUpi = `upi://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`;
-                  return (
-                    <>
-                      <div className="bg-white p-2 border-2 border-zinc-900 inline-block mb-2">
-                        <QRCodeSVG id="payment-qr-svg" value={genericUpi} size={130} />
-                      </div>
-                      <div className="text-xs font-mono font-bold text-zinc-900 dark:text-white mb-2">{upiId}</div>
-                      
-                      <div className="flex flex-wrap gap-2 justify-center mb-3">
-                        <button
-                          type="button"
-                          onClick={handleDownloadQR}
-                          className="px-2.5 py-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1 border border-zinc-900"
-                        >
-                          📥 QR ডাউনলোড
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleCopyUPI(upiId)}
-                          className="px-2.5 py-1.5 bg-blue-600 text-white font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1"
-                        >
-                          📋 UPI কপি
-                        </button>
-                      </div>
-
-                      <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Direct App Pay</p>
-                      <div className="flex flex-wrap justify-center gap-1.5 mb-3 w-full">
-                        <a href={genericUpi} className="px-2.5 py-1 bg-purple-600 text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">PhonePe</a>
-                        <a href={`tez://upi/pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-2.5 py-1 bg-white text-zinc-900 border border-zinc-300 font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1"><span className="text-blue-500 font-black">G</span>Pay</a>
-                        <a href={`paytmmp://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-2.5 py-1 bg-[#00b9f1] text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">Paytm</a>
-                        <a href={genericUpi} className="px-2.5 py-1 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold text-xs hover:-translate-y-0.5 transition-transform">Any UPI</a>
-                      </div>
-
-                      {/* Optional UTR */}
-                      <div className="w-full text-left border-t border-zinc-200 dark:border-zinc-700 pt-3 mt-1">
-                        <label className="block text-[11px] font-bold uppercase mb-1 text-zinc-800 dark:text-zinc-200">
-                          Transaction ID / UTR <span className="text-zinc-400 font-normal">(ঐচ্ছিক)</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={transactionId}
-                          onChange={e => setTransactionId(e.target.value)}
-                          placeholder="e.g. 412345678901 বা UPI Ref No."
-                          className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-white dark:bg-zinc-800 p-2 text-xs focus:outline-none font-mono dark:text-white"
-                        />
-                      </div>
-
-                      {/* Optional Screenshot */}
-                      <div className="w-full text-left mt-2.5">
-                        <label className="block text-[11px] font-bold uppercase mb-1 text-zinc-800 dark:text-zinc-200">
-                          পেমেন্ট স্ক্রিনশট <span className="text-zinc-400 font-normal">(ঐচ্ছিক)</span>
-                        </label>
-                        {imagePreview ? (
-                          <div className="relative border-2 border-emerald-500 p-2 bg-emerald-50 dark:bg-emerald-950/20 text-center">
-                            <img src={imagePreview} alt="Proof" className="max-h-36 mx-auto border border-zinc-400" />
-                            <button
-                              type="button"
-                              onClick={() => { setProofImage(''); setImagePreview(''); }}
-                              className="mt-1 text-[10px] font-bold text-red-600 hover:underline block mx-auto"
-                            >
-                              ✕ মুছে ফেলুন
-                            </button>
-                            <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold">✅ স্ক্রিনশট যুক্ত হয়েছে</span>
-                          </div>
-                        ) : (
-                          <label className="cursor-pointer block border-2 border-dashed border-zinc-400 dark:border-zinc-600 p-2.5 text-center hover:bg-yellow-50 dark:hover:bg-zinc-800 transition-colors">
-                            <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300">📷 স্ক্রিনশট আপলোড করুন</span>
-                            <span className="block text-[9px] text-zinc-400 mt-0.5">JPG, PNG — Max 10MB</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={handleImageUpload}
-                              className="hidden"
-                            />
-                          </label>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()
-              ) : (
-                <div className="text-red-500 font-bold text-xs bg-red-100 p-2 w-full border border-red-500">
-                  ⚠️ Admin UPI ID কনফিগার করা নেই।
+          {settings.paymentMethod === 'gateway' ? (
+             <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-950/20 border-2 border-yellow-600 flex flex-col justify-center items-center gap-3 text-center mt-2 w-full text-zinc-900 dark:text-yellow-100">
+                <h4 className="font-black text-yellow-800 dark:text-yellow-400 uppercase text-sm tracking-wide">Automated Gateway Checkout</h4>
+                <p className="text-xs font-bold text-yellow-700 dark:text-yellow-300">Fast & Secure Payments via Cards, UPI (GPay, PhonePe, Paytm), Netbanking, and Wallets. Instantly unlocks features!</p>
+                <div className="mt-2 text-[10px] font-bold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-2 py-1 uppercase tracking-widest animate-pulse">
+                   ⚡ Instant Auto-Approval
                 </div>
-              )}
-            </div>
+             </div>
+          ) : settings.paymentMethod === 'proof_upload' ? (
+              <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
+                 <div className="text-xs font-bold uppercase mb-3 dark:text-yellow-100">📸 Upload Payment Screenshot</div>
+                 
+                 {settings.adminUpiId && (
+                    <div className="mb-3 w-full">
+                       <div className="text-[10px] text-zinc-500 mb-1">Pay to this UPI ID first:</div>
+                       <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 dark:border-zinc-600 select-all bg-zinc-50 dark:bg-zinc-800">{settings.adminUpiId}</div>
+                       <button 
+                         type="button"
+                         onClick={() => {
+                            navigator.clipboard.writeText(settings.adminUpiId);
+                            window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'UPI ID copied!' }));
+                         }}
+                         className="mt-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                       >
+                         📋 Copy UPI ID
+                       </button>
+                    </div>
+                 )}
+
+                 <div className="w-full border-t-2 border-zinc-200 dark:border-zinc-700 pt-3 mt-1">
+                    {imagePreview ? (
+                       <div className="relative mb-3">
+                          <img src={imagePreview} alt="Payment proof" className="max-h-48 mx-auto border-2 border-emerald-500 shadow-[3px_3px_0px_0px_rgba(16,185,129,1)]" />
+                          <button
+                            type="button"
+                            onClick={() => { setProofImage(''); setImagePreview(''); }}
+                            className="absolute top-1 right-1 bg-red-500 text-white p-1 text-xs font-bold hover:bg-red-600"
+                          >
+                            ✕ Remove
+                          </button>
+                          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">✅ Screenshot attached</div>
+                       </div>
+                    ) : (
+                       <label className="cursor-pointer block">
+                          <div className="border-2 border-dashed border-zinc-400 dark:border-zinc-600 p-6 hover:border-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-colors">
+                             <div className="text-3xl mb-2">📷</div>
+                             <div className="text-xs font-bold text-zinc-600 dark:text-zinc-400">Tap to upload payment screenshot</div>
+                             <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">JPG, PNG — Max 10MB</div>
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleImageUpload}
+                            className="hidden"
+                          />
+                       </label>
+                    )}
+                 </div>
+
+                 <div className="w-full mt-3">
+                    <label className="block text-[10px] font-bold uppercase text-left mb-1 dark:text-yellow-100">Transaction ID / UTR Number</label>
+                    <input
+                       type="text"
+                       value={transactionId}
+                       onChange={e => setTransactionId(e.target.value)}
+                       placeholder="e.g. 412345678901 or UPI Ref No."
+                       className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-mono dark:text-white"
+                    />
+                 </div>
+              </div>
+           ) : (
+             <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
+                <div className="text-xs font-bold uppercase mb-2 dark:text-yellow-100">Scan to Pay via UPI</div>
+                {settings.adminUpiId ? (
+                   (() => {
+                      const upiId = (settings.adminUpiId || '').trim();
+                      const am = Number(calculatedAmount || 500).toFixed(2);
+                      const tn = encodeURIComponent(`Tuition Fee`);
+                      const pn = encodeURIComponent('Tutor');
+                      const genericUpi = `upi://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`;
+                      return (
+                         <>
+                            <div className="bg-white p-2 border-2 border-zinc-900 inline-block mb-2">
+                               <QRCodeSVG value={genericUpi} size={120} />
+                             </div>
+                             <div className="text-[10px] font-bold opacity-70 dark:text-yellow-100 mb-2">{settings.adminUpiId}</div>
+                             
+                             <p className="text-xs font-bold text-zinc-500 mt-2 mb-2">OR PAY USING APP</p>
+                             <div className="flex flex-wrap justify-center gap-2 mb-2 w-full">
+                                <a href={genericUpi} className="px-3 py-1.5 bg-purple-600 text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">PhonePe / App</a>
+                                <a href={`tez://upi/pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-white text-zinc-900 border-2 border-zinc-200 font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1"><span className="text-blue-500 font-black">G</span>Pay</a>
+                                <a href={`paytmmp://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-[#00b9f1] text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">Paytm</a>
+                                <a href={genericUpi} className="px-3 py-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold text-xs hover:-translate-y-0.5 transition-transform">Any UPI</a>
+                             </div>
+                             
+                             {!settings.adminUpiId.includes('@') && (
+                                <div className="mt-2 text-red-600 dark:text-red-400 text-[10px] bg-red-100 dark:bg-red-900/30 p-2 font-bold text-justify">
+                                   Warning: The configured UPI ID "{settings.adminUpiId}" appears to be a regular phone number. It MUST include an "@" suffix (e.g. @ybl, @okaxis) for direct payment links to work. If apps crash, this is why!
+                                </div>
+                             )}
+                             
+                             <div className="mt-4 border-t-2 border-zinc-200 dark:border-zinc-800 pt-4 w-full">
+                                <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">UPI links not working or failing?</p>
+                                <p className="text-[10px] mt-1 text-zinc-500">You can copy the UPI ID below and paste it directly into your UPI app (like GPay, PhonePe, or Paytm):</p>
+                                <div className="flex items-center justify-center gap-2 mt-2">
+                                   <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 select-all">{upiId}</div>
+                                   <button 
+                                     onClick={(e) => {
+                                        e.preventDefault();
+                                        navigator.clipboard.writeText(upiId);
+                                        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'UPI ID copied to clipboard!' }));
+                                     }}
+                                     className="p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold text-xs uppercase"
+                                   >
+                                     Copy ID
+                                   </button>
+                                </div>
+                             </div>
+                         </>
+                      );
+                   })()
+                ) : (
+                   <div className="text-red-500 font-bold text-sm bg-red-100 p-3 w-full border border-red-500">
+                      ⚠️ Setup Required: Admin UPI ID is not configured.
+                   </div>
+                )}
+             </div>
           )}
 
+          <p className="text-sm font-medium mb-6 dark:text-yellow-100 text-center px-2">After completing the payment via UPI, explicitly select your paid month(s) and submit details to notify the administrator.</p>
+          
           {paymentSuccess && (
             <div className="mb-4 bg-emerald-100 dark:bg-emerald-900/30 border-2 border-emerald-600 p-4 text-emerald-800 dark:text-emerald-400 font-bold uppercase text-xs flex items-center justify-center text-center shadow-[4px_4px_0px_0px_rgba(5,150,105,1)]">
-              ✅ পেমেন্ট রিকোয়েস্ট জমা হয়েছে! শিক্ষক শীঘ্রই যাচাই করবেন।
+              ✅ Payment request submitted! Admin will verify shortly.
             </div>
           )}
 
@@ -2333,22 +2476,33 @@ export function StudentPayments() {
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-zinc-500 mt-2 font-bold italic">টিপ: একাধিক মাস ক্রমান্বয়ে নির্বাচন করতে ক্লিক করুন।</p>
+                <p className="text-[10px] text-zinc-500 mt-2 font-bold italic">Tip: Click to toggle selections for multiple adjacent months.</p>
              </div>
-             <div className="bg-white dark:bg-zinc-900 p-4 border-2 border-zinc-900 dark:border-zinc-100 dark:text-white">
-                <label className="block text-xs font-bold uppercase mb-1">মোট প্রদেয় ফি (₹)</label>
-                <div className="w-full border-b-2 border-zinc-200 dark:border-zinc-700 p-2 bg-transparent text-2xl font-black text-center">
-                  ₹{calculatedAmount}
-                </div>
-             </div>
-             
-             <button
-               type="submit"
-               disabled={submitting || selectedMonths.length === 0}
-               className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)]"
-             >
-               {submitting ? 'অনুরোধ পাঠানো হচ্ছে...' : `পেমেন্ট রিকোয়েস্ট পাঠান (₹${calculatedAmount})`}
-             </button>
+            <div className="bg-white dark:bg-zinc-900 p-4 border-2 border-zinc-900 dark:border-zinc-100 dark:text-white">
+               <label className="block text-xs font-bold uppercase mb-1">Total Amount Paid (₹)</label>
+               <div className="w-full border-b-2 border-zinc-200 dark:border-zinc-700 p-2 bg-transparent text-2xl font-black text-center">
+                 ₹{calculatedAmount}
+               </div>
+            </div>
+            
+            {settings.paymentMethod === 'gateway' ? (
+              <button 
+                type="button" 
+                onClick={handleRazorpayCheckout}
+                disabled={submitting || selectedMonths.length === 0} 
+                className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2"
+              >
+                {submitting ? 'Initializing Checkout...' : `Pay ₹${calculatedAmount} via Razorpay`}
+              </button>
+            ) : settings.paymentMethod === 'proof_upload' ? (
+               <button type="submit" disabled={submitting || selectedMonths.length === 0 || !proofImage || !transactionId.trim()} className="mt-2 bg-emerald-600 text-white font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-emerald-800 disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2">
+                 {submitting ? 'Uploading Proof...' : `📸 Submit Proof for ₹${calculatedAmount}`}
+               </button>
+             ) : (
+               <button type="submit" disabled={submitting || selectedMonths.length === 0} className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0">
+                 {submitting ? 'Submitting...' : 'Submit to Admin'}
+               </button>
+             )}
           </form>
           </>
           )}
@@ -2368,26 +2522,22 @@ export function StudentPayments() {
                   No payment history found.
                 </div>
               )}
-              {payments.map((payment) => (
+              {payments.map((payment, idx) => (
                 <div key={payment.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 border-2 border-zinc-200 dark:border-zinc-800 gap-4">
                   <div>
                     <h4 className="font-black text-lg uppercase text-zinc-900 dark:text-zinc-100">Fee for {payment.month}</h4>
                     <div className="text-zinc-600 dark:text-zinc-400 font-bold text-xs mt-1">
-                      Submitted on: {formatDateTimeSafe(payment.createdAt)}
+                      Received on: {formatDateTimeSafe(payment.createdAt)}
                     </div>
                     <div className="text-zinc-500 font-bold font-mono mt-1 text-sm">Amount: ₹{payment.amount}</div>
-                    <div className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 mt-0.5">
-                      পদ্ধতি: {(payment as any).paidVia === 'cash' || (payment as any).paymentMode === 'cash' ? '💵 Cash (নগদ)' : '📱 UPI'}
-                    </div>
                     {(payment as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">TXN ID: {(payment as any).transactionId}</div>}
-                    {(payment as any).proofImage && <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">📸 Proof Attached</div>}
+                    {(payment as any).paymentMode === 'proof_upload' && <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">📸 Proof Uploaded</div>}
                   </div>
-                  <div className="text-right">
+                  <div>
                     {payment.status === 'pending' && <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold uppercase rounded-full border-2 border-yellow-200">Pending Review</span>}
                     {payment.status === 'approved' && <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold uppercase rounded-full border-2 border-emerald-200">Approved</span>}
                     {payment.status === 'rejected' && <span className="px-3 py-1 bg-red-100 text-red-800 text-xs font-bold uppercase rounded-full border-2 border-red-200">Rejected</span>}
-                    {payment.remarks && <div className="text-xs text-red-600 dark:text-red-400 mt-2 font-black italic">কারণ: {payment.remarks}</div>}
-                    {(payment as any).decidedAt && <div className="text-[10px] text-zinc-500 mt-1">তারিখ: {formatDateTimeSafe((payment as any).decidedAt)}</div>}
+                    {payment.remarks && <div className="text-[10px] text-red-600 dark:text-red-400 mt-2 font-black italic flex justify-end">Reason: {payment.remarks}</div>}
                   </div>
                 </div>
               ))}

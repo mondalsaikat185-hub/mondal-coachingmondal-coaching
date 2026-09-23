@@ -13,7 +13,9 @@ export function AdminSettings() {
   const [settings, setSettings] = useState({
     adminUpiId: '',
     enablePaymentSystem: true,
-    paymentMethod: 'manual'
+    paymentMethod: 'manual',
+    razorpayKeyId: '',
+    razorpayKeySecret: ''
   });
 
   const [healing, setHealing] = useState(false);
@@ -61,7 +63,9 @@ export function AdminSettings() {
         setSettings({
           adminUpiId: data.adminUpiId || '',
           enablePaymentSystem: data.enablePaymentSystem !== false,
-          paymentMethod: data.paymentMethod || 'manual'
+          paymentMethod: data.paymentMethod || 'manual',
+          razorpayKeyId: data.razorpayKeyId || '',
+          razorpayKeySecret: data.razorpayKeySecret || ''
         });
       } catch (err) {
         console.error("Failed to load settings:", err);
@@ -80,7 +84,9 @@ export function AdminSettings() {
       await api.saveSettings({
         adminUpiId: settings.adminUpiId,
         enablePaymentSystem: settings.enablePaymentSystem,
-        paymentMethod: settings.paymentMethod
+        paymentMethod: settings.paymentMethod,
+        razorpayKeyId: settings.razorpayKeyId,
+        razorpayKeySecret: settings.razorpayKeySecret
       });
       await api.saveAnnouncement(announcement);
       clearCache('settings_general'); // Invalidate cache so next read gets fresh data
@@ -128,6 +134,22 @@ export function AdminSettings() {
             <p className="text-xs text-zinc-500 pl-8">If disabled, the payment options will be hidden for students.</p>
 
             <div className={`space-y-4 pl-8 opacity-${settings.enablePaymentSystem ? '100' : '50'}`}>
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase">Payment Method</label>
+                <select
+                  value={settings.paymentMethod}
+                  onChange={e => setSettings({...settings, paymentMethod: e.target.value})}
+                  disabled={!settings.enablePaymentSystem}
+                  className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-bold"
+                >
+                <option value="manual" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Manual UPI Scan & Admin Review</option>
+                  <option value="proof_upload" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Payment Proof Upload (Screenshot + TXN ID)</option>
+                  <option value="gateway" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Automated Razorpay Payment Gateway (Instant Approval)</option>
+                </select>
+                <p className="text-xs text-zinc-500">Choose: Manual UPI scan, Screenshot proof upload, or Razorpay instant checkout.</p>
+              </div>
+
+              {settings.paymentMethod !== 'gateway' ? (
                 <div className="space-y-2">
                   <label className="block text-xs font-bold uppercase">Your UPI ID (For Scan to Pay)</label>
                   <input 
@@ -138,10 +160,40 @@ export function AdminSettings() {
                     disabled={!settings.enablePaymentSystem}
                     className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none"
                   />
-                  <p className="text-xs text-zinc-500">Students will use this UPI ID to make fee payments via QR / Apps.</p>
+                  <p className="text-xs text-zinc-500">Students will use this UPI ID to make fee payments.</p>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 p-4">
+                  <div className="text-xs font-black uppercase text-yellow-600 dark:text-yellow-400">Razorpay API Credentials (Test or Live)</div>
+                  
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-bold uppercase">Razorpay Key ID</label>
+                    <input 
+                      type="text" 
+                      value={settings.razorpayKeyId} 
+                      onChange={e => setSettings({...settings, razorpayKeyId: e.target.value})}
+                      placeholder="rzp_test_xxxxxxxxxxxxxx"
+                      disabled={!settings.enablePaymentSystem}
+                      className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-bold uppercase">Razorpay Key Secret</label>
+                    <input 
+                      type="password" 
+                      value={settings.razorpayKeySecret} 
+                      onChange={e => setSettings({...settings, razorpayKeySecret: e.target.value})}
+                      placeholder="••••••••••••••••••••••••"
+                      disabled={!settings.enablePaymentSystem}
+                      className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-mono"
+                    />
+                    <p className="text-[10px] text-zinc-500">Your key credentials are securely stored in the Google Apps Script script properties.</p>
+                  </div>
+                </div>
+              )}
             </div>
+          </div>
 
           <div className="pt-4 border-t-2 border-zinc-200 dark:border-zinc-800">
              <button type="submit" disabled={saving} className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-sm px-6 py-3 hover:-translate-y-0.5 transition-transform border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] hover:shadow-[6px_6px_0px_0px_rgba(161,161,170,1)] flex items-center gap-2">

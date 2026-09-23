@@ -572,7 +572,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     }
   };
 
-  const isBilingual = exam.examType?.includes('Bilingual') || exam.examType?.includes('Reasoning') || exam.examType?.includes('Math') || exam.examType?.includes('GK') || questions.some((q: any) => (q.question_bn && q.question_en) || (q.options_bn?.length > 0 && q.options_en?.length > 0));
+  const isBilingual = exam.examType?.includes('Bilingual') || exam.examType?.includes('Reasoning') || exam.examType?.includes('Math') || exam.examType?.includes('GK');
 
   // Swipe and Drag gesture handling
   let touchStartX = 0;

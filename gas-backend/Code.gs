@@ -1709,71 +1709,23 @@ function apiGetPayments(session) {
   }
 }
 
-function apiSubmitPaymentRequest(paymentData, session) {
+function apiAddPayment(paymentData) {
   try {
-    if (!session || !session.userId) {
-      return { success: false, error: "Unauthorized access: Valid session required", code: 401 };
-    }
+    var saved = saveRow("payments", paymentData);
     
-    var users = readSheet("users");
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (String(users[i].id) === String(session.userId)) {
-        user = users[i];
-        break;
-      }
-    }
-    var studentName = (user && (user.fullName || user.name)) || session.name || "Student";
-    var studentEmail = (user && user.email) || "";
+    // αªçαªëαª£αª╛αª░αºçαª░ αªùαºìαª▓αºïαª¼αª╛αª▓ αª¬αºçαª«αºçαª¿αºìαªƒ αª╕αºìαªƒαºìαª»αª╛αªƒαª╛αª╕ αªåαª¬αªíαºçαªƒ αªòαª░αª╛
+    updateRow("users", paymentData.studentId, { paymentStatus: paymentData.status });
     
-    var monthStr = String(paymentData.month || "").trim();
-    if (!monthStr) {
-      return { success: false, error: "Month selection is required" };
-    }
-    var amountNum = Number(paymentData.amount) || 0;
-    if (amountNum <= 0) {
-      return { success: false, error: "Valid amount is required" };
-    }
-    
-    var paidVia = String(paymentData.paidVia || paymentData.paymentMode || "upi").toLowerCase().trim();
-    if (paidVia !== "cash" && paidVia !== "upi") {
-      paidVia = "upi";
-    }
-
-    // Saikat's Rule: Initial status is ALWAYS pending
-    var newPayment = {
-      id: "pay_" + Utilities.getUuid().substring(0, 8),
-      studentId: session.userId,
-      studentName: studentName,
-      studentEmail: studentEmail,
-      month: monthStr,
-      amount: amountNum,
-      status: "pending",
-      paidVia: paidVia,
-      paymentMode: paidVia,
-      transactionId: paymentData.transactionId ? String(paymentData.transactionId).trim() : "",
-      proofImage: paymentData.proofImage ? String(paymentData.proofImage).trim() : "",
-      remarks: paymentData.remarks ? String(paymentData.remarks).trim() : "",
-      createdAt: new Date().toISOString()
-    };
-    
-    var saved = saveRow("payments", newPayment);
     return { success: true, data: saved };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
 }
 
-function apiAddPayment(paymentData) {
-  return { 
-    success: false, 
-    error: "Direct payment creation is permanently disabled. All payments must originate from student requests.", 
-    code: 403 
-  };
-}
-
 function apiUpdatePaymentStatus(paymentId, status, remarks) {
   try {
+    // updateRow() শুধু updateObj return করে (partial), studentId থাকে না
+    // তাই আগে payment record পড়ে studentId বের করতে হবে
     var payments = readSheet("payments");
     var payment = null;
     for (var i = 0; i < payments.length; i++) {
@@ -1783,54 +1735,15 @@ function apiUpdatePaymentStatus(paymentId, status, remarks) {
       }
     }
 
-    if (!payment) {
-      return { success: false, error: "Payment record not found", code: 404 };
+    var updateObj = { status: status };
+    if (remarks !== undefined && remarks !== null) {
+      updateObj.remarks = remarks;
     }
-
-    // Saikat's Rule 4: Only 'pending' -> 'approved' or 'pending' -> 'rejected' allowed
-    var currentStatus = String(payment.status || '').toLowerCase().trim();
-    var targetStatus = String(status || '').toLowerCase().trim();
-
-    if (currentStatus !== 'pending') {
-      return { 
-        success: false, 
-        error: "অননুমোদিত স্ট্যাটাস পরিবর্তন: শুধুমাত্র pending পেমেন্ট গ্রহণ (approved) বা বাতিল (rejected) করা যায়। বর্তমান স্ট্যাটাস: " + payment.status,
-        code: 400 
-      };
-    }
-
-    if (targetStatus !== 'approved' && targetStatus !== 'rejected') {
-      return {
-        success: false,
-        error: "Invalid target status: Must be 'approved' or 'rejected'",
-        code: 400
-      };
-    }
-
-    // Saikat's Rule 4: Rejection reason (remarks) is mandatory when rejecting
-    var trimmedRemarks = remarks ? String(remarks).trim() : '';
-    if (targetStatus === 'rejected' && !trimmedRemarks) {
-      return {
-        success: false,
-        error: "পেমেন্ট বাতিল করার কারণ (Remarks) দেওয়া বাধ্যতামূলক।",
-        code: 400
-      };
-    }
-
-    var decidedAt = new Date().toISOString();
-    var updateObj = { 
-      status: targetStatus,
-      decidedAt: decidedAt
-    };
-    if (trimmedRemarks) {
-      updateObj.remarks = trimmedRemarks;
-    }
-
     var updated = updateRow("payments", paymentId, updateObj);
 
-    // Update student payment status when approved
-    if (payment && payment.studentId && targetStatus === 'approved') {
-      updateRow("users", payment.studentId, { paymentStatus: 'paid' });
+    // এখন সঠিকভাবে studentId পেয়ে user record আপডেট করা যাবে
+    if (payment && payment.studentId) {
+      updateRow("users", payment.studentId, { paymentStatus: status });
     }
 
     return { success: true, data: updated };
@@ -2091,21 +2004,14 @@ function apiSaveAnnouncement(message) {
   }
 }
 
-function apiGetSettings(session) {
+function apiGetSettings() {
   try {
     var props = PropertiesService.getScriptProperties();
     var saved = props.getProperty("appSettings");
-    var data = { adminUpiId: "mondal.saikat185@okaxis", enablePaymentSystem: true };
     if (saved) {
-      try {
-        data = JSON.parse(saved);
-      } catch(e) {}
+      return { success: true, data: JSON.parse(saved) };
     }
-    // NEVER expose private secret keys to public or non-admin callers
-    if (!session || session.role !== 'admin') {
-      delete data.razorpayKeySecret;
-    }
-    return { success: true, data: data };
+    return { success: true, data: { adminUpiId: "mondal.saikat185@okaxis", enablePaymentSystem: true } };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -2121,12 +2027,99 @@ function apiSaveSettings(settings) {
   }
 }
 
-function apiVerifyGatewayPayment() {
-  return { 
-    success: false, 
-    error: "Payment gateway is permanently disabled. Please submit payment request via UPI or Cash.", 
-    code: 403 
-  };
+function apiVerifyGatewayPayment(paymentId, months, amount, studentId, sessionCtx) {
+  try {
+    if (sessionCtx && sessionCtx.role !== 'admin') {
+      studentId = sessionCtx.userId;
+    }
+    var props = PropertiesService.getScriptProperties();
+    var savedSettings = props.getProperty("appSettings");
+    var keyId = "";
+    var keySecret = "";
+    if (savedSettings) {
+      var parsed = JSON.parse(savedSettings);
+      keyId = parsed.razorpayKeyId || "";
+      keySecret = parsed.razorpayKeySecret || "";
+    }
+
+    // Default standard Sandbox key if admin has not configured their own keys
+    if (!keyId) {
+      keyId = "rzp_test_mX3qXFv3Xv9Xv9";
+    }
+
+    var isVerified = false;
+    if (keySecret) {
+      try {
+        var authString = keyId + ":" + keySecret;
+        var headers = {
+          "Authorization": "Basic " + Utilities.base64Encode(authString)
+        };
+        var options = {
+          "method": "get",
+          "headers": headers,
+          "muteHttpExceptions": true
+        };
+        var response = UrlFetchApp.fetch("https://api.razorpay.com/v1/payments/" + paymentId, options);
+        var responseCode = response.getResponseCode();
+        var responseBody = response.getContentText();
+        
+        if (responseCode === 200) {
+          var paymentData = JSON.parse(responseBody);
+          if (paymentData.status === 'captured' || paymentData.status === 'authorized') {
+            isVerified = true;
+          }
+        }
+      } catch (e) {
+        Logger.log("Razorpay fetch error: " + e.toString());
+      }
+    } else {
+      // Sandbox/Test mode fallback: if no keySecret is configured, approve the mock checkout instantly
+      isVerified = true;
+    }
+
+    if (!isVerified) {
+      return { success: false, error: "Razorpay verification failed (Payment not captured or unauthorized)" };
+    }
+
+    // 1. Create approved payment record in the sheet
+    var paymentRecord = {
+      id: "pay_" + Utilities.getUuid().substring(0, 8),
+      studentId: studentId,
+      month: months,
+      amount: Number(amount) || 0,
+      status: "approved",
+      transactionId: paymentId,
+      paidDate: new Date().toISOString(),
+      createdAt: new Date().toISOString()
+    };
+    saveRow("payments", paymentRecord);
+
+    // 2. Fetch student details and decrement pendingMonths
+    var users = readSheet("users");
+    var user = null;
+    for (var i = 0; i < users.length; i++) {
+      if (String(users[i].id) === String(studentId)) {
+        user = users[i];
+        break;
+      }
+    }
+
+    if (user) {
+      var count = months.split(',').length;
+      var currentPending = Number(user.pendingMonths) || 0;
+      var newPending = Math.max(0, currentPending - count);
+      
+      updateRow("users", studentId, {
+        paymentStatus: "approved",
+        pendingMonths: newPending,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
 }
 
 function apiUploadFileToDrive(base64Data, fileName, folderId) {
@@ -2200,6 +2193,7 @@ function doPost(e) {
       "apiShareLibraryItem",
       "apiUpdateLibrarySequences",
       "apiUploadFileToDrive",
+      "apiAddPayment",
       "apiUpdatePaymentStatus",
       "apiUpdatePaymentAmount",
       "apiDeleteExamResult",
@@ -2275,7 +2269,6 @@ function doPost(e) {
 
     // Append session to handlers that need server-side scoping & anti-spoofing
     var ACTIONS_NEEDING_SESSION = [
-      "apiGetSettings",
       "apiGetPayments",
       "apiGetAttendance",
       "apiGetExamResults",
@@ -2285,7 +2278,7 @@ function doPost(e) {
       "apiGetMyProfile",
       "apiJoinExamSession",
       "apiSubmitExamResult",
-      "apiSubmitPaymentRequest"
+      "apiVerifyGatewayPayment"
     ];
 
     if (ACTIONS_NEEDING_SESSION.indexOf(action) !== -1) {
