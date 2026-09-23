@@ -1146,15 +1146,48 @@ function apiGetLibrary() {
 
 function apiGetLibraryItemDetails(itemId) {
   try {
-    var list = readSheet("library");
-    var foundItem = null;
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].id === itemId) {
-        foundItem = list[i];
+    var sheet = getSheet("library");
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { success: false, error: "Item not found" };
+
+    var lastCol = sheet.getLastColumn();
+    if (lastCol === 0) return { success: false, error: "Item not found" };
+
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+    // Find 1-based column index for "id"
+    var idColIndex = -1;
+    for (var c = 0; c < headers.length; c++) {
+      if (String(headers[c]).trim().toLowerCase() === "id") {
+        idColIndex = c + 1;
         break;
       }
     }
-    if (!foundItem) return { success: false, error: "Item not found" };
+    if (idColIndex === -1) return { success: false, error: "id column not found" };
+
+    // Find row by exact match in id column
+    var finder = sheet.getRange(2, idColIndex, lastRow - 1, 1).createTextFinder(String(itemId)).matchEntireCell(true);
+    var match = finder.findNext();
+    if (!match) return { success: false, error: "Item not found" };
+
+    var rowNum = match.getRow();
+    var rowValues = sheet.getRange(rowNum, 1, 1, lastCol).getValues()[0];
+    var displayValues = sheet.getRange(rowNum, 1, 1, lastCol).getDisplayValues()[0];
+
+    var foundItem = {};
+    for (var c = 0; c < headers.length; c++) {
+      var headerKey = headers[c];
+      var val = rowValues[c];
+      if (val instanceof Date) {
+        if (isDateField(headerKey)) {
+          foundItem[headerKey] = val.toISOString();
+        } else {
+          foundItem[headerKey] = displayValues[c];
+        }
+      } else {
+        foundItem[headerKey] = val;
+      }
+    }
 
     // Resolve large strings for this specific item
     if (typeof foundItem.quizData === 'string' && foundItem.quizData.indexOf("gdrive_file_id:") === 0) {
@@ -1163,12 +1196,12 @@ function apiGetLibraryItemDetails(itemId) {
     if (typeof foundItem.contentUrl === 'string' && foundItem.contentUrl.indexOf("gdrive_file_id:") === 0) {
       foundItem.contentUrl = readLargeString(foundItem.contentUrl);
     }
-    
+
     foundItem.isFolder = foundItem.isFolder === true || foundItem.isFolder === "true";
     foundItem.isEncrypted = foundItem.isEncrypted === true || foundItem.isEncrypted === "true";
     foundItem.isChunked = foundItem.isChunked === true || foundItem.isChunked === "true";
     if (foundItem.chunkCount) foundItem.chunkCount = Number(foundItem.chunkCount);
-    
+
     return { success: true, data: foundItem };
   } catch (err) {
     return { success: false, error: err.toString() };
