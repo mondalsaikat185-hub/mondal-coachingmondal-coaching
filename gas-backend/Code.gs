@@ -666,26 +666,9 @@ function apiHealStudentIds() {
 }
 
 
-function apiSaveUser(userData, session) {
+function apiSaveUser(userData) {
   try {
     var users = readSheet("users");
-    // Role checks
-    if (session && session.role !== 'admin') {
-      if (userData.id && String(userData.id).trim() !== String(session.userId).trim()) {
-        return { success: false, error: "Forbidden: Cannot update profile of another user", code: 403 };
-      }
-      // Students cannot change administrative/privileged properties
-      delete userData.role;
-      delete userData.status;
-      delete userData.paymentStatus;
-      delete userData.monthlyFee;
-      delete userData.pendingMonths;
-      delete userData.batchId;
-      delete userData.passcode;
-      delete userData.reapplyReason;
-      delete userData.exemptReason;
-      delete userData.excusedDates;
-    }
     // αªÜαºçαªò αªòαª░αºï αªàαª▓αª░αºçαªíαª┐ αªÅαªç αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαª┐αºƒαºç αªçαªëαª£αª╛αª░ αªåαª¢αºç αªòαª┐ αª¿αª╛
     var existingUser = null;
     if (userData.id) {
@@ -700,17 +683,6 @@ function apiSaveUser(userData, session) {
     }
     
     if (existingUser) {
-      if (session && session.role !== 'admin') {
-        if (String(existingUser.id).trim() !== String(session.userId).trim()) {
-          return { success: false, error: "Forbidden: Cannot update profile of another user", code: 403 };
-        }
-      }
-      if (session && session.role === 'admin') {
-        if ((userData.batchId && userData.batchId !== existingUser.batchId) ||
-            (userData.status && userData.status !== existingUser.status)) {
-          revokeUserSessions(existingUser.id);
-        }
-      }
       // যদি আগে থেকেই user আছে, just profile আপডেট বা re-apply আপডেট করো
       // CRITICAL BUG FIX: কখনো existingUser-এর 'id' overwrite করবে না!
       // পুরনো code: updateRow("users", existingUser.id, userData) — এটা userData.id (নতুন mockUid)
@@ -843,10 +815,6 @@ function apiUpdateUserStatus(userId, status, rejectReason) {
       updates.rejectReason = rejectReason;
     }
     var updated = updateRow("users", userId, updates);
-    
-    // Revoke all sessions for this user on status update
-    revokeUserSessions(userId);
-
     return { success: true, data: updated };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -864,14 +832,8 @@ function apiUpdateUserPasscode(userId, passcode) {
 }
 
 // --- ≡ƒöÉ PASSCODE CHANGE (logged-in user) ---
-function apiChangePasscode(userId, currentPasscode, newPasscode, session) {
+function apiChangePasscode(userId, currentPasscode, newPasscode) {
   try {
-    if (session && session.role !== 'admin') {
-      if (String(userId).trim() !== String(session.userId).trim()) {
-        return { success: false, error: "অননুমোদিত অ্যাকশন: অন্যের পাসকোড পরিবর্তন করা যাবে না (Forbidden: Cannot change passcode of another user)", code: 403 };
-      }
-      userId = session.userId;
-    }
     var users = readSheet("users");
     var user = users.find(function(u) { return String(u.id) === String(userId); });
     if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
@@ -1017,184 +979,6 @@ function apiCheckApplicationStatus(phone) {
   }
 }
 
-
-// =========================================================================
-// 🔐 SESSION MANAGEMENT & SECURITY TOKENS (Phase 4B Architecture)
-// =========================================================================
-
-function generateSessionToken() {
-  return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
-}
-
-function computeTokenHash(token) {
-  var rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, token, Utilities.Charset.UTF_8);
-  var hex = "";
-  for (var i = 0; i < rawHash.length; i++) {
-    var byteVal = rawHash[i];
-    if (byteVal < 0) byteVal += 256;
-    var byteHex = byteVal.toString(16);
-    if (byteHex.length === 1) hex += "0";
-    hex += byteHex;
-  }
-  return hex;
-}
-
-function createSession(user) {
-  var token = generateSessionToken();
-  var tokenHash = computeTokenHash(token);
-  var now = new Date();
-  var expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
-  
-  var sessionData = {
-    tokenHash: tokenHash,
-    userId: String(user.id),
-    role: user.role || 'student',
-    batchId: String(user.batchId || ''),
-    name: user.name || '',
-    phone: cleanPhone(user.phone),
-    createdAt: now.toISOString(),
-    expiresAt: expiresAt
-  };
-
-  // 1. In-memory cache for fast lookup (<5ms, TTL 6 hours = 21600 seconds)
-  try {
-    var cache = CacheService.getScriptCache();
-    cache.put("sess_" + tokenHash, JSON.stringify(sessionData), 21600);
-  } catch (e) {
-    Logger.log("Failed to cache session: " + e.toString());
-  }
-
-  // 2. Persistent storage in Google Sheet (sessions)
-  try {
-    ensureSheetHeaders("sessions", ["tokenHash", "userId", "role", "batchId", "name", "phone", "createdAt", "expiresAt"]);
-    saveRow("sessions", sessionData);
-  } catch (e) {
-    Logger.log("Failed to save session to sheet: " + e.toString());
-  }
-
-  user.sessionToken = token;
-  return user;
-}
-
-function validateSessionToken(token) {
-  if (!token || typeof token !== 'string') return null;
-  var tokenHash = computeTokenHash(token);
-  
-  // 1. Try CacheService
-  try {
-    var cache = CacheService.getScriptCache();
-    var cachedStr = cache.get("sess_" + tokenHash);
-    if (cachedStr) {
-      var sess = JSON.parse(cachedStr);
-      if (new Date(sess.expiresAt).getTime() > Date.now()) {
-        // Verify user is not suspended or deleted
-        var users = readSheet("users");
-        var user = users.find(function(u) { return String(u.id) === String(sess.userId); });
-        if (!user || user.status === 'suspended' || user.status === 'rejected') {
-          try { cache.remove("sess_" + tokenHash); } catch(e) {}
-          return null;
-        }
-        return sess;
-      }
-    }
-  } catch (e) {}
-
-  // 2. Fallback to sessions sheet
-  try {
-    ensureSheetHeaders("sessions", ["tokenHash", "userId", "role", "batchId", "name", "phone", "createdAt", "expiresAt"]);
-    var sessions = readSheet("sessions");
-    var found = sessions.find(function(s) {
-      return s.tokenHash === tokenHash;
-    });
-
-    if (!found) return null;
-
-    // Check expiration (30 days)
-    if (new Date(found.expiresAt).getTime() <= Date.now()) {
-      return null;
-    }
-
-    // Verify user is not suspended / deleted
-    var users = readSheet("users");
-    var user = users.find(function(u) { return String(u.id) === String(found.userId); });
-    if (!user || user.status === 'suspended' || user.status === 'rejected') {
-      return null;
-    }
-
-    found.role = user.role || found.role;
-    found.batchId = String(user.batchId || found.batchId);
-    found.name = user.name || found.name;
-
-    // Re-cache for 6 hours
-    try {
-      var cache = CacheService.getScriptCache();
-      cache.put("sess_" + tokenHash, JSON.stringify(found), 21600);
-    } catch (e) {}
-
-    return found;
-  } catch (e) {
-    Logger.log("validateSessionToken error: " + e.toString());
-    return null;
-  }
-}
-
-function revokeUserSessions(userId) {
-  try {
-    if (!userId) return;
-    var cache = CacheService.getScriptCache();
-    ensureSheetHeaders("sessions", ["tokenHash", "userId", "role", "batchId", "name", "phone", "createdAt", "expiresAt"]);
-    var sheet = getSheet("sessions");
-    var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return;
-
-    var lastCol = sheet.getLastColumn();
-    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function(h) { return String(h).trim(); });
-    var uIdx = headers.indexOf("userId");
-    var hashIdx = headers.indexOf("tokenHash");
-    if (uIdx === -1) return;
-
-    var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
-    var rowsToDelete = [];
-    for (var r = 0; r < values.length; r++) {
-      if (String(values[r][uIdx]).trim() === String(userId).trim()) {
-        if (hashIdx !== -1 && values[r][hashIdx]) {
-          try {
-            cache.remove("sess_" + String(values[r][hashIdx]).trim());
-          } catch(e) {}
-        }
-        rowsToDelete.push(r + 2);
-      }
-    }
-
-    for (var d = rowsToDelete.length - 1; d >= 0; d--) {
-      sheet.deleteRow(rowsToDelete[d]);
-    }
-    SpreadsheetApp.flush();
-  } catch (e) {
-    Logger.log("Failed to revoke sessions for " + userId + ": " + e.toString());
-  }
-}
-
-function apiGetMyProfile(session) {
-  try {
-    if (!session || !session.userId) {
-      return { success: false, error: "Session required", code: 401 };
-    }
-    var users = readSheet("users");
-    var user = users.find(function(u) { return String(u.id) === String(session.userId); });
-    if (!user) {
-      return { success: false, error: "User not found in database", code: 404 };
-    }
-    if (user.status === 'suspended' || user.status === 'rejected') {
-      return { success: false, error: "User is " + user.status, code: 403 };
-    }
-    createSession(user);
-    return { success: true, data: user };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
 function apiLoginUser(phone, passcode) {
   try {
     var users = readSheet("users");
@@ -1249,7 +1033,6 @@ function apiLoginUser(phone, passcode) {
       user.passcode = "saikat123";
     }
     
-    createSession(user);
     return { success: true, data: user };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1361,7 +1144,7 @@ function apiGetLibrary() {
   }
 }
 
-function apiGetLibraryItemDetails(itemId, session) {
+function apiGetLibraryItemDetails(itemId) {
   try {
     var list = readSheet("library");
     var foundItem = null;
@@ -1372,54 +1155,6 @@ function apiGetLibraryItemDetails(itemId, session) {
       }
     }
     if (!foundItem) return { success: false, error: "Item not found" };
-
-    // Authorization: If student, item must be assigned to student's batch
-    if (session && session.role !== 'admin') {
-      var studentBatchIds = String(session.batchId || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-      var isAssigned = false;
-      if (studentBatchIds.length > 0) {
-        var batches = readSheet("batches");
-        var studentBatches = batches.filter(function(b) {
-          return studentBatchIds.indexOf(String(b.id)) !== -1;
-        });
-
-        var assignedItemIds = {};
-        studentBatches.forEach(function(b) {
-          var map = {};
-          if (b.assignedItemsMap) {
-            try {
-              map = typeof b.assignedItemsMap === 'string' ? JSON.parse(b.assignedItemsMap) : b.assignedItemsMap;
-            } catch(e) {}
-          }
-          for (var k in map) {
-            assignedItemIds[k] = true;
-          }
-        });
-
-        var cur = foundItem;
-        var depth = 0;
-        while (cur && depth < 10) {
-          if (assignedItemIds[cur.id]) {
-            isAssigned = true;
-            break;
-          }
-          if (!cur.parentId) break;
-          var nextParent = null;
-          for (var j = 0; j < list.length; j++) {
-            if (list[j].id === cur.parentId) {
-              nextParent = list[j];
-              break;
-            }
-          }
-          cur = nextParent;
-          depth++;
-        }
-      }
-
-      if (!isAssigned) {
-        return { success: false, error: "Access denied: Item not assigned to your batch", code: 403 };
-      }
-    }
 
     // Resolve large strings for this specific item
     if (typeof foundItem.quizData === 'string' && foundItem.quizData.indexOf("gdrive_file_id:") === 0) {
@@ -1695,15 +1430,9 @@ function apiShareLibraryItem(itemId, batchIdsMap, scheduledStartTimeMap) {
 
 // --- ≡ƒÆ│ PAYMENTS ---
 
-function apiGetPayments(session) {
+function apiGetPayments() {
   try {
-    var all = readSheet("payments");
-    if (session && session.role !== 'admin') {
-      all = all.filter(function(p) {
-        return String(p.studentId).trim() === String(session.userId).trim();
-      });
-    }
-    return { success: true, data: all };
+    return { success: true, data: readSheet("payments") };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -1842,13 +1571,8 @@ function apiEndExamSession(sessionId) {
   }
 }
 
-function apiJoinExamSession(sessionId, userId, studentName, studentPhone, enteredCode, sessionCtx) {
+function apiJoinExamSession(sessionId, userId, studentName, studentPhone, enteredCode) {
   try {
-    if (sessionCtx && sessionCtx.role !== 'admin') {
-      userId = sessionCtx.userId;
-      studentName = sessionCtx.name || studentName;
-      studentPhone = sessionCtx.phone || studentPhone;
-    }
     var sessionsResponse = apiGetExamSessions();
     if (!sessionsResponse.success) return sessionsResponse;
     var session = sessionsResponse.data.find(function(s) { return s.id === sessionId; });
@@ -1886,11 +1610,8 @@ function apiJoinExamSession(sessionId, userId, studentName, studentPhone, entere
   }
 }
 
-function apiSubmitExamResult(resultData, sessionCtx) {
+function apiSubmitExamResult(resultData) {
   try {
-    if (sessionCtx && sessionCtx.role !== 'admin') {
-      resultData.studentId = sessionCtx.userId;
-    }
     var saved = saveRow("examResults", resultData);
     return { success: true, data: saved };
   } catch (err) {
@@ -1898,15 +1619,9 @@ function apiSubmitExamResult(resultData, sessionCtx) {
   }
 }
 
-function apiGetExamResults(session) {
+function apiGetExamResults() {
   try {
-    var all = readSheet("examResults");
-    if (session && session.role !== 'admin') {
-      all = all.filter(function(r) {
-        return String(r.studentId).trim() === String(session.userId).trim();
-      });
-    }
-    return { success: true, data: all };
+    return { success: true, data: readSheet("examResults") };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -1970,15 +1685,9 @@ function apiDeleteMultipleExamResults(resultIds) {
   }
 }
 
-function apiGetAttendance(session) {
+function apiGetAttendance() {
   try {
-    var all = readSheet("attendance");
-    if (session && session.role !== 'admin') {
-      all = all.filter(function(a) {
-        return String(a.studentId).trim() === String(session.userId).trim();
-      });
-    }
-    return { success: true, data: all };
+    return { success: true, data: readSheet("attendance") };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -2027,11 +1736,8 @@ function apiSaveSettings(settings) {
   }
 }
 
-function apiVerifyGatewayPayment(paymentId, months, amount, studentId, sessionCtx) {
+function apiVerifyGatewayPayment(paymentId, months, amount, studentId) {
   try {
-    if (sessionCtx && sessionCtx.role !== 'admin') {
-      studentId = sessionCtx.userId;
-    }
     var props = PropertiesService.getScriptProperties();
     var savedSettings = props.getProperty("appSettings");
     var keyId = "";
@@ -2152,12 +1858,12 @@ function apiUploadFileToDrive(base64Data, fileName, folderId) {
 }
 
 // =========================================================================
-// API ENDPOINT FOR VERCEL (doPost) - Multi-Tiered Security Engine (Phase 4B)
+// API ENDPOINT FOR VERCEL (doPost)
 // =========================================================================
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'No data provided', code: 400 }))
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'No data provided' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -2166,138 +1872,26 @@ function doPost(e) {
     var args = requestData.args || [];
     var token = requestData.token;
 
-    var func = (typeof this[action] === 'function') ? this[action] : (typeof globalThis !== 'undefined' && typeof globalThis[action] === 'function' ? globalThis[action] : null);
-    if (!action || !func) {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Invalid action: ' + action, code: 404 }))
+    // Security Check Layer
+    var SECURITY_TOKEN = "MondalCoachingSecureToken2026!";
+    if (token !== SECURITY_TOKEN) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Unauthorized access: Invalid or missing security token' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    var PUBLIC_ACTIONS = [
-      "apiLoginUser",
-      "apiRegisterUser",
-      "apiCheckApplicationStatus",
-      "apiSendOTP",
-      "apiVerifyOTPAndReset",
-      "apiGetSettings",
-      "apiGetBatches",
-      "apiGetAnnouncement"
-    ];
-
-    var ADMIN_ACTIONS = [
-      "apiGetUsers",
-      "apiSaveBatch",
-      "apiDeleteBatch",
-      "apiSaveLibraryItem",
-      "apiDeleteLibraryItem",
-      "apiDeleteMultipleLibraryItems",
-      "apiShareLibraryItem",
-      "apiUpdateLibrarySequences",
-      "apiUploadFileToDrive",
-      "apiAddPayment",
-      "apiUpdatePaymentStatus",
-      "apiUpdatePaymentAmount",
-      "apiDeleteExamResult",
-      "apiDeleteMultipleExamResults",
-      "apiCreateNotification",
-      "apiDeleteNotification",
-      "apiSaveAnnouncement",
-      "apiCreateExamSession",
-      "apiEndExamSession",
-      "apiGetExamSessions",
-      "apiSaveSettings",
-      "apiAdminResetPasscode",
-      "apiUpdateUserPasscode",
-      "apiUpdateUserStatus",
-      "apiDeleteUser",
-      "apiHealStudentIds",
-      "apiFixStudentId"
-    ];
-
-    var session = null;
-
-    // 1. Session verification for non-public endpoints
-    if (PUBLIC_ACTIONS.indexOf(action) === -1) {
-      if (!token) {
-        return ContentService.createTextOutput(JSON.stringify({ 
-          success: false, 
-          error: 'Unauthorized access: Missing session token', 
-          code: 401 
-        })).setMimeType(ContentService.MimeType.JSON);
-      }
-      session = validateSessionToken(token);
-      if (!session) {
-        return ContentService.createTextOutput(JSON.stringify({ 
-          success: false, 
-          error: 'Unauthorized access: Invalid or expired session token', 
-          code: 401 
-        })).setMimeType(ContentService.MimeType.JSON);
-      }
-
-      // Check admin authorization
-      if (ADMIN_ACTIONS.indexOf(action) !== -1) {
-        if (session.role !== 'admin') {
-          return ContentService.createTextOutput(JSON.stringify({ 
-            success: false, 
-            error: 'Forbidden: Admin access required', 
-            code: 403 
-          })).setMimeType(ContentService.MimeType.JSON);
-        }
-      }
-    } else {
-      if (token) {
-        session = validateSessionToken(token);
-      }
-    }
-
-    // Rate limiting for apiSendOTP (max 3 requests per 15 minutes per phone via CacheService)
-    if (action === "apiSendOTP") {
-      var phone = args[0];
-      var cleanedPhone = cleanPhone(phone);
-      var cache = CacheService.getScriptCache();
-      var rlKey = "rl_otp_" + cleanedPhone;
-      var countVal = cache.get(rlKey);
-      var count = countVal ? parseInt(countVal, 10) : 0;
-      if (count >= 3) {
-        return ContentService.createTextOutput(JSON.stringify({
-          success: false,
-          error: "একই নম্বরে ১৫ মিনিটে ৩টির বেশি OTP পাঠানো যাবে না (Too many requests, try again later)",
-          code: 429
-        })).setMimeType(ContentService.MimeType.JSON);
-      }
-      cache.put(rlKey, String(count + 1), 900); // 15 min TTL
-    }
-
-    // Append session to handlers that need server-side scoping & anti-spoofing
-    var ACTIONS_NEEDING_SESSION = [
-      "apiGetPayments",
-      "apiGetAttendance",
-      "apiGetExamResults",
-      "apiGetLibraryItemDetails",
-      "apiChangePasscode",
-      "apiSaveUser",
-      "apiGetMyProfile",
-      "apiJoinExamSession",
-      "apiSubmitExamResult",
-      "apiVerifyGatewayPayment"
-    ];
-
-    if (ACTIONS_NEEDING_SESSION.indexOf(action) !== -1) {
-      args.push(session);
+    if (!action || typeof this[action] !== 'function') {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Invalid action: ' + action }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
 
     // Dynamically call the requested function
-    var result = func.apply(this, args);
-
-    if (result && typeof result === 'object' && result.success === false) {
-      return ContentService.createTextOutput(JSON.stringify(result))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
+    var result = this[action].apply(this, args);
 
     return ContentService.createTextOutput(JSON.stringify({ success: true, data: result }))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString(), code: 500 }))
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }

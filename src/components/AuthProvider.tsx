@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { api, UserProfile, cleanPhone, SESSION_TOKEN_KEY } from '../lib/api';
+import { api, UserProfile, cleanPhone } from '../lib/api';
 
 export type UserRole = 'student' | 'admin';
 export type UserStatus = 'pending' | 'active' | 'inactive' | 'rejected' | 'incomplete';
@@ -65,17 +65,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const fetchLatestUser = async (savedUser: AppUser) => {
       try {
+        const allUsers = await api.getUsers();
+
+        // PRIMARY lookup: phone number (সবসময় unique — login credential)
+        // এটা দিয়ে id corruption-এর পরেও সঠিক user খুঁজে পাওয়া যাবে
+        // FALLBACK: id দিয়ে খোঁজা (backwards compatibility)
         let latestProfile: UserProfile | undefined;
-        try {
-          latestProfile = await api.getMyProfile();
-        } catch (e: any) {
-          // If admin, fallback to api.getUsers()
-          if (savedUser.role === 'admin') {
-            const allUsers = await api.getUsers();
-            latestProfile = allUsers.find(u => String(u.id).trim() === String(savedUser.uid).trim() || cleanPhone(u.phone) === cleanPhone(savedUser.phone || ''));
-          } else {
-            throw e;
-          }
+        const savedPhone = savedUser.phone || '';
+        if (savedPhone) {
+          const cleanedSavedPhone = cleanPhone(savedPhone);
+          latestProfile = allUsers.find(u => cleanPhone(u.phone) === cleanedSavedPhone);
+        }
+        if (!latestProfile) {
+          // Phone দিয়ে না পাওয়া গেলে id দিয়ে try করো
+          latestProfile = allUsers.find(u => String(u.id).trim() === String(savedUser.uid).trim());
         }
 
         if (latestProfile) {
@@ -83,35 +86,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(appUser);
           localStorage.setItem(SESSION_KEY, JSON.stringify(appUser));
         } else {
+          // যদি database-এ user পাওয়া না যায় (stale/invalid session),
+          // session clear করে re-login force করো
           console.warn("Logged-in user not found in database. Clearing stale session...");
           setUser(null);
           localStorage.removeItem(SESSION_KEY);
-          localStorage.removeItem(SESSION_TOKEN_KEY);
         }
-      } catch (err: any) {
+      } catch (err) {
         console.error("Failed to sync user session from server on mount:", err);
-        if (err?.code === 401 || err?.code === 403 || err?.message?.includes("Unauthorized") || err?.message?.includes("suspended")) {
-          setUser(null);
-          localStorage.removeItem(SESSION_KEY);
-          localStorage.removeItem(SESSION_TOKEN_KEY);
-        }
       }
     };
 
     try {
       const savedUserStr = localStorage.getItem(SESSION_KEY);
-      const savedToken = localStorage.getItem(SESSION_TOKEN_KEY);
       if (savedUserStr) {
         const savedUser = JSON.parse(savedUserStr);
-        // If legacy session without token, require clean re-login
-        if (!savedToken) {
-          console.warn("Legacy session detected without session token. Clearing for re-login...");
-          setUser(null);
-          localStorage.removeItem(SESSION_KEY);
-          setLoading(false);
-          return;
-        }
         setUser(savedUser);
+        
+        // Fetch latest user data in the background to keep cache fresh
         fetchLatestUser(savedUser);
       }
     } catch (e) {
@@ -167,9 +159,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       const profile = await api.loginUser(phone, passcode);
-      if (profile.sessionToken) {
-        localStorage.setItem(SESSION_TOKEN_KEY, profile.sessionToken);
-      }
       const appUser = mapUserProfileToUser(profile);
       
       setUser(appUser);
@@ -186,7 +175,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setUser(null);
     localStorage.removeItem(SESSION_KEY);
-    localStorage.removeItem(SESSION_TOKEN_KEY);
   };
 
   const updateLocalUser = (updates: Partial<AppUser>) => {
