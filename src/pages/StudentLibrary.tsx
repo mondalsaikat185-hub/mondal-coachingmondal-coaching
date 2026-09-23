@@ -7,8 +7,8 @@ import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { verifyAndJoinSession, joinSessionWithoutCode } from '../lib/exam-session-utils';
 import { useSearchParams } from 'react-router-dom';
 import { safeToDate } from '../lib/utils';
-const ORACLE_SERVER_URL = 'https://saikat-tuition.duckdns.org';
-const ORACLE_API_KEY = import.meta.env.VITE_ORACLE_API_KEY || 'tuition-secret-2026-change-this';
+const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL;
+const FILE_API_KEY = import.meta.env.VITE_FILE_API_KEY;
 
 function CountdownTimer({ targetDate, onComplete }: { targetDate: Date; onComplete: () => void }) {
   const [countdown, setCountdown] = useState('');
@@ -261,7 +261,7 @@ export function StudentLibrary() {
 
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = `${ORACLE_SERVER_URL}/download`;
+    form.action = `${FILE_SERVER_URL}/download`;
     form.target = '_blank';
 
     const addInput = (name: string, value: string) => {
@@ -272,7 +272,7 @@ export function StudentLibrary() {
       form.appendChild(input);
     };
 
-    addInput('key', ORACLE_API_KEY);
+    addInput('key', FILE_API_KEY || '');
     addInput('fileId', fileId);
     addInput('name', studentName);
     addInput('phone', phone);
@@ -303,21 +303,29 @@ export function StudentLibrary() {
       const fileName = `${item.title || 'document'}.pdf`;
       const password = phone;
 
-      // ─── Fetch POST Submission (JSON) ──────────────────────────────────────
-      // Sends JSON payload to the Oracle server to bypass form urlencoding issues
-      const response = await fetch(`${ORACLE_SERVER_URL}/download`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          key: ORACLE_API_KEY,
-          fileId: fileId,
-          name: studentName,
-          phone: phone,
-          fileName: fileName
-        })
-      });
+      // ─── Fetch POST Submission (JSON) with 10s Timeout ─────────────────────
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      let response: Response;
+      try {
+        response = await fetch(`${FILE_SERVER_URL}/download`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            key: FILE_API_KEY,
+            fileId: fileId,
+            name: studentName,
+            phone: phone,
+            fileName: fileName
+          }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         throw new Error(`Server returned status ${response.status}`);
@@ -346,7 +354,6 @@ export function StudentLibrary() {
       if (isIOS) {
         const newTab = window.open(blobUrl, '_blank');
         if (!newTab) {
-          // Popup blocked — show Oracle direct link as alternative
           URL.revokeObjectURL(blobUrl);
           setDownloadMessage({
             title: '⚠️ Popup Blocked',
@@ -376,14 +383,21 @@ export function StudentLibrary() {
       });
 
     } catch (error: any) {
-      setDownloadMessage({ 
-        title: '❌ Connection Error', 
-        body: `পিডিএফ ওয়াটারমার্কিং সার্ভারের সাথে সংযোগ করা যাচ্ছে না (সম্ভবত আপনার মোবাইল নেটওয়ার্ক বা ইন্টারনেট সেবাদাতা সংযোগটি ব্লক করেছে)।\n\nপাসওয়ার্ড ও ওয়াটারমার্কসহ ফাইলটি নিরাপদে ডাউনলোড করতে নিচের 'নিরাপদ ডাউনলোড' বাটনটি ক্লিক করুন।`, 
-        isWarning: true,
-        fallbackUrl: item.contentUrl || undefined,
-        item: item
-      });
-      console.error(error);
+      console.warn("VPS PDF server failed or timed out, falling back directly to Google Drive:", error);
+      if (item.contentUrl) {
+        window.open(item.contentUrl, '_blank');
+        setDownloadMessage({
+          title: 'ℹ️ Google Drive থেকে খোলা হচ্ছে',
+          body: `ওয়াটারমার্কিং সার্ভারে সংযোগ করা যায়নি, তাই ফাইলটি সরাসরি Google Drive থেকে খোলা হয়েছে।\n\nফাইল: ${item.title}`,
+          isWarning: false
+        });
+      } else {
+        setDownloadMessage({ 
+          title: '❌ সংযোগ সমস্যা', 
+          body: 'ফাইল সার্ভারের সাথে সংযোগ করা যাচ্ছে না। দয়া করে কিছুক্ষণ পর আবার চেষ্টা করুন।', 
+          isWarning: true
+        });
+      }
     } finally {
       downloadLockRef.current = false;
       setDownloadingId(null);
@@ -946,19 +960,15 @@ export function StudentLibrary() {
                 </button>
                 <button
                   onClick={() => {
-                    const fileIdMatch = downloadMessage.item!.contentUrl?.match(/[-\w]{25,}/);
-                    const fileId = fileIdMatch ? fileIdMatch[0] : null;
-                    const studentName = (user as any)?.fullName || user?.displayName || user?.email || 'Student';
                     const rawPhone = (user as any)?.phone || '0000000000';
-                    const phone = rawPhone.replace(/^\+91/, '').replace(/\s+/g, '').trim();
-                    const fileName = `${downloadMessage.item!.title || 'document'}.pdf`;
-                    const directLink = `${ORACLE_SERVER_URL}/download?key=${ORACLE_API_KEY}&fileId=${fileId}&name=${encodeURIComponent(studentName)}&phone=${encodeURIComponent(phone)}&fileName=${encodeURIComponent(fileName)}`;
-                    const text = `M-C Tuition Note: *${downloadMessage.item!.title}*\nPassword to open: *${phone}*\nDownload link: ${directLink}`;
+                    const phone = cleanPhone(rawPhone);
+                    const directLink = downloadMessage.item!.contentUrl || window.location.href;
+                    const text = `M-C Tuition Note: *${downloadMessage.item!.title}*\nPassword to open (if downloaded via Portal): *${phone}*\nNote Link: ${directLink}`;
                     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
                   }}
                   className="w-full bg-[#25D366] hover:bg-[#20ba59] text-white px-4 py-3 font-black text-sm uppercase transition-colors flex items-center justify-center gap-2 border-2 border-green-800 shadow-[3px_3px_0px_0px_rgba(20,83,45,1)] cursor-pointer"
                 >
-                  💬 WhatsApp-এ ডাউনলোড লিংক শেয়ার করুন
+                  💬 WhatsApp-এ নোট লিংক শেয়ার করুন
                 </button>
                 </>
               )}
