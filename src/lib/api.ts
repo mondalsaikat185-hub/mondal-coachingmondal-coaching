@@ -79,6 +79,7 @@ export interface LibraryItem {
   allowMultipleAttempts?: boolean;
   sequence?: number;
   quizData?: string;
+  updatedAt?: string;
 }
 
 export interface PaymentRecord {

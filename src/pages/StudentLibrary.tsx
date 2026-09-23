@@ -1241,6 +1241,7 @@ export function StudentLibrary() {
 }
 
 function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChunked, onDownloadUrl, downloadingId, scheduledStartTimeMap }: { key?: React.Key, item: LibraryItem, onPreview: () => void, formatDate: (ts: any) => string, showPath?: boolean, items?: LibraryItem[], onDownloadChunked?: () => void, onDownloadUrl?: () => void, downloadingId?: string | null, scheduledStartTimeMap?: Record<string, string> }) {
+   const { user } = useAuth();
    const renderPath = () => {
       if (!showPath || !items || !item.parentId) return null;
       const getPathStr = (id: string, visited: Set<string> = new Set()): string => {
