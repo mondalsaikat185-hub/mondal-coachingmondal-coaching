@@ -1130,15 +1130,33 @@ function apiDeleteBatch(batchId) {
 function apiGetLibrary() {
   try {
     var list = readSheet("library");
-    list.forEach(function(item) {
-      item.isFolder = item.isFolder === true || item.isFolder === "true";
-      item.isEncrypted = item.isEncrypted === true || item.isEncrypted === "true";
-      item.isChunked = item.isChunked === true || item.isChunked === "true";
-      if (item.chunkCount) item.chunkCount = Number(item.chunkCount);
-      // Delete quizData to reduce payload size and memory footprint for the library list
-      delete item.quizData;
-    });
-    return { success: true, data: list };
+    var cleanList = [];
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      cleanList.push({
+        id: item.id || "",
+        title: item.title || "",
+        type: item.type || "folder",
+        parentId: item.parentId || null,
+        isFolder: item.isFolder === true || item.isFolder === "true",
+        isEncrypted: item.isEncrypted === true || item.isEncrypted === "true",
+        isChunked: item.isChunked === true || item.isChunked === "true",
+        chunkCount: item.chunkCount ? Number(item.chunkCount) : 0,
+        examType: item.examType || "",
+        timeLimit: item.timeLimit !== undefined && item.timeLimit !== "" ? Number(item.timeLimit) : undefined,
+        marksCorrect: item.marksCorrect !== undefined && item.marksCorrect !== "" ? Number(item.marksCorrect) : undefined,
+        marksWrong: item.marksWrong !== undefined && item.marksWrong !== "" ? Number(item.marksWrong) : undefined,
+        allowMultipleAttempts: item.allowMultipleAttempts === true || item.allowMultipleAttempts === "true",
+        sequence: item.sequence !== undefined && item.sequence !== "" ? Number(item.sequence) : undefined,
+        trackingId: item.trackingId || "",
+        contentUrl: item.contentUrl || "",
+        fileName: item.fileName || "",
+        createdAt: item.createdAt || "",
+        updatedAt: item.updatedAt || "",
+        isActive: item.isActive !== false && item.isActive !== "false"
+      });
+    }
+    return { success: true, data: cleanList };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -1645,9 +1663,95 @@ function apiJoinExamSession(sessionId, userId, studentName, studentPhone, entere
 
 function apiSubmitExamResult(resultData) {
   try {
+    if (!resultData) return { success: false, error: "No data provided" };
+
+    // Idempotency: If client provides an id / resultId, ensure it is not already inserted
+    var resultId = resultData.id || resultData.resultId;
+    if (resultId) {
+      resultData.id = String(resultId).trim();
+      var sheet = getSheet("examResults");
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var lastCol = sheet.getLastColumn();
+        if (lastCol > 0) {
+          var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+          var idColIdx = -1;
+          for (var c = 0; c < headers.length; c++) {
+            if (String(headers[c]).trim().toLowerCase() === "id") {
+              idColIdx = c + 1;
+              break;
+            }
+          }
+          if (idColIdx !== -1) {
+            var finder = sheet.getRange(2, idColIdx, lastRow - 1, 1)
+                              .createTextFinder(resultData.id)
+                              .matchEntireCell(true);
+            var match = finder.findNext();
+            if (match) {
+              // Existing row found: do not append duplicate row
+              return { success: true, data: resultData, duplicate: true };
+            }
+          }
+        }
+      }
+    }
+
     var saved = saveRow("examResults", resultData);
     return { success: true, data: saved };
   } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetStudentDashboardData(batchIds, studentId) {
+  try {
+    var announcements = "";
+    try {
+      var settingsRes = apiGetSettings("general");
+      if (settingsRes && settingsRes.data && settingsRes.data.announcements) {
+        announcements = settingsRes.data.announcements;
+      }
+    } catch(e) {}
+
+    var allPayments = readSheet("payments");
+    var studentPayments = allPayments.filter(function(p) {
+      return String(p.studentId).trim() === String(studentId).trim();
+    });
+
+    var allBatches = readSheet("batches");
+    var relevantBatches = allBatches.filter(function(b) {
+      return batchIds && batchIds.indexOf(b.id) !== -1;
+    });
+
+    var assignedItemIds = {};
+    relevantBatches.forEach(function(b) {
+      try {
+        var assigned = JSON.parse(b.assignedItemsMap || "{}");
+        Object.keys(assigned).forEach(function(k) { assignedItemIds[k] = true; });
+      } catch(e) {}
+    });
+
+    var allLib = apiGetLibrary().data || [];
+    var filteredLib = allLib.filter(function(item) {
+      return assignedItemIds[item.id] || (item.parentId && assignedItemIds[item.parentId]);
+    });
+
+    var allSessions = readSheet("examSessions");
+    var filteredSessions = allSessions.filter(function(s) {
+      return (batchIds && (batchIds.indexOf(s.batchId) !== -1 || s.batchId === "all"));
+    });
+
+    return {
+      success: true,
+      data: {
+        announcements: announcements,
+        payments: studentPayments,
+        batches: relevantBatches,
+        library: filteredLib,
+        examSessions: filteredSessions
+      }
+    };
+  } catch(err) {
     return { success: false, error: err.toString() };
   }
 }

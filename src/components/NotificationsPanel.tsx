@@ -3,12 +3,30 @@ import { X, Bell, Plus, Edit, Trash2, Loader2 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { api, NotificationItem } from '../lib/api';
 import { safeToDate } from '../lib/utils';
-import { clearCache } from '../lib/cache';
+import { clearCache, getLocalSwr } from '../lib/cache';
 
 export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<any[]>(() => {
+    if (!user?.uid) return [];
+    const cached = getLocalSwr<any[]>(user.uid, 'notifications');
+    if (!cached || !Array.isArray(cached)) return [];
+    let notifs = [...cached];
+    notifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    if (user.role === 'student') {
+      notifs = notifs.filter((n: any) =>
+        n.batchId === 'all' ||
+        ((user as any).batchId && String((user as any).batchId).split(',').map((id: string) => id.trim()).includes(n.batchId)) ||
+        n.senderId === user.uid ||
+        n.targetId === user.uid
+      );
+    }
+    return user.role === 'admin' ? notifs.slice(0, 50) : notifs.slice(0, 20);
+  });
+  const [loading, setLoading] = useState(() => {
+    if (!user?.uid) return true;
+    return !getLocalSwr(user.uid, 'notifications');
+  });
   
   const [showCreate, setShowCreate] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
@@ -42,8 +60,8 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
 
     const fetchNotifs = async () => {
        try {
-         setLoading(true);
-         const list = await api.getNotifications();
+         if (notifications.length === 0) setLoading(true);
+         const list = await api.getNotifications(user.uid);
          
          // Sort descending by date
          list.sort((a, b) => {

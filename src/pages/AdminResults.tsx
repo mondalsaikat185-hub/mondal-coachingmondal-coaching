@@ -4,13 +4,31 @@ import { PageHeader } from './Pages';
 import { Loader2, Trash2, Search } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { safeToDate } from '../lib/utils';
+import { useAuth } from '../components/AuthProvider';
+import { getLocalSwr, getExamOutbox } from '../lib/cache';
 
 export function AdminResults() {
+  const { user } = useAuth();
   const { examId } = useParams();
-  const [results, setResults] = useState<any[]>([]);
-  const [batches, setBatches] = useState<any[]>([]);
-  const [activeBatchId, setActiveBatchId] = useState<string>('');
-  const [loading, setLoading] = useState(true);
+  const [results, setResults] = useState<any[]>(() => {
+    if (!user?.uid) return [];
+    const cached = getLocalSwr<any[]>(user.uid, 'examResults');
+    return Array.isArray(cached) ? cached : [];
+  });
+  const [batches, setBatches] = useState<any[]>(() => {
+    if (!user?.uid) return [];
+    const cached = getLocalSwr<any[]>(user.uid, 'batches');
+    return Array.isArray(cached) ? cached : [];
+  });
+  const [activeBatchId, setActiveBatchId] = useState<string>(() => {
+    if (!user?.uid) return '';
+    const cachedBatches = getLocalSwr<any[]>(user.uid, 'batches');
+    return (Array.isArray(cachedBatches) && cachedBatches.length > 0) ? cachedBatches[0].id : '';
+  });
+  const [loading, setLoading] = useState(() => {
+    if (!user?.uid) return true;
+    return !getLocalSwr(user.uid, 'examResults');
+  });
   const [deleting, setDeleting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showConfirm, setShowConfirm] = useState(false);
@@ -23,13 +41,13 @@ export function AdminResults() {
   useEffect(() => {
     const init = async () => {
       try {
-        setLoading(true);
+        if (results.length === 0) setLoading(true);
         // Load all data in parallel including library!
         const [batchesData, resultsData, usersData, libraryData] = await Promise.all([
-          api.getBatches(),
-          api.getExamResults(),
+          api.getBatches(user?.uid),
+          api.getExamResults(user?.uid),
           api.getUsers(),
-          api.getLibrary()
+          api.getLibrary(user?.uid)
         ]);
 
         setBatches(batchesData);
@@ -135,18 +153,18 @@ export function AdminResults() {
     if (selectedIds.size === 0) return;
     if (!window.confirm(`Are you sure you want to permanently delete ${selectedIds.size} result(s)? This action cannot be undone.`)) return;
     
+    const idsArray = Array.from(selectedIds) as string[];
+    const prevResults = results;
+    // Optimistic UI update immediately
+    setResults(results.filter(r => !selectedIds.has(r.id)));
+    setSelectedIds(new Set());
+
     try {
       setDeleting(true);
-      const idsArray = Array.from(selectedIds) as string[];
-
-      // Delete results in one batch API request to prevent server-side lock failures and ensure extreme speed!
       await api.deleteMultipleExamResults(idsArray);
-      
-      setResults(results.filter(r => !selectedIds.has(r.id)));
-      setSelectedIds(new Set());
-      alert("Results deleted successfully.");
     } catch (error) {
       console.error("delete results failed:", error);
+      setResults(prevResults);
       alert("ডিলিট করতে ব্যর্থ হয়েছে (Failed to delete results)");
     } finally {
       setDeleting(false);
@@ -186,6 +204,10 @@ export function AdminResults() {
         displayResults.sort((a,b) => String(a.examTitle || '').localeCompare(String(b.examTitle || '')));
      }
   }
+
+  const outboxItems = user?.uid ? getExamOutbox(user.uid) : [];
+  const outboxResultIds = new Set(outboxItems.map(i => i.id));
+  const outboxExamIds = new Set(outboxItems.map(i => i.examId));
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full">
@@ -333,7 +355,16 @@ export function AdminResults() {
                           )}
                         </div>
                       </td>
-                      <td className="p-2 text-sm text-zinc-600 dark:text-zinc-400">{r.examTitle}</td>
+                      <td className="p-2 text-sm text-zinc-600 dark:text-zinc-400">
+                        <div className="flex items-center gap-2">
+                          <span>{r.examTitle}</span>
+                          {(outboxResultIds.has(r.id) || (r.examId && outboxExamIds.has(r.examId))) && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                              ⏳ sync বাকি
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-2 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <span className="font-black text-blue-600 dark:text-blue-400">{r.score}</span>

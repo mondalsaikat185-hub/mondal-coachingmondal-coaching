@@ -163,85 +163,98 @@ export function StudentLibrary() {
   const [weeksToShow, setWeeksToShow] = useState(2);
   const [libraryMode, setLibraryMode] = useState<'EXAM' | 'NOTE' | null>(null);
 
+  const processLibraryData = (allBatches: any[], libraryItems: LibraryItem[]) => {
+    const studentBatchIds = String(user?.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
+    const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
+    
+    if (studentBatches.length === 0) {
+      setItems([]);
+      return;
+    }
+
+    const combinedAssignedItemsMap: Record<string, any> = {};
+    const combinedScheduledMap: Record<string, any> = {};
+    
+    studentBatches.forEach(b => {
+       Object.assign(combinedAssignedItemsMap, b.assignedItemsMap || {});
+       Object.assign(combinedScheduledMap, b.scheduledStartTimeMap || {});
+    });
+
+    setStudentBatch({
+       assignedItemsMap: combinedAssignedItemsMap,
+       scheduledStartTimeMap: combinedScheduledMap
+    });
+
+    // Get assigned items mapping from batch
+    const assignedIds = Object.keys(combinedAssignedItemsMap);
+    setAllItems(libraryItems);
+
+    // Resolve accessible items (assigned root items + descendants recursively + ancestors)
+    const accessible = new Set<string>();
+
+    // Start with explicitly assigned items
+    assignedIds.forEach(id => {
+       if (libraryItems.some(i => i.id === id)) {
+          accessible.add(id);
+       }
+    });
+
+    // Recursively add descendants of folders in the accessible set
+    const addLoadedChildren = (parentId: string) => {
+        const children = libraryItems.filter(i => i.parentId === parentId);
+        for (const c of children) {
+            if (accessible.has(c.id)) continue;
+            accessible.add(c.id);
+            addLoadedChildren(c.id);
+        }
+    };
+    
+    Array.from(accessible).forEach(id => {
+       addLoadedChildren(id);
+    });
+
+    // Add ancestors to ensure folder breadcrumbs and parents exist
+    const addAncestors = (itemId: string) => {
+        const item = libraryItems.find(i => i.id === itemId);
+        if (item?.parentId && !accessible.has(item.parentId)) {
+            accessible.add(item.parentId);
+            addAncestors(item.parentId);
+        }
+    };
+    Array.from(accessible).forEach(id => {
+       addAncestors(id);
+    });
+
+    const filteredItems = libraryItems.filter(i => accessible.has(i.id));
+    setItems(filteredItems);
+  };
+
   const fetchAll = async () => {
     if (!user?.batchId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+
+    // 1. STALE: Check local SWR cache first for instant render
+    const cachedBatches = api.getLocalSwr<any[]>(user.uid, 'batches');
+    const cachedLibrary = api.getLocalSwr<LibraryItem[]>(user.uid, 'library');
+    if (cachedBatches && cachedLibrary && cachedBatches.length > 0 && cachedLibrary.length > 0) {
+      processLibraryData(cachedBatches, cachedLibrary);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    // Flush any pending outbox exam results in background
+    api.flushExamOutbox(user.uid);
+
+    // 2. REVALIDATE: Get batches and central library items concurrently from server
     try {
-      // 1. Get batches and central library items concurrently
       const [allBatches, libraryItems] = await Promise.all([
-        api.getBatches(),
-        api.getLibrary()
+        api.getBatches(user.uid),
+        api.getLibrary(user.uid)
       ]);
-      
-      const studentBatchIds = String(user.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
-      const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
-      
-      if (studentBatches.length === 0) {
-        setItems([]);
-        setLoading(false);
-        return;
-      }
-
-      const combinedAssignedItemsMap: Record<string, any> = {};
-      const combinedScheduledMap: Record<string, any> = {};
-      
-      studentBatches.forEach(b => {
-         Object.assign(combinedAssignedItemsMap, b.assignedItemsMap || {});
-         Object.assign(combinedScheduledMap, b.scheduledStartTimeMap || {});
-      });
-
-      setStudentBatch({
-         assignedItemsMap: combinedAssignedItemsMap,
-         scheduledStartTimeMap: combinedScheduledMap
-      });
-
-      // 2. Get assigned items mapping from batch
-      const assignedIds = Object.keys(combinedAssignedItemsMap);
-
-      setAllItems(libraryItems);
-
-      // 4. Resolve accessible items (assigned root items + descendants recursively + ancestors)
-      const accessible = new Set<string>();
-
-      // Start with explicitly assigned items
-      assignedIds.forEach(id => {
-         if (libraryItems.some(i => i.id === id)) {
-            accessible.add(id);
-         }
-      });
-
-      // Recursively add descendants of folders in the accessible set
-      const addLoadedChildren = (parentId: string) => {
-          const children = libraryItems.filter(i => i.parentId === parentId);
-          for (const c of children) {
-              if (accessible.has(c.id)) continue;
-              accessible.add(c.id);
-              addLoadedChildren(c.id);
-          }
-      };
-      
-      Array.from(accessible).forEach(id => {
-         addLoadedChildren(id);
-      });
-
-      // Add ancestors to ensure folder breadcrumbs and parents exist
-      const addAncestors = (itemId: string) => {
-          const item = libraryItems.find(i => i.id === itemId);
-          if (item?.parentId && !accessible.has(item.parentId)) {
-              accessible.add(item.parentId);
-              addAncestors(item.parentId);
-          }
-      };
-      Array.from(accessible).forEach(id => {
-         addAncestors(id);
-      });
-
-      const filteredItems = libraryItems.filter(i => accessible.has(i.id));
-      setItems(filteredItems);
-
+      processLibraryData(allBatches, libraryItems);
     } catch (err) {
       console.error("Error loading library for student:", err);
     } finally {
@@ -252,6 +265,15 @@ export function StudentLibrary() {
   useEffect(() => {
     fetchAll();
   }, [user?.batchId]);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      if (user?.uid) api.flushExamOutbox(user.uid);
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [user?.uid]);
+
 
   const handleOpenFolder = (folderId: string | null) => {
       setCurrentFolderId(folderId);
@@ -1240,11 +1262,16 @@ function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChun
    return (
       <div className={`bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`}>
          <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
                <h4 className="font-black text-lg text-zinc-900 dark:text-zinc-100">{item.title}</h4>
                <span className={`text-[10px] px-2 py-0.5 font-bold uppercase ${isLocked ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300' : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'}`}>
                  {isLocked ? '🔒 Locked' : item.type === 'exam' ? item.examType : 'PDF Note'}
                </span>
+               {item.type === 'exam' && user && api.isExamPendingSync(user.uid, item.id) && (
+                 <span className="text-[10px] px-2 py-0.5 font-bold uppercase bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                   ⏳ sync বাকি
+                 </span>
+               )}
             </div>
             <div className="flex flex-col gap-1">
                <span className="text-xs text-zinc-500 font-bold flex items-center gap-1">

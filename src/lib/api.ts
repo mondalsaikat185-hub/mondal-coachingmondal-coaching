@@ -3,6 +3,18 @@
 // Swaps Firebase out for Google Apps Script + Google Sheets
 // =========================================================================
 
+import {
+  getLocalSwr,
+  setLocalSwr,
+  clearLocalSwr,
+  clearAllLocalSwr,
+  getExamOutbox,
+  addExamToOutbox,
+  removeExamFromOutbox,
+  isExamPendingSync,
+  ExamOutboxItem
+} from './cache';
+
 declare const google: any;
 
 // =========================================================================
@@ -11,6 +23,7 @@ declare const google: any;
 // REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL
 export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
 export const SECURITY_TOKEN = (import.meta.env.VITE_SECURITY_TOKEN as string) || "MondalCoachingSecureToken2026!";
+
 
 export interface UserProfile {
   id: string;
@@ -157,7 +170,9 @@ export function cleanPhone(p: any): string {
     examSessions: { data: ExamSession[], time: number } | null;
     examResults: { data: ExamResult[], time: number } | null;
     announcement: { data: string, time: number } | null;
-  } = { batches: null, library: null, users: null, payments: null, examSessions: null, examResults: null, announcement: null };
+    notifications: { data: NotificationItem[], time: number } | null;
+  } = { batches: null, library: null, users: null, payments: null, examSessions: null, examResults: null, announcement: null, notifications: null };
+
 
   const inFlightRequests: Record<string, Promise<any>> = {};
 
@@ -651,13 +666,16 @@ export const api = {
 
   // --- 🎒 BATCHES ---
 
-  getBatches: async (): Promise<Batch[]> => {
+  getBatches: async (userId?: string): Promise<Batch[]> => {
     if (USE_REAL_API) {
       if (globalApiCache.batches && Date.now() - globalApiCache.batches.time < CACHE_TTL) {
         return globalApiCache.batches.data;
       }
       const data = await runGasMethod<Batch[]>("apiGetBatches");
       globalApiCache.batches = { data, time: Date.now() };
+      if (userId) {
+        setLocalSwr(userId, 'batches', data);
+      }
       return data;
     } else {
       return getMockDB().batches;
@@ -707,10 +725,12 @@ export const api = {
     if (USE_REAL_API) {
       const data = await runGasMethod<any>("apiGetStudentDashboardData", batchIds, studentId);
       // Cache the returned data fragments so other views don't re-fetch them unnecessarily
-      if (data.announcements !== undefined) globalApiCache.announcement = { data: data.announcements, time: Date.now() };
-      
-      // We don't cache batches, library, or payments globally because they are filtered subsets!
-      // But we return them for the dashboard to use immediately.
+      if (data && data.announcements !== undefined) {
+        globalApiCache.announcement = { data: data.announcements, time: Date.now() };
+      }
+      if (studentId && data) {
+        setLocalSwr(studentId, 'dashboard', data);
+      }
       return data;
     } else {
       // Mock fallback: just make the separate calls
@@ -726,13 +746,16 @@ export const api = {
 
   // --- 📚 LIBRARY ---
 
-  getLibrary: async (): Promise<LibraryItem[]> => {
+  getLibrary: async (userId?: string): Promise<LibraryItem[]> => {
     if (USE_REAL_API) {
       if (globalApiCache.library && Date.now() - globalApiCache.library.time < CACHE_TTL) {
         return globalApiCache.library.data;
       }
       const data = await runGasMethod<LibraryItem[]>("apiGetLibrary");
       globalApiCache.library = { data, time: Date.now() };
+      if (userId) {
+        setLocalSwr(userId, 'library', data);
+      }
       return data;
     } else {
       return getMockDB().library;
@@ -1021,9 +1044,17 @@ export const api = {
 
   // --- 📢 NOTIFICATIONS ---
 
-  getNotifications: async (): Promise<NotificationItem[]> => {
+  getNotifications: async (userId?: string): Promise<NotificationItem[]> => {
     if (USE_REAL_API) {
-      return runGasMethod<NotificationItem[]>("apiGetNotifications");
+      if (globalApiCache.notifications && Date.now() - globalApiCache.notifications.time < CACHE_TTL) {
+        return globalApiCache.notifications.data;
+      }
+      const data = await runGasMethod<NotificationItem[]>("apiGetNotifications");
+      globalApiCache.notifications = { data, time: Date.now() };
+      if (userId) {
+        setLocalSwr(userId, 'notifications', data);
+      }
+      return data;
     } else {
       return getMockDB().notifications;
     }
@@ -1158,35 +1189,60 @@ export const api = {
     }
   },
 
-  submitExamResult: async (result: Omit<ExamResult, 'id' | 'submittedAt'>): Promise<ExamResult> => {
+  submitExamResult: async (result: Partial<ExamResult> & { id?: string }): Promise<ExamResult> => {
     globalApiCache.examResults = null;
     if (USE_REAL_API) {
       return runGasMethod<ExamResult>("apiSubmitExamResult", result);
     } else {
       const db = getMockDB();
+      const existingIdx = db.examResults.findIndex((r: any) => r.id === result.id);
+      if (existingIdx !== -1) {
+        return db.examResults[existingIdx];
+      }
       const newResult: ExamResult = {
         ...result,
-        id: makeId(),
-        submittedAt: new Date().toISOString()
-      };
+        id: result.id || makeId(),
+        submittedAt: result.submittedAt || new Date().toISOString()
+      } as ExamResult;
       db.examResults.push(newResult);
       saveMockDB(db);
       return newResult;
     }
   },
 
-  getExamResults: async (): Promise<ExamResult[]> => {
+  flushExamOutbox: async (userId: string): Promise<number> => {
+    if (!userId) return 0;
+    const pending = getExamOutbox(userId);
+    if (pending.length === 0) return 0;
+    let synced = 0;
+    for (const item of pending) {
+      try {
+        await api.submitExamResult(item as any);
+        removeExamFromOutbox(userId, item.id);
+        synced++;
+      } catch (err) {
+        console.warn(`[Outbox] Failed to sync exam result ${item.id}:`, err);
+      }
+    }
+    return synced;
+  },
+
+  getExamResults: async (userId?: string): Promise<ExamResult[]> => {
     if (USE_REAL_API) {
       if (globalApiCache.examResults && Date.now() - globalApiCache.examResults.time < CACHE_TTL) {
         return globalApiCache.examResults.data;
       }
       const data = await runGasMethod<ExamResult[]>("apiGetExamResults");
       globalApiCache.examResults = { data, time: Date.now() };
+      if (userId) {
+        setLocalSwr(userId, 'examResults', data);
+      }
       return data;
     } else {
       return getMockDB().examResults;
     }
   },
+
 
   hasSubmitted: async (examId: string, studentId: string): Promise<boolean> => {
     if (USE_REAL_API) {
@@ -1372,5 +1428,16 @@ export const api = {
       saveMockDB(db);
       return { success: true };
     }
-  }
+  },
+
+  // --- 🚀 SWR & OUTBOX UTILITIES ---
+  getLocalSwr,
+  setLocalSwr,
+  clearLocalSwr,
+  clearAllLocalSwr,
+  getExamOutbox,
+  addExamToOutbox,
+  removeExamFromOutbox,
+  isExamPendingSync
 };
+

@@ -29,6 +29,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { api } from "./lib/api";
+import { getLocalSwr } from "./lib/cache";
 import { safeToDate, formatDateOnlySafe } from "./lib/utils";
 import {
   AdminStudents,
@@ -744,32 +745,36 @@ function TopNav() {
   useEffect(() => {
     if (!user) return;
 
+    const calcUnread = (allNotifs: any[]) => {
+      let notifs = [...allNotifs];
+      notifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      if (user.role === "student") {
+        notifs = notifs.filter(
+          (n: any) =>
+            n.batchId === "all" ||
+            ((user as any).batchId && String((user as any).batchId).split(',').map((id: string) => id.trim()).includes(n.batchId)) ||
+            n.senderId === user.uid ||
+            n.targetId === user.uid,
+        );
+      }
+      const limitCount = user.role === "student" ? 30 : 20;
+      notifs = notifs.slice(0, limitCount);
+      return notifs.filter(
+        (n: any) =>
+          n.senderId !== user.uid && !(n.readers || []).includes(user.uid),
+      ).length;
+    };
+
+    // Instant count from SWR cache
+    const cachedNotifs = getLocalSwr<any[]>(user.uid, 'notifications');
+    if (cachedNotifs && Array.isArray(cachedNotifs)) {
+      setUnreadCount(calcUnread(cachedNotifs));
+    }
+
     const fetchUnreadCount = async () => {
       try {
-        const allNotifs = await api.getNotifications();
-        allNotifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        
-        let notifs = allNotifs;
-        if (user.role === "student") {
-          // Filter by batchId — if batchId is 'all' or matches student's batch,
-          // show it. Also show any notification targeted directly to this student.
-          notifs = notifs.filter(
-            (n: any) =>
-              n.batchId === "all" ||
-              ((user as any).batchId && String((user as any).batchId).split(',').map((id: string) => id.trim()).includes(n.batchId)) ||
-              n.senderId === user.uid ||
-              n.targetId === user.uid,
-          );
-        }
-        
-        const limitCount = user.role === "student" ? 30 : 20;
-        notifs = notifs.slice(0, limitCount);
-
-        const unread = notifs.filter(
-          (n: any) =>
-            n.senderId !== user.uid && !(n.readers || []).includes(user.uid),
-        ).length;
-        setUnreadCount(unread);
+        const allNotifs = await api.getNotifications(user.uid);
+        setUnreadCount(calcUnread(allNotifs));
       } catch (err) {
         console.error("Notifications fetch error", err);
       }
@@ -1650,6 +1655,25 @@ function StudentDashboard() {
   useEffect(() => {
     if (!user?.uid) return;
 
+    // Auto-flush outbox on mount & on reconnect
+    api.flushExamOutbox(user.uid);
+    const handleOnline = () => api.flushExamOutbox(user.uid);
+    window.addEventListener('online', handleOnline);
+
+    // Instant SWR hydration for exams, notes & announcement (excluding payment status & exam sessions)
+    const cachedDashboard = getLocalSwr<any>(user.uid, 'dashboard');
+    if (cachedDashboard) {
+      if (cachedDashboard.announcements) setAnnouncement(cachedDashboard.announcements);
+      if (cachedDashboard.library && Array.isArray(cachedDashboard.library)) {
+        const libraryItems = [...cachedDashboard.library];
+        libraryItems.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const eData = libraryItems.filter((i: any) => i.type === 'exam');
+        const nData = libraryItems.filter((i: any) => i.type === 'note' || i.type === 'pdf');
+        setExams(eData.slice(0, 3) as any);
+        setNotes(nData.slice(0, 5) as any);
+      }
+    }
+
     const fetchDashboardData = async () => {
       try {
         if (!user || !user.batchId) return;
@@ -1731,6 +1755,9 @@ function StudentDashboard() {
     };
     
     fetchDashboardData();
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
   }, [user?.uid, user?.batchId]);
 
   if (user?.status === "pending") {

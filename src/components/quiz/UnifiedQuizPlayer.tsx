@@ -3,7 +3,7 @@ import { Exam } from '../../pages/Pages';
 import { RotateCw, Clock, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Menu, BookOpen, PenTool, Check } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 import { api } from '../../lib/api';
-import { clearCache } from '../../lib/cache';
+import { clearCache, addExamToOutbox, removeExamFromOutbox, isExamPendingSync } from '../../lib/cache';
 
 // Helper function to format passages and cloze texts coherently
 export function formatPassageText(text: string): string[] {
@@ -242,7 +242,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
 
        // 1. Check localStorage submitted list first (no GAS call if found)
        const localSubmitted = getLocalSubmittedExams(user.uid);
-       if (localSubmitted.has(exam.id)) {
+       if (localSubmitted.has(exam.id) || isExamPendingSync(user.uid, exam.id)) {
           setAlreadySubmitted(true);
           setCheckingResult(false);
           return;
@@ -562,38 +562,48 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     };
 
     if (user && !isPreview) {
-      try {
-        const studentName = (user as any).fullName || user.displayName || user.email || 'Unknown Student';
-        const studentPhone = user.phone || '0000000000';
-        
-        await api.submitExamResult({
-           examId: exam.id,
-           studentId: user.uid,
-           studentName,
-           studentPhone,
-           studentBatchId: (user as any).batchId || '',
-           score,
-           totalQuestions: questions.length,
-           correctAnswers: correct,
-           wrongAnswers: wrong,
-           skippedAnswers: skipped,
-           answersMap: JSON.stringify(answers),
-           answersJSON: JSON.stringify(answers),
-           submittedAt: new Date().toISOString()
-        } as any);
-        clearCache(`result_check_${user.uid}_${exam.id}`);
-        addLocalSubmittedExam(user.uid, exam.id);
-        
-        setResultSummary(summary);
-        clearQuizStorage();
-        setScreen('RESULT');
-      } catch (saveErr: any) {
-        hasSubmittedRef.current = false; // Unlock if failed so they can retry
-        console.error('Result save failed:', saveErr);
-        setSubmissionError(saveErr?.message || 'Network connection error. Please try again.');
-      } finally {
-        setSubmittingResult(false);
-      }
+      const studentName = (user as any).fullName || user.displayName || user.email || 'Unknown Student';
+      const studentPhone = user.phone || '0000000000';
+      const resultId = (typeof crypto !== 'undefined' && crypto.randomUUID) 
+        ? crypto.randomUUID() 
+        : `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+      const submissionPayload = {
+         id: resultId,
+         examId: exam.id,
+         studentId: user.uid,
+         studentName,
+         studentPhone,
+         studentBatchId: (user as any).batchId || '',
+         score,
+         totalQuestions: questions.length,
+         correctAnswers: correct,
+         wrongAnswers: wrong,
+         skippedAnswers: skipped,
+         answersMap: JSON.stringify(answers),
+         answersJSON: JSON.stringify(answers),
+         submittedAt: new Date().toISOString()
+      };
+
+      // 1. Immediately store in local outbox & local submission tracking
+      addExamToOutbox(user.uid, submissionPayload);
+      clearCache(`result_check_${user.uid}_${exam.id}`);
+      addLocalSubmittedExam(user.uid, exam.id);
+
+      // 2. Immediately transition to RESULT screen for zero-latency user experience
+      setResultSummary(summary);
+      clearQuizStorage();
+      setScreen('RESULT');
+      setSubmittingResult(false);
+
+      // 3. Dispatch to GAS in background (idempotent; on success removes from outbox)
+      api.submitExamResult(submissionPayload as any)
+        .then(() => {
+          removeExamFromOutbox(user.uid, resultId);
+        })
+        .catch((saveErr: any) => {
+          console.warn('[QuizPlayer] Offline/delayed submission queued in outbox for background retry:', saveErr);
+        });
     } else {
       setResultSummary(summary);
       clearQuizStorage();
@@ -819,6 +829,16 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                  <p className="text-xs text-zinc-400 font-semibold">
                     Record generated for {(user as any)?.fullName || user?.displayName || 'Student'} on {new Date().toLocaleDateString('en-IN')}
                  </p>
+                 {user && isExamPendingSync(user.uid, exam.id) ? (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                       <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                       <span>⏳ ফলাফল নিরাপদে সংরক্ষিত, ব্যাকগ্রাউন্ডে শিটে সিঙ্ক হচ্ছে...</span>
+                    </div>
+                 ) : (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                       <span>✓ সফলভাবে জমা হয়েছে</span>
+                    </div>
+                 )}
               </div>
 
               {/* Performative metrics grid */}

@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { api, UserProfile, cleanPhone } from '../lib/api';
+import { clearAllLocalSwr } from '../lib/cache';
+
 
 export type UserRole = 'student' | 'admin';
 export type UserStatus = 'pending' | 'active' | 'inactive' | 'rejected' | 'incomplete';
@@ -175,7 +177,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setUser(null);
     localStorage.removeItem(SESSION_KEY);
+    clearAllLocalSwr();
   };
+
 
   const updateLocalUser = (updates: Partial<AppUser>) => {
     setUser((prev) => {
