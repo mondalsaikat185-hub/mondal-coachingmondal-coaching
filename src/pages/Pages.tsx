@@ -1515,13 +1515,16 @@ export function AdminPayments() {
       return;
     }
     setProcessingPaymentIds(prev => new Set(prev).add(id));
+    // Optimistic: update screen instantly, server saves in background, roll back on failure
+    const prevPayments = payments;
+    const nextPayments = payments.map(p => p.id === id ? { ...p, status, remarks: remarks.trim() } : p);
+    setPayments(nextPayments);
+    globalPaymentsListCache = nextPayments;
+    setSelectedPendingIds(prev => prev.filter(pId => pId !== id));
+    showToast(status === 'approved' ? 'পেমেন্ট অনুমোদিত ✓' : 'পেমেন্ট বাতিল করা হয়েছে ✓');
+    if (status === 'rejected') { setRejectingPaymentId(null); setRejectReason(''); }
     try {
       await api.updatePaymentStatus(id, status as any, remarks.trim());
-      showToast(status === 'approved' ? 'পেমেন্ট অনুমোদিত ✓' : 'পেমেন্ট বাতিল করা হয়েছে ✓');
-      const nextPayments = payments.map(p => p.id === id ? { ...p, status, remarks: remarks.trim() } : p);
-      setPayments(nextPayments);
-      globalPaymentsListCache = nextPayments;
-      setSelectedPendingIds(prev => prev.filter(pId => pId !== id));
       
       if (status === 'rejected') {
          const paymentToUpdate = payments.find(p => p.id === id);
@@ -1539,6 +1542,8 @@ export function AdminPayments() {
       }
     } catch (error) {
       console.error("updatePaymentStatus error:", error);
+      setPayments(prevPayments);
+      globalPaymentsListCache = prevPayments;
       showToast('পেমেন্ট আপডেট ব্যর্থ হয়েছে: ' + String((error as any)?.message || error).slice(0, 80), 'error', 5000);
     } finally {
       setProcessingPaymentIds(prev => { const n = new Set(prev); n.delete(id); return n; });

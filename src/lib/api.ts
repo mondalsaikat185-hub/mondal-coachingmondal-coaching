@@ -1550,11 +1550,13 @@ export const api = {
     };
   },
 
+  clearNotificationsCache: () => { globalApiCache.notifications = null; },
+
   deleteNotification: async (notifId: string): Promise<boolean> => {
     globalApiCache.notifications = null;
     if (USE_REAL_API) {
+      markDeleted([notifId]); // hide at once; server delete runs in background
       const ok = await runGasMethod<boolean>("apiDeleteNotification", notifId);
-      markDeleted([notifId]);
       return ok;
     } else {
       const db = getMockDB();

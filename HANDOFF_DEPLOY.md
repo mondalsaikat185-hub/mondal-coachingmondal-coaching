@@ -64,3 +64,13 @@ tsc --noEmit = 0.
 ## ROUND 4 deploy
 1. git add src/lib/confirmDialog.ts src/pages/AdminLibrary.tsx src/pages/AdminResults.tsx src/pages/Pages.tsx src/App.tsx src/lib/api.ts src/pages/StudentLibrary.tsx HANDOFF_DEPLOY.md && git commit -m "fix: in-app confirm (native confirm blocked on phones), admin notifications from GAS, hide recently deleted, Take Exam feedback" && npm run lint && npm run build && git push origin payments-upi
 2. Wait for the Vercel preview of THIS commit; verify commit, only AKfycbxLbQVY… in bundle, /version.json works. Give owner the URL.
+
+---
+## ROUND 5 — instant (optimistic) delete/approve + notification refresh fix
+Files already edited by Claude (do NOT change code):
+src/lib/api.ts, src/components/NotificationsPanel.tsx, src/pages/Pages.tsx, src/pages/AdminResults.tsx
+Steps:
+1. `git checkout payments-upi` ; `npm run lint` ; `npm run build` — both must pass. If any error, STOP and paste the error only.
+2. `git add -A src/ HANDOFF_DEPLOY.md` ; `git commit -m "perf: optimistic notification delete, payment approve/reject, result delete; notification refresh clears memory cache"` ; `git push origin payments-upi`
+3. Wait for Vercel preview of the NEW commit. Verify the preview HTML contains the TEST GAS ID (AKfycbxLbQVY) and not the prod ID.
+4. Report: commit hash + preview URL. No other changes. Never type any passcode in commands.

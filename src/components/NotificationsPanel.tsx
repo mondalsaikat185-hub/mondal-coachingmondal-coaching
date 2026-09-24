@@ -162,16 +162,16 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
         return;
      }
      setConfirmDeleteId(null);
-     setDeletingIds(prev => new Set(prev).add(id));
+     // Optimistic: remove from screen instantly, save to server in background, restore if it fails
+     const snapshot = notifications;
+     setNotifications(prev => prev.filter(n => n.id !== id));
+     showToast('নোটিফিকেশন মুছে ফেলা হয়েছে ✓');
      try {
         await api.deleteNotification(id);
-        setNotifications(prev => prev.filter(n => n.id !== id));
-        showToast('নোটিফিকেশন মুছে ফেলা হয়েছে ✓');
      } catch(e) {
         console.error(e);
+        setNotifications(snapshot);
         showToast('মুছতে ব্যর্থ হয়েছে, আবার চেষ্টা করুন', 'error');
-     } finally {
-        setDeletingIds(prev => { const n = new Set(prev); n.delete(id); return n; });
      }
   };
 
@@ -210,7 +210,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                   <div className="flex items-center gap-2">
                      <Bell className="w-5 h-5" /> Notifications
                   </div>
-                  <button onClick={() => { clearCache(`notifications_${user.uid}`); clearCache(`notif_count_${user.uid}`); setRefreshKey(k => k + 1); }} className="text-xs uppercase bg-black dark:bg-zinc-100 text-white dark:text-black px-2 py-1 flex items-center gap-1 active:translate-y-px">
+                  <button onClick={() => { clearCache(`notifications_${user.uid}`); clearCache(`notif_count_${user.uid}`); (api as any).clearNotificationsCache?.(); setNotifications([]); setRefreshKey(k => k + 1); }} className="text-xs uppercase bg-black dark:bg-zinc-100 text-white dark:text-black px-2 py-1 flex items-center gap-1 active:translate-y-px">
                       Refresh
                   </button>
              </div>

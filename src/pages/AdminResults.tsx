@@ -152,10 +152,9 @@ export function AdminResults() {
     setResults(results.filter(r => !selectedIds.has(r.id)));
     setSelectedIds(new Set());
 
+    showToast(`${idsArray.length}টি রেজাল্ট মুছে ফেলা হয়েছে ✓`);
     try {
-      setDeleting(true);
       await api.deleteMultipleExamResults(idsArray);
-      showToast(`${idsArray.length}টি রেজাল্ট মুছে ফেলা হয়েছে ✓`);
     } catch (error) {
       console.error("delete results failed:", error);
       setResults(prevResults);
