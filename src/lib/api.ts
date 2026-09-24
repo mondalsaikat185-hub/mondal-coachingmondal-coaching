@@ -274,7 +274,7 @@ export function cleanPhone(p: any): string {
 // =========================================================================
 
 export function getVpsBaseUrl(): string {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && import.meta.env.DEV) {
     const urlParams = new URLSearchParams(window.location.search);
     const paramUrl = urlParams.get('vps_url');
     if (paramUrl) return paramUrl;
