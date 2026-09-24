@@ -24,9 +24,31 @@ declare const google: any;
 export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
 export const SECURITY_TOKEN = (import.meta.env.VITE_SECURITY_TOKEN as string) || "MondalCoachingSecureToken2026!";
 
+export const SESSION_TOKEN_KEY = "mc_session_token";
+
+export function getSessionToken(): string | null {
+  try {
+    return localStorage.getItem(SESSION_TOKEN_KEY);
+  } catch (e) {
+    return null;
+  }
+}
+
+export function setSessionToken(token: string): void {
+  try {
+    localStorage.setItem(SESSION_TOKEN_KEY, token);
+  } catch (e) {}
+}
+
+export function clearSessionToken(): void {
+  try {
+    localStorage.removeItem(SESSION_TOKEN_KEY);
+  } catch (e) {}
+}
 
 export interface UserProfile {
   id: string;
+  sessionToken?: string;
   name: string;
   phone: string;
   email?: string;
@@ -203,9 +225,10 @@ export function cleanPhone(p: any): string {
 
     while (attempt < retries) {
       try {
+        const activeToken = getSessionToken() || SECURITY_TOKEN;
         const fetchResponse = await fetch(GAS_WEB_APP_URL, {
           method: "POST",
-          body: JSON.stringify({ action: methodName, args: args, token: SECURITY_TOKEN }),
+          body: JSON.stringify({ action: methodName, args: args, token: activeToken }),
           headers: {
             "Content-Type": "text/plain;charset=utf-8"
           }
@@ -219,6 +242,11 @@ export function cleanPhone(p: any): string {
         }
 
         if (!json.success) {
+          if (json.code === 401 || json.forceLogout || (json.error && json.error.includes("session"))) {
+            clearSessionToken();
+            try { localStorage.removeItem("mc_session_user"); } catch (e) {}
+            window.dispatchEvent(new CustomEvent("mc-force-logout", { detail: json.error }));
+          }
           throw new Error(json.error || "API Gateway Error");
         }
 
@@ -683,6 +711,15 @@ export const api = {
     }
   },
 
+  getMyProfile: async (): Promise<UserProfile> => {
+    if (USE_REAL_API) {
+      return runGasMethod<UserProfile>("apiGetMyProfile");
+    } else {
+      const db = getMockDB();
+      return db.users[0] || ({} as UserProfile);
+    }
+  },
+
   checkApplicationStatus: async (phone: string): Promise<{ success: boolean; status: string; userId?: string; error?: string }> => {
     if (USE_REAL_API) {
       return runGasMethod<{ success: boolean; status: string; userId?: string; error?: string }>("apiCheckApplicationStatus", phone);
@@ -731,7 +768,11 @@ export const api = {
 
   loginUser: async (phone: string, passcode: string): Promise<UserProfile> => {
     if (USE_REAL_API) {
-      return runGasMethod<UserProfile>("apiLoginUser", phone, passcode);
+      const profile = await runGasMethod<UserProfile>("apiLoginUser", phone, passcode);
+      if (profile && (profile as any).sessionToken) {
+        setSessionToken((profile as any).sessionToken);
+      }
+      return profile;
     } else {
       const db = getMockDB();
       const cleanedInputPhone = cleanPhone(phone);
@@ -1154,26 +1195,20 @@ export const api = {
     }));
   },
 
-  addPayment: async (payment: Omit<PaymentRecord, 'id' | 'createdAt'>): Promise<PaymentRecord> => {
+  submitPaymentRequest: async (paymentData: Partial<PaymentRecord>): Promise<PaymentRecord> => {
     globalApiCache.payments = null;
     let savedPayment: PaymentRecord;
     if (USE_REAL_API) {
-      savedPayment = await runGasMethod<PaymentRecord>("apiAddPayment", payment);
+      savedPayment = await runGasMethod<PaymentRecord>("apiSubmitPaymentRequest", paymentData);
     } else {
       const db = getMockDB();
       const newPay: PaymentRecord = {
-        ...payment,
+        ...paymentData,
         id: makeId(),
+        status: 'pending',
         createdAt: new Date().toISOString()
-      };
+      } as PaymentRecord;
       db.payments.push(newPay);
-      
-      // Update student paymentStatus globally
-      const userIdx = db.users.findIndex(u => u.id === payment.studentId);
-      if (userIdx !== -1) {
-        db.users[userIdx].paymentStatus = payment.status;
-      }
-      
       saveMockDB(db);
       savedPayment = newPay;
     }
@@ -1181,6 +1216,10 @@ export const api = {
       ...savedPayment,
       month: api.cleanPaymentMonth(savedPayment.month)
     };
+  },
+
+  addPayment: async (payment: Omit<PaymentRecord, 'id' | 'createdAt'>): Promise<PaymentRecord> => {
+    return api.submitPaymentRequest(payment);
   },
 
   updatePaymentStatus: async (paymentId: string, status: PaymentRecord['status'], remarks: string = ''): Promise<PaymentRecord> => {

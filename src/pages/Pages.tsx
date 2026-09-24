@@ -2249,7 +2249,7 @@ export function StudentPayments() {
         paymentData.transactionId = transactionId.trim();
       }
       
-      await api.addPayment(paymentData);
+      await api.submitPaymentRequest(paymentData);
       setSelectedMonths([]);
       setProofImage('');
       setImagePreview('');

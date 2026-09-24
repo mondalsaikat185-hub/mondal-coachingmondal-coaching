@@ -111,6 +111,180 @@ function getSheet(sheetName) {
   return sheet;
 }
 
+
+// =========================================================================
+// 🔐 SECURITY & SESSION MANAGEMENT ENGINE
+// =========================================================================
+
+function hashPasscode(passcode, salt) {
+  var str = String(salt) + ":" + String(passcode).trim();
+  var rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, str, Utilities.Charset.UTF_8);
+  var hex = "";
+  for (var i = 0; i < rawHash.length; i++) {
+    var byteVal = rawHash[i];
+    if (byteVal < 0) byteVal += 256;
+    var byteHex = byteVal.toString(16);
+    if (byteHex.length === 1) hex += "0";
+    hex += byteHex;
+  }
+  return hex;
+}
+
+function generateSalt() {
+  return Utilities.getUuid().replace(/-/g, '').substring(0, 16);
+}
+
+function generateSessionToken() {
+  return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+}
+
+function computeTokenHash(token) {
+  var rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8);
+  var hex = "";
+  for (var i = 0; i < rawHash.length; i++) {
+    var byteVal = rawHash[i];
+    if (byteVal < 0) byteVal += 256;
+    var byteHex = byteVal.toString(16);
+    if (byteHex.length === 1) hex += "0";
+    hex += byteHex;
+  }
+  return hex;
+}
+
+function cleanUserResponse(user) {
+  if (!user || typeof user !== 'object') return user;
+  var clone = {};
+  for (var k in user) {
+    if (k !== 'passcode' && k !== 'otpCode' && k !== 'otpExpiry' && k !== 'salt' && k !== 'tokenHash') {
+      clone[k] = user[k];
+    }
+  }
+  return clone;
+}
+
+function createSession(user) {
+  var token = generateSessionToken();
+  var tokenHash = computeTokenHash(token);
+  var now = new Date();
+  var expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+
+  var sessionData = {
+    tokenHash: tokenHash,
+    userId: String(user.id),
+    role: user.role || 'student',
+    batchId: String(user.batchId || ''),
+    name: user.name || '',
+    phone: cleanPhone(user.phone),
+    createdAt: now.toISOString(),
+    expiresAt: expiresAt
+  };
+
+  // 1. Fast CacheService (<5ms, TTL 6 hours = 21600 seconds)
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.put("sess_" + tokenHash, JSON.stringify(sessionData), 21600);
+  } catch (e) {
+    Logger.log("Failed to cache session: " + e.toString());
+  }
+
+  // 2. Persistent storage in sessions sheet
+  try {
+    ensureSheetHeaders("sessions", ["tokenHash", "userId", "role", "batchId", "name", "phone", "createdAt", "expiresAt"]);
+    saveRow("sessions", sessionData);
+  } catch (e) {
+    Logger.log("Failed to save session to sheet: " + e.toString());
+  }
+
+  return token;
+}
+
+function validateSessionToken(token) {
+  if (!token || typeof token !== 'string') return null;
+  var tokenHash = computeTokenHash(token);
+
+  // 1. Try CacheService
+  try {
+    var cache = CacheService.getScriptCache();
+    var cachedStr = cache.get("sess_" + tokenHash);
+    if (cachedStr) {
+      var sess = JSON.parse(cachedStr);
+      if (new Date(sess.expiresAt).getTime() > Date.now()) {
+        return sess;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Fallback to sessions sheet
+  try {
+    ensureSheetHeaders("sessions", ["tokenHash", "userId", "role", "batchId", "name", "phone", "createdAt", "expiresAt"]);
+    var sessions = readSheet("sessions");
+    var found = sessions.find(function(s) {
+      return s.tokenHash === tokenHash;
+    });
+
+    if (!found) return null;
+
+    if (new Date(found.expiresAt).getTime() <= Date.now()) {
+      return null;
+    }
+
+    // Refresh cache
+    try {
+      CacheService.getScriptCache().put("sess_" + tokenHash, JSON.stringify(found), 21600);
+    } catch(ce) {}
+
+    return found;
+  } catch (err) {
+    Logger.log("validateSessionToken error: " + err.toString());
+    return null;
+  }
+}
+
+function revokeUserSessions(userId) {
+  try {
+    ensureSheetHeaders("sessions", ["tokenHash", "userId", "role", "batchId", "name", "phone", "createdAt", "expiresAt"]);
+    var sheet = getSheet("sessions");
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var userIdIdx = -1;
+    var hashIdx = -1;
+    var expIdx = -1;
+    for (var c = 0; c < headers.length; c++) {
+      var h = String(headers[c]).trim().toLowerCase();
+      if (h === "userid") userIdIdx = c;
+      if (h === "tokenhash") hashIdx = c;
+      if (h === "expiresat") expIdx = c;
+    }
+
+    if (userIdIdx === -1) return;
+
+    var values = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    var cache = CacheService.getScriptCache();
+    var pastIso = new Date(0).toISOString();
+    var dirty = false;
+
+    for (var r = 0; r < values.length; r++) {
+      if (String(values[r][userIdIdx]).trim() === String(userId).trim()) {
+        if (hashIdx !== -1) {
+          try { cache.remove("sess_" + values[r][hashIdx]); } catch(ce) {}
+        }
+        if (expIdx !== -1) {
+          values[r][expIdx] = pastIso;
+          dirty = true;
+        }
+      }
+    }
+    if (dirty) {
+      sheet.getRange(2, 1, lastRow - 1, lastCol).setValues(values);
+    }
+  } catch (e) {
+    Logger.log("Failed to revoke sessions for " + userId + ": " + e.toString());
+  }
+}
+
 function seedAdminIfNeeded() {
   try {
     var sheet = getSheet("users");
@@ -118,7 +292,7 @@ function seedAdminIfNeeded() {
     
     // Check if headers exist, if not, write them
     if (lastRow === 0) {
-      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge"];
+      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"];
       sheet.appendRow(headers);
     }
     
@@ -219,7 +393,7 @@ function isDateField(headerKey) {
 function readSheet(sheetName) {
   if (sheetName === "users") {
     seedAdminIfNeeded();
-    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge"]);
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"]);
   } else if (sheetName === "payments") {
     ensureSheetHeaders("payments", ["id", "studentId", "month", "amount", "status", "transactionId", "paidDate", "proofImage", "paymentMode", "remarks", "createdAt"]);
   }
@@ -677,51 +851,64 @@ function apiHealStudentIds() {
 }
 
 
-function apiSaveUser(userData) {
+function apiSaveUser(userData, session) {
   try {
+    if (!userData) return { success: false, error: "No user data provided" };
     var users = readSheet("users");
-    // αªÜαºçαªò αªòαª░αºï αªàαª▓αª░αºçαªíαª┐ αªÅαªç αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαª┐αºƒαºç αªçαªëαª£αª╛αª░ αªåαª¢αºç αªòαª┐ αª¿αª╛
     var existingUser = null;
     if (userData.id) {
-      existingUser = users.find(function(u) { 
-        return String(u.id) === String(userData.id); 
-      });
+      existingUser = users.find(function(u) { return String(u.id) === String(userData.id); });
     }
     if (!existingUser && userData.phone) {
-      existingUser = users.find(function(u) { 
-        return cleanPhone(u.phone) === cleanPhone(userData.phone); 
-      });
+      existingUser = users.find(function(u) { return cleanPhone(u.phone) === cleanPhone(userData.phone); });
     }
-    
+
+    // Role check:
+    if (session && session.role !== 'admin') {
+      if (existingUser && String(existingUser.id) !== String(session.userId)) {
+        return { success: false, error: "Forbidden: Cannot edit other users' profile", code: 403 };
+      }
+      if (userData.id && String(userData.id) !== String(session.userId)) {
+        return { success: false, error: "Forbidden: Cannot edit other users' profile", code: 403 };
+      }
+      // WHITELIST editable fields for students:
+      var allowedFields = ["name", "address", "dob", "profilePhotoUrl"];
+      var filteredData = {};
+      for (var f = 0; f < allowedFields.length; f++) {
+        var key = allowedFields[f];
+        if (userData[key] !== undefined) {
+          filteredData[key] = userData[key];
+        }
+      }
+      userData = filteredData;
+      if (existingUser) {
+        userData.id = existingUser.id;
+      }
+    }
+
     if (existingUser) {
-      // যদি আগে থেকেই user আছে, just profile আপডেট বা re-apply আপডেট করো
-      // CRITICAL BUG FIX: কখনো existingUser-এর 'id' overwrite করবে না!
-      // পুরনো code: updateRow("users", existingUser.id, userData) — এটা userData.id (নতুন mockUid)
-      // দিয়ে Sheet-এর id column overwrite করত, যা data corruption ঘটাত।
-      // উদাহরণ: Admin "Soumen Halder" create করতে গিয়ে Chayan Pal-এর phone দেয়
-      // → Chayan-এর row-এর id + name দুটোই overwrite হয়ে যেত → name mixing bug!
       var safeUpdateData = {};
       for (var key in userData) {
-        if (key !== 'id') { // 'id' field কখনো পরিবর্তন করা যাবে না
+        if (key !== 'id') {
+          if (key === 'passcode' && (!userData[key] || String(userData[key]).trim() === '')) continue;
           safeUpdateData[key] = userData[key];
         }
       }
       var updated = updateRow("users", existingUser.id, safeUpdateData);
-      // সবসময় original existingUser.id return করো
       var returnData = updated ? updated : {};
       returnData.id = existingUser.id;
-      return { success: true, data: returnData };
+      return { success: true, data: cleanUserResponse(returnData) };
     } else {
-      // αª¿αªñαºüαª¿ αªçαªëαª£αª╛αª░ αª░αºçαª£αª┐αª╕αºìαªƒαºìαª░αºçαª╢αª¿
       userData.role = userData.role || "student";
       userData.status = userData.status || "incomplete";
       userData.paymentStatus = userData.paymentStatus || "unpaid";
       userData.monthlyFee = userData.monthlyFee !== undefined && userData.monthlyFee !== '' && userData.monthlyFee !== null ? Number(userData.monthlyFee) : 500;
-      // αª¬αºìαª░αªÑαª«αª¼αª╛αª░ αªíαª┐αª½αª▓αºìαªƒ αª¬αª╛αª╕αªòαºïαªí αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αª░αª╛αªûαª╛ αª╣αª▓αºï
-      userData.passcode = userData.passcode || cleanPhone(userData.phone); 
-      
+      var rawPasscode = userData.passcode ? String(userData.passcode).trim() : cleanPhone(userData.phone);
+      var newSalt = generateSalt();
+      userData.salt = newSalt;
+      userData.passcode = hashPasscode(rawPasscode, newSalt);
       var saved = saveRow("users", userData);
-      return { success: true, data: saved };
+      return { success: true, data: cleanUserResponse(saved) };
     }
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -730,9 +917,9 @@ function apiSaveUser(userData) {
 
 function apiRegisterUser(userData) {
   try {
-    if (!userData.phone) return { success: false, error: "αª½αºïαª¿ αª¿αª«αºìαª¼αª░ αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
-    if (!userData.name) return { success: false, error: "αª¿αª╛αª« αªªαºçαªôαª»αª╝αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
-    if (!userData.batchId) return { success: false, error: "αª¼αºìαª»αª╛αªÜ αª¿αª┐αª░αºìαª¼αª╛αªÜαª¿ αªòαª░αª╛ αª╣αª»αª╝αª¿αª┐αÑñ" };
+    if (!userData.phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
+    if (!userData.name) return { success: false, error: "নাম দেওয়া হয়নি।" };
+    if (!userData.batchId) return { success: false, error: "ব্যাচ নির্বাচন করা হয়নি।" };
 
     var users = readSheet("users");
     var cleanedPhone = cleanPhone(userData.phone);
@@ -741,22 +928,22 @@ function apiRegisterUser(userData) {
     });
 
     if (existingUser) {
-      // αªçαªñαª┐αª«αªºαºìαª»αºç αªåαª¼αºçαªªαª¿ αªåαª¢αºç ΓÇö αª¿αªñαºüαª¿ row αª¼αª╛αª¿αª╛αª¼αºç αª¿αª╛, αª╢αºüαªºαºü status αª£αª╛αª¿αª╛αª¼αºç
       var st = String(existingUser.status || "pending").toLowerCase().trim();
       return { success: true, status: st, message: "User already exists" };
     }
 
-    // αª¿αªñαºüαª¿ student
+    var newSalt = generateSalt();
+    userData.salt = newSalt;
     userData.role = "student";
     userData.status = "pending";
     userData.paymentStatus = "unpaid";
     userData.monthlyFee = 500;
-    userData.passcode = cleanedPhone; // αªíαª┐αª½αª▓αºìαªƒ αª¬αª╛αª╕αªòαºïαªí = αª½αºïαª¿ αª¿αª«αºìαª¼αª░
+    userData.passcode = hashPasscode(cleanedPhone, newSalt);
     userData.createdAt = new Date().toISOString();
-    userData.updatedAt = new Date().toISOString();
 
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"]);
     var saved = saveRow("users", userData);
-    return { success: true, status: "pending", message: "Registration successful" };
+    return { success: true, data: cleanUserResponse(saved) };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -842,45 +1029,67 @@ function apiUpdateUserPasscode(userId, passcode) {
   }
 }
 
-// --- ≡ƒöÉ PASSCODE CHANGE (logged-in user) ---
-function apiChangePasscode(userId, currentPasscode, newPasscode) {
+// --- 🔐 PASSCODE CHANGE (logged-in user) ---
+function apiChangePasscode(userId, currentPasscode, newPasscode, session) {
   try {
+    if (session && session.role !== 'admin') {
+      userId = session.userId;
+    }
     var users = readSheet("users");
     var user = users.find(function(u) { return String(u.id) === String(userId); });
     if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
 
-    var storedPasscode = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
-    if (storedPasscode === "") storedPasscode = cleanPhone(user.phone);
+    var inputCurrent = String(currentPasscode || "").trim();
+    var isCurrentMatch = false;
 
-    if (storedPasscode !== String(currentPasscode).trim()) {
+    if (user.salt && String(user.salt).trim() !== "") {
+      var computed = hashPasscode(inputCurrent, user.salt);
+      if (computed === String(user.passcode).trim()) {
+        isCurrentMatch = true;
+      }
+    } else {
+      var storedPasscode = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
+      if (storedPasscode === "") storedPasscode = cleanPhone(user.phone);
+      if (storedPasscode === inputCurrent || cleanPhone(storedPasscode) === cleanPhone(inputCurrent)) {
+        isCurrentMatch = true;
+      }
+    }
+
+    if (!isCurrentMatch) {
       return { success: false, error: "বর্তমান passcode ভুল।" };
     }
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "নতুন passcode কমপক্ষে ৬ অক্ষরের হতে হবে।" };
+      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
     }
 
-    updateRow("users", userId, { passcode: String(newPasscode).trim() });
+    var newSalt = generateSalt();
+    var newHash = hashPasscode(String(newPasscode).trim(), newSalt);
+    updateRow("users", userId, { passcode: newHash, salt: newSalt });
+    revokeUserSessions(userId);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
 }
 
-// --- ≡ƒöÉ ADMIN FORCE-RESET PASSCODE ---
+// --- 🔐 ADMIN FORCE-RESET PASSCODE ---
 function apiAdminResetPasscode(studentId, newPasscode) {
   try {
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "নতুন passcode কমপক্ষে ৬ অক্ষরের হতে হবে।" };
+      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
     }
-    var updated = updateRow("users", studentId, { passcode: String(newPasscode).trim() });
+    var newSalt = generateSalt();
+    var newHash = hashPasscode(String(newPasscode).trim(), newSalt);
+    var updated = updateRow("users", studentId, { passcode: newHash, salt: newSalt });
     if (!updated) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
+    revokeUserSessions(studentId);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
 }
 
-// --- ≡ƒôº OTP SEND (Forgot Passcode Step 1) ---
+// --- 📧 OTP SEND (Forgot Passcode Step 1) ---
 function apiSendOTP(phone) {
   try {
     if (!phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
@@ -891,25 +1100,33 @@ function apiSendOTP(phone) {
     if (!user) return { success: false, error: "এই ফোন নম্বরটি নিবন্ধিত নয়।" };
     if (!user.email) return { success: false, error: "এই অ্যাকাউন্টে কোনো email নেই। Admin-এর সাথে যোগাযোগ করুন।" };
 
+    // Rate limiting: max 3 requests per 15 minutes per phone via CacheService
+    var cache = CacheService.getScriptCache();
+    var rlKey = "otp_rl_" + cleanedPhone;
+    var count = Number(cache.get(rlKey) || 0);
+    if (count >= 3) {
+      return { success: false, error: "খুব বেশি চেষ্টা করেছেন। ১৫ মিনিট পর পুনরায় চেষ্টা করুন। (Too many attempts. Please try again after 15 minutes.)" };
+    }
+    cache.put(rlKey, String(count + 1), 900); // 15 min TTL
+
     // 6-digit OTP তৈরি
     var otp = String(Math.floor(100000 + Math.random() * 900000));
     var expiry = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 মিনিট
+    var otpHash = computeTokenHash(otp);
 
-    // Script Properties-এ OTP সংরক্ষণ
+    // Script Properties-এ HASHED OTP সংরক্ষণ (plaintext never stored)
     var props = PropertiesService.getScriptProperties();
-    props.setProperty("otp_" + cleanedPhone, JSON.stringify({ otp: otp, expiry: expiry }));
+    props.setProperty("otp_" + cleanedPhone, JSON.stringify({ otpHash: otpHash, expiry: expiry, tries: 0 }));
 
     // Email পাঠানো
     var subject = "M-C Tuition: Passcode Reset OTP";
     var body = "প্রিয় " + (user.name || "Student") + ",\n\n" +
                "আপনার passcode reset OTP: " + otp + "\n\n" +
-               "এই কোডটি ১০ মিনিটের জন্য বৈধ।\n" +
-               "αª»αªªαª┐ αªåαª¬αª¿αª┐ αªÅαªç αªàαª¿αºüαª░αºïαªº αª¿αª╛ αªòαª░αºç αªÑαª╛αªòαºçαª¿, αªñαª╛αª╣αª▓αºç αªÅαªƒαª┐ αªëαª¬αºçαªòαºìαª╖αª╛ αªòαª░αºüαª¿αÑñ\n\n" +
+               "এই কোডটি ১০ মিনিটের জন্য বৈধ (সর্বোচ্চ ৩ বার চেষ্টা করা যাবে)।\n" +
                "- M-C Tuition Application";
 
     MailApp.sendEmail(user.email, subject, body);
 
-    // Email mask করা
     var emailParts = user.email.split("@");
     var localPart = emailParts[0];
     var masked = localPart.substring(0, Math.min(2, localPart.length)) + "***@" + emailParts[1];
@@ -920,7 +1137,7 @@ function apiSendOTP(phone) {
   }
 }
 
-// --- Γ£à OTP VERIFY + PASSCODE RESET (Forgot Passcode Step 2) ---
+// --- ✅ OTP VERIFY + PASSCODE RESET (Forgot Passcode Step 2) ---
 function apiVerifyOTPAndReset(phone, otp, newPasscode) {
   try {
     if (!phone || !otp || !newPasscode) {
@@ -937,30 +1154,39 @@ function apiVerifyOTPAndReset(phone, otp, newPasscode) {
 
     var storedData = JSON.parse(stored);
 
-    // Expiry αªÜαºçαªò
+    // Max 3 tries check
+    storedData.tries = (storedData.tries || 0) + 1;
+    if (storedData.tries > 3) {
+      props.deleteProperty("otp_" + cleanedPhone);
+      return { success: false, error: "সর্বোচ্চ ৩ বার ভুল কোড দেওয়া হয়েছে। নতুন OTP পাঠান।" };
+    }
+    props.setProperty("otp_" + cleanedPhone, JSON.stringify(storedData));
+
+    // Expiry চেক
     if (new Date() > new Date(storedData.expiry)) {
       props.deleteProperty("otp_" + cleanedPhone);
       return { success: false, error: "OTP-এর মেয়াদ শেষ হয়েছে। আবার OTP পাঠান।" };
     }
 
-    // OTP αª«αª┐αª▓αª╛αª¿αºï
-    if (storedData.otp !== String(otp).trim()) {
-      return { success: false, error: "ভুল OTP! আবার চেষ্টা করুন।" };
+    // Hash verify
+    var inputHash = computeTokenHash(String(otp).trim());
+    if (storedData.otpHash !== inputHash && storedData.otp !== String(otp).trim()) {
+      return { success: false, error: "ভুল OTP! আর " + (3 - storedData.tries) + " বার চেষ্টা করতে পারবেন।" };
     }
 
-    // নতুন passcode validate
     if (String(newPasscode).trim().length < 4) {
-      return { success: false, error: "নতুন passcode কমপক্ষে ৬ অক্ষরের হতে হবে।" };
+      return { success: false, error: "নতুন passcode কমপক্ষে ৪ অক্ষরের হতে হবে।" };
     }
 
-    // User খুঁজে passcode আপডেট
     var users = readSheet("users");
     var user = users.find(function(u) { return cleanPhone(u.phone) === cleanedPhone; });
     if (!user) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
 
-    updateRow("users", user.id, { passcode: String(newPasscode).trim() });
+    var newSalt = generateSalt();
+    var newHash = hashPasscode(String(newPasscode).trim(), newSalt);
+    updateRow("users", user.id, { passcode: newHash, salt: newSalt });
 
-    // ব্যবহৃত OTP মুছে ফেলা
+    revokeUserSessions(user.id);
     props.deleteProperty("otp_" + cleanedPhone);
 
     return { success: true };
@@ -994,62 +1220,85 @@ function apiLoginUser(phone, passcode) {
   try {
     var users = readSheet("users");
     var cleanedPhone = cleanPhone(phone);
-    
+
+    // 1. Brute force protection: 5 wrong attempts per phone -> 15 min lock
+    var cache = CacheService.getScriptCache();
+    var lockKey = "login_lock_" + cleanedPhone;
+    var failKey = "login_fail_" + cleanedPhone;
+    var isLocked = cache.get(lockKey);
+    if (isLocked) {
+      var remainingMin = Math.ceil((Number(isLocked) - Date.now()) / 60000);
+      return { 
+        success: false, 
+        error: "অ্যাকাউন্ট সাময়িকভাবে লক করা হয়েছে। " + (remainingMin > 0 ? remainingMin : 15) + " মিনিট পর পুনরায় চেষ্টা করুন। (Account locked due to 5 failed attempts)",
+        code: 429
+      };
+    }
+
     var user = users.find(function(u) {
       return cleanPhone(u.phone) === cleanedPhone;
     });
-    
+
     if (!user) {
       return { success: false, error: "ফোন নম্বরটি নিবন্ধিত নয় (Phone number not registered)" };
     }
-    
-    // αª¬αª╛αª╕αªòαºïαªí αªòαª«αºìαª¬αºìαª»αª╛αª░αª┐αª£αª¿αºçαª░ αª£αª¿αºìαª» αª╕αºìαªƒαºìαª░αª┐αªé-αªÅ αªòαª¿αª¡αª╛αª░αºìαªƒ αªòαª░αºç αªƒαºìαª░αª┐αª« αªòαª░αª╛
-    var userPasscodeStr = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
+
     var inputPasscodeStr = passcode !== undefined && passcode !== null ? String(passcode).trim() : "";
-
-    // যদি শীটে পাসকোড ফাঁকা থাকে — ডিফল্ট পাসকোড = ক্লিন ফোন নম্বর
-    var isDefaultPasscodeUsed = false;
-    if (userPasscodeStr === "") {
-      userPasscodeStr = cleanPhone(user.phone);
-      isDefaultPasscodeUsed = true;
-    }
-
-    // অ্যাডমিন অ্যাকাউন্টের জন্য মাস্টার পাসকোড বাইপাস
     var isMasterAdmin = (cleanedPhone === "9432490498" && inputPasscodeStr === "saikat123");
+    var isMatch = false;
 
-    // Direct match — সরাসরি তুলনা
-    var isMatch = (userPasscodeStr === inputPasscodeStr);
-
-    // Fallback: পাসকোড বা ইনপুট যদি ফরম্যাটেড বা ডেসিমাল সহ ফোন নম্বর হয়
-    if (!isMatch) {
-      var cleanedUserPasscode = cleanPhone(userPasscodeStr);
-      var cleanedInputPasscode = cleanPhone(inputPasscodeStr);
-      if (cleanedUserPasscode && cleanedUserPasscode === cleanedInputPasscode) {
+    // Dual-mode verification:
+    if (user.salt && String(user.salt).trim() !== "") {
+      var computedHash = hashPasscode(inputPasscodeStr, user.salt);
+      if (computedHash === String(user.passcode).trim()) {
         isMatch = true;
+      }
+    } else {
+      var userPasscodeStr = user.passcode !== undefined && user.passcode !== null ? String(user.passcode).trim() : "";
+      if (userPasscodeStr === "") {
+        userPasscodeStr = cleanPhone(user.phone);
+      }
+      if (userPasscodeStr === inputPasscodeStr) {
+        isMatch = true;
+      } else {
+        var cleanedUserPasscode = cleanPhone(userPasscodeStr);
+        var cleanedInputPasscode = cleanPhone(inputPasscodeStr);
+        if (cleanedUserPasscode && cleanedUserPasscode === cleanedInputPasscode) {
+          isMatch = true;
+        }
       }
     }
 
     if (!isMatch && !isMasterAdmin) {
-      return { success: false, error: "ভুল পাসকোড! দয়া করে সঠিক পাসকোড দিন (Invalid Passcode)" };
-    }
-    
-    if (isDefaultPasscodeUsed) {
-      updateRow("users", user.id, { passcode: userPasscodeStr });
-      user.passcode = userPasscodeStr;
-    }
-    
-    if (isMasterAdmin && userPasscodeStr !== inputPasscodeStr) {
-      // গুগল শীটে পাসকোডটি স্বয়ংক্রিয়ভাবে আপডেট করে দাও
-      updateRow("users", user.id, { passcode: "saikat123" });
-      user.passcode = "saikat123";
-    }
-    
-    var safeUser = {};
-    for (var key in user) {
-      if (key !== 'passcode' && key !== 'otpCode' && key !== 'otpExpiry' && key !== 'salt' && key !== 'tokenHash') {
-        safeUser[key] = user[key];
+      var failCount = Number(cache.get(failKey) || 0) + 1;
+      if (failCount >= 5) {
+        cache.remove(failKey);
+        cache.put(lockKey, String(Date.now() + 15 * 60 * 1000), 900); // 15 min lock
+        return { 
+          success: false, 
+          error: "ভুল পাসকোড! ৫ বার ভুল করার কারণে অ্যাকাউন্ট ১৫ মিনিটের জন্য লক করা হয়েছে। (Account locked for 15 minutes)",
+          code: 429
+        };
+      } else {
+        cache.put(failKey, String(failCount), 900);
+        return { 
+          success: false, 
+          error: "ভুল পাসকোড! আর " + (5 - failCount) + " বার চেষ্টা করতে পারবেন। (Invalid passcode)",
+          remainingAttempts: 5 - failCount
+        };
       }
     }
+
+    // Login success: reset fail counters
+    cache.remove(failKey);
+    cache.remove(lockKey);
+
+    // Create session token
+    var sessionToken = createSession(user);
+
+    // Return sanitized user object
+    var safeUser = cleanUserResponse(user);
+    safeUser.sessionToken = sessionToken;
 
     return { success: true, data: safeUser };
   } catch (err) {
@@ -1508,51 +1757,95 @@ function apiShareLibraryItem(itemId, batchIdsMap, scheduledStartTimeMap) {
   }
 }
 
-// --- ≡ƒÆ│ PAYMENTS ---
+// --- 💳 PAYMENTS ---
 
-function apiGetPayments() {
+function apiGetPayments(session) {
   try {
-    return { success: true, data: readSheet("payments") };
+    var all = readSheet("payments");
+    if (session && session.role !== 'admin') {
+      all = all.filter(function(p) {
+        return String(p.studentId).trim() === String(session.userId).trim();
+      });
+    }
+    return { success: true, data: all };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
 }
 
-function apiAddPayment(paymentData) {
+function apiSubmitPaymentRequest(paymentData, session) {
   try {
-    var saved = saveRow("payments", paymentData);
-    
-    // αªçαªëαª£αª╛αª░αºçαª░ αªùαºìαª▓αºïαª¼αª╛αª▓ αª¬αºçαª«αºçαª¿αºìαªƒ αª╕αºìαªƒαºìαª»αª╛αªƒαª╛αª╕ αªåαª¬αªíαºçαªƒ αªòαª░αª╛
-    updateRow("users", paymentData.studentId, { paymentStatus: paymentData.status });
-    
+    if (!session || !session.userId) {
+      return { success: false, error: "Unauthorized access: Valid session required", code: 401 };
+    }
+    if (!paymentData) return { success: false, error: "No payment data provided" };
+
+    var monthStr = String(paymentData.month || "").trim();
+    if (!monthStr) return { success: false, error: "Month selection is required" };
+
+    var amountNum = Number(paymentData.amount) || 0;
+    if (amountNum <= 0) return { success: false, error: "Valid amount is required" };
+
+    var paidVia = String(paymentData.paymentMode || paymentData.paidVia || "upi").toLowerCase().trim();
+    if (paidVia !== "cash" && paidVia !== "upi") paidVia = "upi";
+
+    var newPayment = {
+      id: "pay_" + Utilities.getUuid().substring(0, 8),
+      studentId: String(session.userId),
+      studentName: session.name || "Student",
+      month: monthStr,
+      amount: amountNum,
+      status: "pending",
+      paidVia: paidVia,
+      paymentMode: paidVia,
+      transactionId: String(paymentData.transactionId || "").trim(),
+      proofImage: paymentData.proofImage || "",
+      remarks: paymentData.remarks || "",
+      paidDate: new Date().toISOString(),
+      createdAt: new Date().toISOString()
+    };
+
+    ensureSheetHeaders("payments", ["id", "studentId", "studentName", "month", "amount", "status", "paidVia", "paymentMode", "transactionId", "proofImage", "remarks", "paidDate", "createdAt"]);
+    var saved = saveRow("payments", newPayment);
     return { success: true, data: saved };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
 }
 
-function apiUpdatePaymentStatus(paymentId, status, remarks) {
+function apiUpdatePaymentStatus(paymentId, status, remarks, session) {
   try {
-    // updateRow() শুধু updateObj return করে (partial), studentId থাকে না
-    // তাই আগে payment record পড়ে studentId বের করতে হবে
-    var payments = readSheet("payments");
-    var payment = null;
-    for (var i = 0; i < payments.length; i++) {
-      if (String(payments[i].id) === String(paymentId)) {
-        payment = payments[i];
-        break;
+    if (!session || session.role !== 'admin') {
+      return { success: false, error: "Forbidden: Admin access required", code: 403 };
+    }
+
+    var targetStatus = String(status || '').toLowerCase().trim();
+    if (targetStatus !== 'approved' && targetStatus !== 'rejected' && targetStatus !== 'paid') {
+      return { success: false, error: "Invalid status: only 'approved' or 'rejected' allowed" };
+    }
+    if (targetStatus === 'paid') targetStatus = 'approved';
+
+    if (targetStatus === 'rejected') {
+      var rejectReason = String(remarks || '').trim();
+      if (!rejectReason) {
+        return { success: false, error: "Rejection reason (remarks) is mandatory when rejecting a payment." };
       }
     }
 
-    var updateObj = { status: status };
+    var payments = readSheet("payments");
+    var payment = payments.find(function(p) { return String(p.id) === String(paymentId); });
+    if (!payment) {
+      return { success: false, error: "Payment record not found" };
+    }
+
+    var updateObj = { status: targetStatus };
     if (remarks !== undefined && remarks !== null) {
-      updateObj.remarks = remarks;
+      updateObj.remarks = String(remarks).trim();
     }
     var updated = updateRow("payments", paymentId, updateObj);
 
-    // এখন সঠিকভাবে studentId পেয়ে user record আপডেট করা যাবে
-    if (payment && payment.studentId) {
-      updateRow("users", payment.studentId, { paymentStatus: status });
+    if (payment.studentId && targetStatus === 'approved') {
+      updateRow("users", payment.studentId, { paymentStatus: 'paid' });
     }
 
     return { success: true, data: updated };
@@ -1563,83 +1856,121 @@ function apiUpdatePaymentStatus(paymentId, status, remarks) {
 
 // --- ≡ƒôó NOTIFICATIONS ---
 
-function apiGetNotifications() {
+function apiGetNotifications(session) {
   try {
-    return { success: true, data: readSheet("notifications") };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiCreateNotification(notifData) {
-  try {
-    if (notifData.id) {
-      var id = notifData.id;
-      delete notifData.id;
-      var updated = updateRow("notifications", id, notifData);
-      markSnapshotDirty();
-      return { success: true, data: updated };
-    } else {
-      var saved = saveRow("notifications", notifData);
-      markSnapshotDirty();
-      return { success: true, data: saved };
-    }
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiDeleteNotification(notifId) {
-  try {
-    var success = deleteRow("notifications", notifId);
-    markSnapshotDirty();
-    return { success: success };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-// --- ≡ƒô¥ EXAMS & ATTENDANCE ---
-
-function apiGetExamSessions() {
-  try {
-    var list = readSheet("examSessions");
-    list.forEach(function(item) {
-      item.isActive = item.isActive === true || item.isActive === "true";
-      item.codeEnabled = item.codeEnabled === true || item.codeEnabled === "true";
-      try {
-        item.participantUids = JSON.parse(item.participantUids || "[]");
-      } catch(e) {
-        item.participantUids = [];
-      }
-    });
-    return { success: true, data: list };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiCreateExamSession(sessionData) {
-  try {
-    // Enforce single active session constraint per exam/batch: KILL existing active session if found
-    var sessionsResponse = apiGetExamSessions();
-    if (sessionsResponse.success) {
-      var existingActive = sessionsResponse.data.find(function(s) {
-        return String(s.examId) === String(sessionData.examId) && 
-               String(s.batchId) === String(sessionData.batchId) && 
-               s.isActive;
+    var all = readSheet("notifications");
+    if (session && session.role !== 'admin') {
+      var studentId = String(session.userId || '').trim();
+      var studentBatchId = String(session.batchId || '').trim();
+      all = all.filter(function(n) {
+        if (!n) return false;
+        var type = String(n.type || '').trim().toLowerCase();
+        var target = String(n.target || n.batchId || '').trim().toLowerCase();
+        var targetStudentId = String(n.studentId || n.recipientId || '').trim();
+        if (target === 'all' || type === 'broadcast') return true;
+        if (targetStudentId && targetStudentId === studentId) return true;
+        if (studentBatchId && target === studentBatchId) return true;
+        if (String(n.senderId || n.studentId || '').trim() === studentId) return true;
+        return false;
       });
-      if (existingActive) {
-        // KILL the old session so the new one can take over with the new code
-        updateRow("examSessions", existingActive.id, { isActive: false });
-      }
     }
+    return { success: true, data: all };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
 
-    sessionData.isActive = true;
-    sessionData.participantUids = sessionData.participantUids || [];
-    
-    var saved = saveRow("examSessions", sessionData);
+function apiCreateNotification(notifData, session) {
+  try {
+    if (session && session.role !== 'admin') {
+      notifData.senderRole = 'student';
+      notifData.senderId = session.userId;
+      notifData.type = 'student_to_admin';
+    }
+    var saved = saveRow("notifications", notifData);
     return { success: true, data: saved };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetMyProfile(session) {
+  try {
+    if (!session || !session.userId) {
+      return { success: false, error: "Unauthorized access: Valid session required", code: 401 };
+    }
+    var users = readSheet("users");
+    var user = users.find(function(u) { return String(u.id) === String(session.userId); });
+    if (!user) return { success: false, error: "User not found", code: 404 };
+    return { success: true, data: cleanUserResponse(user) };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetSettings(type, session) {
+  try {
+    var all = readSheet("settings");
+    if (type) {
+      var setting = all.find(function(s) { return s.type === type; });
+      var data = setting ? setting.data : null;
+      if (session && session.role !== 'admin' && data) {
+        // Strip sensitive admin secrets for students
+        delete data.razorpayKeySecret;
+        delete data.adminPassword;
+      }
+      return { success: true, data: data };
+    }
+    return { success: true, data: all };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function adminHashTestStudentOnly() {
+  try {
+    var users = readSheet("users");
+    var testStudent = users.find(function(u) { return cleanPhone(u.phone) === "9999999901"; });
+    if (!testStudent) return { success: false, error: "Test student 9999999901 not found" };
+
+    var salt = generateSalt();
+    var hash = hashPasscode("test1234", salt);
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"]);
+    updateRow("users", testStudent.id, { passcode: hash, salt: salt });
+    return { success: true, message: "Hashed test student 9999999901", salt: salt, hashPrefix: hash.substring(0, 10) + "..." };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function adminMigrateAllPasscodes() {
+  try {
+    var ss = getSpreadsheet();
+    var usersSheet = ss.getSheetByName("users");
+    var timestampStr = Utilities.formatDate(new Date(), "GMT+0530", "yyyyMMdd_HHmmss");
+    var backupSheetName = "users_backup_" + timestampStr;
+    var backupSheet = usersSheet.copyTo(ss);
+    backupSheet.setName(backupSheetName);
+
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"]);
+
+    var users = readSheet("users");
+    var migratedCount = 0;
+    for (var i = 0; i < users.length; i++) {
+      var u = users[i];
+      if (u.salt && String(u.salt).trim() !== "" && u.passcode && String(u.passcode).trim().length === 64) {
+        continue;
+      }
+      var currentPasscode = u.passcode !== undefined && u.passcode !== null ? String(u.passcode).trim() : "";
+      if (currentPasscode === "") {
+        currentPasscode = cleanPhone(u.phone);
+      }
+      var salt = generateSalt();
+      var hash = hashPasscode(currentPasscode, salt);
+      updateRow("users", u.id, { passcode: hash, salt: salt });
+      migratedCount++;
+    }
+    return { success: true, backupSheet: backupSheetName, migratedCount: migratedCount };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -1693,11 +2024,16 @@ function apiJoinExamSession(sessionId, userId, studentName, studentPhone, entere
   }
 }
 
-function apiSubmitExamResult(resultData) {
+function apiSubmitExamResult(resultData, session) {
   try {
     if (!resultData) return { success: false, error: "No data provided" };
+    if (!session || !session.userId) {
+      return { success: false, error: "Unauthorized access: Valid session required", code: 401 };
+    }
 
-    // Idempotency: If client provides an id / resultId, ensure it is not already inserted
+    // Force studentId strictly from session
+    resultData.studentId = String(session.userId);
+
     var resultId = resultData.id || resultData.resultId;
     if (resultId) {
       resultData.id = String(resultId).trim();
@@ -1715,12 +2051,9 @@ function apiSubmitExamResult(resultData) {
             }
           }
           if (idColIdx !== -1) {
-            var finder = sheet.getRange(2, idColIdx, lastRow - 1, 1)
-                              .createTextFinder(resultData.id)
-                              .matchEntireCell(true);
+            var finder = sheet.getRange(2, idColIdx, lastRow - 1, 1).createTextFinder(resultData.id).matchEntireCell(true);
             var match = finder.findNext();
             if (match) {
-              // Existing row found: do not append duplicate row
               return { success: true, data: resultData, duplicate: true };
             }
           }
@@ -1735,113 +2068,91 @@ function apiSubmitExamResult(resultData) {
   }
 }
 
-function apiGetStudentDashboardData(batchIds, studentId) {
+function apiGetStudentDashboardData(batchIds, studentId, session) {
   try {
-    var announcements = "";
-    try {
-      var settingsRes = apiGetSettings("general");
-      if (settingsRes && settingsRes.data && settingsRes.data.announcements) {
-        announcements = settingsRes.data.announcements;
-      }
-    } catch(e) {}
-
-    var allPayments = readSheet("payments");
-    var studentPayments = allPayments.filter(function(p) {
-      return String(p.studentId).trim() === String(studentId).trim();
+    if (session && session.role !== 'admin') {
+      studentId = session.userId;
+    }
+    var sid = String(studentId).trim();
+    var allResults = readSheet("examResults");
+    var studentResults = allResults.filter(function(r) {
+      return String(r.studentId).trim() === sid;
     });
 
-    var allBatches = readSheet("batches");
-    var relevantBatches = allBatches.filter(function(b) {
-      return batchIds && batchIds.indexOf(b.id) !== -1;
-    });
-
-    var assignedItemIds = {};
-    relevantBatches.forEach(function(b) {
-      try {
-        var assigned = JSON.parse(b.assignedItemsMap || "{}");
-        Object.keys(assigned).forEach(function(k) { assignedItemIds[k] = true; });
-      } catch(e) {}
-    });
-
-    var allLib = apiGetLibrary().data || [];
-    var filteredLib = allLib.filter(function(item) {
-      return assignedItemIds[item.id] || (item.parentId && assignedItemIds[item.parentId]);
-    });
-
-    var allSessions = readSheet("examSessions");
-    var filteredSessions = allSessions.filter(function(s) {
-      return (batchIds && (batchIds.indexOf(s.batchId) !== -1 || s.batchId === "all"));
+    var allAttendance = readSheet("attendance");
+    var studentAttendance = allAttendance.filter(function(a) {
+      return String(a.studentId).trim() === sid;
     });
 
     return {
       success: true,
       data: {
-        announcements: announcements,
-        payments: studentPayments,
-        batches: relevantBatches,
-        library: filteredLib,
-        examSessions: filteredSessions
+        results: studentResults,
+        attendance: studentAttendance
       }
     };
-  } catch(err) {
-    return { success: false, error: err.toString() };
-  }
-}
-
-function apiGetExamResults() {
-  try {
-    return { success: true, data: readSheet("examResults") };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
 }
 
-function apiHasSubmitted(examId, studentId) {
+function apiGetExamResults(session) {
   try {
-    if (!examId || !studentId) return { success: true, data: false };
+    var all = readSheet("examResults");
+    if (session && session.role !== 'admin') {
+      all = all.filter(function(r) {
+        return String(r.studentId).trim() === String(session.userId).trim();
+      });
+    }
+    return { success: true, data: all };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiHasSubmitted(examId, studentId, session) {
+  try {
+    if (session && session.role !== 'admin') {
+      studentId = session.userId;
+    }
+    if (!examId || !studentId) {
+      return { success: true, submitted: false };
+    }
     var sheet = getSheet("examResults");
     var lastRow = sheet.getLastRow();
-    if (lastRow < 2) return { success: true, data: false };
+    if (lastRow < 2) {
+      return { success: true, submitted: false };
+    }
 
-    var lastCol = sheet.getLastColumn();
-    if (lastCol === 0) return { success: true, data: false };
-
-    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     var examIdCol = -1;
     var studentIdCol = -1;
-
     for (var c = 0; c < headers.length; c++) {
       var h = String(headers[c]).trim().toLowerCase();
       if (h === "examid") examIdCol = c + 1;
-      else if (h === "studentid") studentIdCol = c + 1;
+      if (h === "studentid") studentIdCol = c + 1;
     }
 
     if (examIdCol === -1 || studentIdCol === -1) {
-      return { success: true, data: false };
+      return { success: true, submitted: false };
     }
 
     var targetExamId = String(examId).trim();
     var targetStudentId = String(studentId).trim();
 
-    var finder = sheet.getRange(2, examIdCol, lastRow - 1, 1)
-                      .createTextFinder(targetExamId)
-                      .matchEntireCell(true);
+    var finder = sheet.getRange(2, examIdCol, lastRow - 1, 1).createTextFinder(targetExamId).matchEntireCell(true);
     var matches = finder.findAll();
-    if (!matches || matches.length === 0) {
-      return { success: true, data: false };
-    }
 
     for (var i = 0; i < matches.length; i++) {
-      var rowNum = matches[i].getRow();
-      var val = String(sheet.getRange(rowNum, studentIdCol).getValue()).trim();
-      if (val === targetStudentId) {
-        return { success: true, data: true };
+      var row = matches[i].getRow();
+      var sIdInRow = String(sheet.getRange(row, studentIdCol).getValue()).trim();
+      if (sIdInRow === targetStudentId) {
+        return { success: true, submitted: true };
       }
     }
 
-    return { success: true, data: false };
+    return { success: true, submitted: false };
   } catch (err) {
-    Logger.log("apiHasSubmitted error: " + err.toString());
     return { success: false, error: err.toString() };
   }
 }
@@ -2083,7 +2394,7 @@ function apiUploadFileToDrive(base64Data, fileName, folderId) {
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'No data provided' }))
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'No data provided', code: 400 }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -2092,76 +2403,129 @@ function doPost(e) {
     var args = requestData.args || [];
     var token = requestData.token;
 
-    // Security Check Layer
     var SECURITY_TOKEN = "MondalCoachingSecureToken2026!";
-    if (token !== SECURITY_TOKEN) {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Unauthorized access: Invalid or missing security token' }))
+
+    var func = (typeof this[action] === 'function') ? this[action] : (typeof globalThis !== 'undefined' && typeof globalThis[action] === 'function' ? globalThis[action] : null);
+    if (!action || !func) {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Forbidden: action not allowed', code: 404 }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Strict allowlist: only functions explicitly used by the frontend may be called via doPost
-    var ALLOWED_ACTIONS = {
-      apiAddPayment: true,
-      apiAdminResetPasscode: true,
-      apiChangePasscode: true,
-      apiCheckApplicationStatus: true,
-      apiCreateExamSession: true,
-      apiCreateNotification: true,
-      apiDeleteBatch: true,
-      apiDeleteExamResult: true,
-      apiDeleteLibraryItem: true,
-      apiDeleteMultipleExamResults: true,
-      apiDeleteMultipleLibraryItems: true,
-      apiDeleteNotification: true,
-      apiDeleteUser: true,
-      apiEndExamSession: true,
-      apiGetAnnouncement: true,
-      apiGetAttendance: true,
-      apiGetBatches: true,
-      apiGetExamResults: true,
-      apiGetExamSessions: true,
-      apiGetLibrary: true,
-      apiGetLibraryItemDetails: true,
-      apiGetNotifications: true,
-      apiGetPayments: true,
-      apiGetSettings: true,
-      apiGetStudentDashboardData: true,
-      apiGetUsers: true,
-      apiHasSubmitted: true,
-      apiJoinExamSession: true,
-      apiLoginUser: true,
-      apiRegisterUser: true,
-      apiSaveAnnouncement: true,
-      apiSaveBatch: true,
-      apiSaveLibraryItem: true,
-      apiSaveSettings: true,
-      apiSaveUser: true,
-      apiSendOTP: true,
-      apiShareLibraryItem: true,
-      apiSubmitExamResult: true,
-      apiUpdateLibrarySequences: true,
-      apiUpdatePaymentAmount: true,
-      apiUpdatePaymentStatus: true,
-      apiUpdateUserPasscode: true,
-      apiUpdateUserStatus: true,
-      apiUploadFileToDrive: true,
-      apiVerifyGatewayPayment: true,
-      apiVerifyOTPAndReset: true
-    };
+    // 1. PUBLIC ACTIONS (Login, Registration, OTP, App Status)
+    var PUBLIC_ACTIONS = [
+      "apiLoginUser",
+      "apiRegisterUser",
+      "apiCheckApplicationStatus",
+      "apiSendOTP",
+      "apiVerifyOTPAndReset"
+    ];
 
-    if (!action || !ALLOWED_ACTIONS[action] || typeof this[action] !== 'function') {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Forbidden: action not allowed' }))
-        .setMimeType(ContentService.MimeType.JSON);
+    // 2. ADMIN-ONLY ACTIONS
+    var ADMIN_ACTIONS = [
+      "apiGetUsers",
+      "apiDeleteUser",
+      "apiUpdateUserStatus",
+      "apiAdminResetPasscode",
+      "apiUpdateUserPasscode",
+      "apiSaveBatch",
+      "apiDeleteBatch",
+      "apiSaveLibraryItem",
+      "apiDeleteLibraryItem",
+      "apiDeleteMultipleLibraryItems",
+      "apiShareLibraryItem",
+      "apiUpdateLibrarySequences",
+      "apiUploadFileToDrive",
+      "apiUpdatePaymentStatus",
+      "apiDeleteExamResult",
+      "apiDeleteMultipleExamResults",
+      "apiGetAttendance",
+      "apiSaveAnnouncement",
+      "apiSaveSettings",
+      "apiCreateExamSession",
+      "apiEndExamSession",
+      "adminMigrateAllPasscodes",
+      "adminHashTestStudentOnly"
+    ];
+
+    var session = null;
+
+    if (PUBLIC_ACTIONS.indexOf(action) !== -1) {
+      if (token !== SECURITY_TOKEN) {
+        session = validateSessionToken(token);
+        if (!session) {
+          return ContentService.createTextOutput(JSON.stringify({ 
+            success: false, 
+            error: 'Unauthorized access: Invalid security token or session', 
+            code: 401 
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+    } else {
+      if (!token || token === SECURITY_TOKEN) {
+        return ContentService.createTextOutput(JSON.stringify({ 
+          success: false, 
+          error: 'Unauthorized access: Valid session token required. Please login again.', 
+          code: 401,
+          forceLogout: true
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      session = validateSessionToken(token);
+      if (!session) {
+        return ContentService.createTextOutput(JSON.stringify({ 
+          success: false, 
+          error: 'Unauthorized access: Invalid or expired session token. Please login again.', 
+          code: 401,
+          forceLogout: true
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+
+      if (ADMIN_ACTIONS.indexOf(action) !== -1) {
+        if (session.role !== 'admin') {
+          return ContentService.createTextOutput(JSON.stringify({ 
+            success: false, 
+            error: 'Forbidden: Admin access required', 
+            code: 403 
+          })).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
     }
 
-    // Call the allowed API function
-    var result = this[action].apply(this, args);
+    var ACTIONS_NEEDING_SESSION = [
+      "apiGetSettings",
+      "apiGetPayments",
+      "apiGetAttendance",
+      "apiGetExamResults",
+      "apiGetLibraryItemDetails",
+      "apiChangePasscode",
+      "apiSaveUser",
+      "apiJoinExamSession",
+      "apiSubmitExamResult",
+      "apiSubmitPaymentRequest",
+      "apiGetStudentDashboardData",
+      "apiUpdatePaymentStatus",
+      "apiHasSubmitted",
+      "apiCreateNotification",
+      "apiGetNotifications",
+      "apiGetMyProfile"
+    ];
+
+    if (ACTIONS_NEEDING_SESSION.indexOf(action) !== -1) {
+      args.push(session);
+    }
+
+    var result = func.apply(this, args);
+
+    if (result && typeof result === 'object' && result.success === false) {
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
 
     return ContentService.createTextOutput(JSON.stringify({ success: true, data: result }))
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
+    return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString(), code: 500 }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }

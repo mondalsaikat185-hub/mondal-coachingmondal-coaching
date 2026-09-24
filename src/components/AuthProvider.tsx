@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { api, UserProfile, cleanPhone } from '../lib/api';
+import { api, UserProfile, cleanPhone, SESSION_TOKEN_KEY, clearSessionToken } from '../lib/api';
 import { clearAllLocalSwr } from '../lib/cache';
 
 
@@ -63,24 +63,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Listen to mc-force-logout event from API layer
+  useEffect(() => {
+    const handleForceLogout = (e: any) => {
+      console.warn("Force logout received:", e.detail);
+      setUser(null);
+      localStorage.removeItem(SESSION_KEY);
+      clearSessionToken();
+    };
+    window.addEventListener("mc-force-logout", handleForceLogout);
+    return () => window.removeEventListener("mc-force-logout", handleForceLogout);
+  }, []);
+
   // Sync session on mount with background refresh from Sheets database
   useEffect(() => {
     const fetchLatestUser = async (savedUser: AppUser) => {
       try {
-        const allUsers = await api.getUsers();
-
-        // PRIMARY lookup: phone number (সবসময় unique — login credential)
-        // এটা দিয়ে id corruption-এর পরেও সঠিক user খুঁজে পাওয়া যাবে
-        // FALLBACK: id দিয়ে খোঁজা (backwards compatibility)
         let latestProfile: UserProfile | undefined;
-        const savedPhone = savedUser.phone || '';
-        if (savedPhone) {
-          const cleanedSavedPhone = cleanPhone(savedPhone);
-          latestProfile = allUsers.find(u => cleanPhone(u.phone) === cleanedSavedPhone);
-        }
-        if (!latestProfile) {
-          // Phone দিয়ে না পাওয়া গেলে id দিয়ে try করো
-          latestProfile = allUsers.find(u => String(u.id).trim() === String(savedUser.uid).trim());
+        try {
+          latestProfile = await api.getMyProfile();
+        } catch (e: any) {
+          if (savedUser.role === 'admin') {
+            const allUsers = await api.getUsers();
+            latestProfile = allUsers.find(u => String(u.id).trim() === String(savedUser.uid).trim() || cleanPhone(u.phone) === cleanPhone(savedUser.phone || ''));
+          } else {
+            throw e;
+          }
         }
 
         if (latestProfile) {
@@ -88,24 +96,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(appUser);
           localStorage.setItem(SESSION_KEY, JSON.stringify(appUser));
         } else {
-          // যদি database-এ user পাওয়া না যায় (stale/invalid session),
-          // session clear করে re-login force করো
           console.warn("Logged-in user not found in database. Clearing stale session...");
           setUser(null);
           localStorage.removeItem(SESSION_KEY);
+          clearSessionToken();
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to sync user session from server on mount:", err);
+        if (err?.code === 401 || err?.message?.includes("Unauthorized") || err?.message?.includes("session") || err?.message?.includes("Forbidden")) {
+          setUser(null);
+          localStorage.removeItem(SESSION_KEY);
+          clearSessionToken();
+        }
       }
     };
 
     try {
       const savedUserStr = localStorage.getItem(SESSION_KEY);
+      const savedToken = localStorage.getItem(SESSION_TOKEN_KEY);
       if (savedUserStr) {
+        if (!savedToken) {
+          console.warn("Legacy session detected without session token. Clearing for clean login...");
+          setUser(null);
+          localStorage.removeItem(SESSION_KEY);
+          clearSessionToken();
+          setLoading(false);
+          return;
+        }
         const savedUser = JSON.parse(savedUserStr);
         setUser(savedUser);
-        
-        // Fetch latest user data in the background to keep cache fresh
         fetchLatestUser(savedUser);
       }
     } catch (e) {
@@ -177,6 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     setUser(null);
     localStorage.removeItem(SESSION_KEY);
+    clearSessionToken();
     clearAllLocalSwr();
   };
 
