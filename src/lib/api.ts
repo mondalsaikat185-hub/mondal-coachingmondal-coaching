@@ -246,7 +246,8 @@ export function cleanPhone(p: any): string {
         }
 
         if (!json.success) {
-          if (json.code === 401 || json.forceLogout || (json.error && json.error.includes("session"))) {
+          // Only a real expired/invalid login logs the user out (not any error that mentions "session").
+          if (json.code === 401 || json.forceLogout) {
             clearSessionToken();
             try { localStorage.removeItem("mc_session_user"); } catch (e) {}
             window.dispatchEvent(new CustomEvent("mc-force-logout", { detail: json.error }));

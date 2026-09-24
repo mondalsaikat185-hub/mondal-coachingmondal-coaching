@@ -695,8 +695,7 @@ function TopNav() {
             }
           } catch (_) {}
         }
-        // Force logout to clear stale/corrupted student sessions from localStorage
-        localStorage.removeItem("mc_session_user");
+        // (Do NOT log the user out on a version change — login is kept.)
         localStorage.setItem("app_version", CURRENT_VERSION);
         window.location.reload();
       };
@@ -705,29 +704,9 @@ function TopNav() {
   }, []);
 
   const handleForceClearPwaCache = async () => {
-    if (confirm("ক্যাশ রিসেট করতে চান? এটি প্রোজেক্টের নতুন আপডেট ডাউনলোড করতে সাহায্য করবে।")) {
+    if (confirm("অ্যাপ সম্পূর্ণ রিফ্রেশ করবেন? নতুন আপডেট লোড হবে, লগইন থাকবে।")) {
       setShowDropdown(false);
-      if ('serviceWorker' in navigator) {
-        try {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          for (const registration of registrations) {
-            await registration.unregister();
-          }
-        } catch (e) {
-          console.error("SW unregister failed:", e);
-        }
-      }
-      if ('caches' in window) {
-        try {
-          const keys = await caches.keys();
-          for (const key of keys) {
-            await caches.delete(key);
-          }
-        } catch (e) {
-          console.error("Cache clear failed:", e);
-        }
-      }
-      window.location.href = window.location.pathname + "?update=" + Date.now() + window.location.hash;
+      await fullResetKeepLogin();
     }
   };
   const [editAddress, setEditAddress] = useState("");
@@ -2414,6 +2393,7 @@ function GlobalAlert() {
 }
 
 import { ReloadPrompt } from "./components/ReloadPrompt";
+import { fullResetKeepLogin } from "./lib/autoUpdate";
 import { InstallPrompt } from "./components/InstallPrompt";
 
 export default function App() {

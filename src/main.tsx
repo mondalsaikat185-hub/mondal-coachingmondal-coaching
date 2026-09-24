@@ -5,6 +5,7 @@ import './index.css';
 import { ThemeProvider } from './components/ThemeProvider';
 import { AuthProvider } from './components/AuthProvider';
 import { setupAlertPolyfill } from './lib/alert-polyfill';
+import { startAutoUpdate } from './lib/autoUpdate';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Force unregister service workers and clear cache to permanently resolve aggressive PWA mobile caching
@@ -42,6 +43,7 @@ try {
 }
 
 setupAlertPolyfill();
+startAutoUpdate();
 
 
 // PWA: Capture install prompt and show install banner

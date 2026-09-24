@@ -4,6 +4,7 @@ import { RotateCw, Clock, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, Che
 import { useAuth } from '../AuthProvider';
 import { api } from '../../lib/api';
 import { clearCache, addExamToOutbox, removeExamFromOutbox, isExamPendingSync } from '../../lib/cache';
+import { setExamActive } from '../../lib/autoUpdate';
 
 // Helper function to format passages and cloze texts coherently
 export function formatPassageText(text: string): string[] {
@@ -112,6 +113,12 @@ export function formatMathAndChem(text: string): string {
 
 export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: Exam, onBack: () => void, isPreview?: boolean }) {
   const { user } = useAuth();
+
+  // While an exam is open, the app never auto-reloads for an update (it waits until the exam closes).
+  useEffect(() => {
+    setExamActive(true);
+    return () => setExamActive(false);
+  }, []);
   
   // Custom screen orientation lock / landscape simulation
   const [isForcedLandscape, setIsForcedLandscape] = useState(false);

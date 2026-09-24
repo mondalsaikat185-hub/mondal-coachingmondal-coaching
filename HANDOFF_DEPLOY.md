@@ -38,3 +38,18 @@ tsc --noEmit = 0.
    vercel env add VITE_GAS_WEB_APP_URL preview payments-upi   (value = TEST URL AKfycbxLbQVY…/exec)
    Redeploy the payments-upi preview. Verify the preview bundle contains ONLY AKfycbxLbQVY… (not AKfycbxBtl…). Give owner the new URL.
    Production env var must stay untouched.
+
+## ROUND 3 (Claude) — auto-update + fewer logouts — uncommitted
+- vite.config.ts — each build gets a unique id (__MC_BUILD_ID__) and emits dist/version.json.
+- src/lib/autoUpdate.ts (NEW) — checks /version.json on start (+5 s), when app returns to foreground, and every 5 min; if a new build exists → toast + reload automatically. Never reloads during an exam (UnifiedQuizPlayer sets exam-active). fullResetKeepLogin(): clears SW/caches/cached data but KEEPS login, theme, unsent exam results, running exam state.
+- src/main.tsx — startAutoUpdate().
+- src/App.tsx — "Reset Cache" menu → fullResetKeepLogin (no logout); version-buster no longer removes mc_session_user.
+- src/components/quiz/UnifiedQuizPlayer.tsx — setExamActive(true/false).
+- src/lib/api.ts — force-logout only on code 401 / forceLogout (not on any error text containing "session").
+tsc --noEmit = 0.
+
+## ROUND 3 deploy
+1. git add vite.config.ts src/lib/autoUpdate.ts src/main.tsx src/App.tsx src/components/quiz/UnifiedQuizPlayer.tsx src/lib/api.ts HANDOFF_DEPLOY.md && git commit -m "feat: auto-update via version.json, reset cache keeps login, fewer forced logouts" && npm run lint && npm run build
+2. Verify dist/version.json exists and its build id also appears inside dist/index.html.
+3. git push origin payments-upi. Wait for the Vercel preview of THIS commit (not a redeploy of an old one). Verify with `vercel inspect`: commit = this commit, bundle contains only AKfycbxLbQVY…, and <preview>/version.json returns {"build": "..."}.
+4. Give owner the preview URL.
