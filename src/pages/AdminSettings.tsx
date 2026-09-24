@@ -12,10 +12,8 @@ export function AdminSettings() {
   const [announcement, setAnnouncement] = useState('');
   const [settings, setSettings] = useState({
     adminUpiId: '',
-    enablePaymentSystem: true,
-    paymentMethod: 'manual',
-    razorpayKeyId: '',
-    razorpayKeySecret: ''
+    adminPayeeName: '',
+    enablePaymentSystem: true
   });
 
   const [healing, setHealing] = useState(false);
@@ -62,10 +60,8 @@ export function AdminSettings() {
         setAnnouncement(ann);
         setSettings({
           adminUpiId: data.adminUpiId || '',
-          enablePaymentSystem: data.enablePaymentSystem !== false,
-          paymentMethod: data.paymentMethod || 'manual',
-          razorpayKeyId: data.razorpayKeyId || '',
-          razorpayKeySecret: data.razorpayKeySecret || ''
+          adminPayeeName: data.adminPayeeName || '',
+          enablePaymentSystem: data.enablePaymentSystem !== false
         });
       } catch (err) {
         console.error("Failed to load settings:", err);
@@ -83,10 +79,8 @@ export function AdminSettings() {
     try {
       await api.saveSettings({
         adminUpiId: settings.adminUpiId,
-        enablePaymentSystem: settings.enablePaymentSystem,
-        paymentMethod: settings.paymentMethod,
-        razorpayKeyId: settings.razorpayKeyId,
-        razorpayKeySecret: settings.razorpayKeySecret
+        adminPayeeName: settings.adminPayeeName,
+        enablePaymentSystem: settings.enablePaymentSystem
       });
       await api.saveAnnouncement(announcement);
       clearCache('settings_general'); // Invalidate cache so next read gets fresh data
@@ -135,63 +129,37 @@ export function AdminSettings() {
 
             <div className={`space-y-4 pl-8 opacity-${settings.enablePaymentSystem ? '100' : '50'}`}>
               <div className="space-y-2">
-                <label className="block text-xs font-bold uppercase">Payment Method</label>
-                <select
-                  value={settings.paymentMethod}
-                  onChange={e => setSettings({...settings, paymentMethod: e.target.value})}
+                <label className="block text-xs font-bold uppercase">Your UPI ID (For QR & Direct Pay)</label>
+                <input 
+                  type="text" 
+                  value={settings.adminUpiId} 
+                  onChange={e => setSettings({...settings, adminUpiId: e.target.value})} 
+                  placeholder="e.g. saikat@okhdfcbank"
                   disabled={!settings.enablePaymentSystem}
-                  className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-bold"
-                >
-                <option value="manual" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Manual UPI Scan & Admin Review</option>
-                  <option value="proof_upload" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Payment Proof Upload (Screenshot + TXN ID)</option>
-                  <option value="gateway" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">Automated Razorpay Payment Gateway (Instant Approval)</option>
-                </select>
-                <p className="text-xs text-zinc-500">Choose: Manual UPI scan, Screenshot proof upload, or Razorpay instant checkout.</p>
+                  className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none"
+                />
+                <p className="text-xs text-zinc-500">Students will use this UPI ID to make fee payments via deep-link or QR code.</p>
               </div>
 
-              {settings.paymentMethod !== 'gateway' ? (
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold uppercase">Your UPI ID (For Scan to Pay)</label>
-                  <input 
-                    type="text" 
-                    value={settings.adminUpiId} 
-                    onChange={e => setSettings({...settings, adminUpiId: e.target.value})}
-                    placeholder="e.g. name@bank"
-                    disabled={!settings.enablePaymentSystem}
-                    className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none"
-                  />
-                  <p className="text-xs text-zinc-500">Students will use this UPI ID to make fee payments.</p>
-                </div>
-              ) : (
-                <div className="space-y-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 p-4">
-                  <div className="text-xs font-black uppercase text-yellow-600 dark:text-yellow-400">Razorpay API Credentials (Test or Live)</div>
-                  
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-bold uppercase">Razorpay Key ID</label>
-                    <input 
-                      type="text" 
-                      value={settings.razorpayKeyId} 
-                      onChange={e => setSettings({...settings, razorpayKeyId: e.target.value})}
-                      placeholder="rzp_test_xxxxxxxxxxxxxx"
-                      disabled={!settings.enablePaymentSystem}
-                      className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-mono"
-                    />
-                  </div>
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase">Payee Name (Displayed in UPI Apps)</label>
+                <input 
+                  type="text" 
+                  value={settings.adminPayeeName} 
+                  onChange={e => setSettings({...settings, adminPayeeName: e.target.value})} 
+                  placeholder="e.g. Saikat Mondal"
+                  disabled={!settings.enablePaymentSystem}
+                  className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none"
+                />
+                <p className="text-xs text-zinc-500">The verified name associated with the UPI ID shown on banking apps.</p>
+              </div>
 
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-bold uppercase">Razorpay Key Secret</label>
-                    <input 
-                      type="password" 
-                      value={settings.razorpayKeySecret} 
-                      onChange={e => setSettings({...settings, razorpayKeySecret: e.target.value})}
-                      placeholder="••••••••••••••••••••••••"
-                      disabled={!settings.enablePaymentSystem}
-                      className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-mono"
-                    />
-                    <p className="text-[10px] text-zinc-500">Your key credentials are securely stored in the Google Apps Script script properties.</p>
-                  </div>
+              <div className="p-3 bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-xs font-medium space-y-1">
+                <div className="font-bold text-zinc-800 dark:text-zinc-200">ℹ️ নিয়মাবলী (UPI & Cash Rules):</div>
+                <div className="text-zinc-600 dark:text-zinc-400">
+                  যদি UPI ID বা Payee Name ফাঁকা (empty) থাকে, তবে ছাত্রদের পেমেন্ট পেজে UPI বিকল্পটি সম্পূর্ণ লুকানো থাকবে এবং শুধুমাত্র <strong>Cash</strong> পেমেন্টের বিকল্প প্রদর্শিত হবে।
                 </div>
-              )}
+              </div>
             </div>
           </div>
 

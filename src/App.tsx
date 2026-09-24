@@ -1624,7 +1624,13 @@ function StudentDashboard() {
       return; // Skip normal nudge if force nudge is showing
     }
 
-    // 2. Normal Nudge (Shows once per browser tab session)
+    // 2. Per-student payment nudge popup (showPaymentNudge) - shown on every app open, closable with ✕
+    if (user && (user as any).showPaymentNudge) {
+      setShowNudge(true);
+      return;
+    }
+
+    // 3. Normal Nudge (Shows once per browser tab session)
     if (
       user &&
       (user as any).monthlyFee > 0 &&
@@ -1636,7 +1642,7 @@ function StudentDashboard() {
         sessionStorage.setItem(sessionKey, "true");
       }
     }
-  }, [user?.uid, (user as any)?.monthlyFee, (user as any)?.pendingMonths, (user as any)?.forcePaymentNudge]);
+  }, [user?.uid, (user as any)?.monthlyFee, (user as any)?.pendingMonths, (user as any)?.forcePaymentNudge, (user as any)?.showPaymentNudge]);
 
   useEffect(() => {
     const isSimulated = !!localStorage.getItem("simulatedStudentId");
@@ -1819,7 +1825,14 @@ function StudentDashboard() {
 
       {showNudge && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-zinc-900 border-4 border-red-600 dark:border-red-500 w-full max-w-sm p-6 text-center transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(220,38,38,1)]">
+          <div className="bg-white dark:bg-zinc-900 border-4 border-red-600 dark:border-red-500 w-full max-w-sm p-6 text-center transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(220,38,38,1)] relative">
+            <button
+              onClick={() => setShowNudge(false)}
+              className="absolute top-2 right-2 p-1.5 text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
             <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-500 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-red-600 dark:border-red-500">
               <span className="font-black text-2xl">!</span>
             </div>

@@ -69,6 +69,7 @@ export interface UserProfile {
   excusedDates?: string;
   exemptReason?: string;
   forcePaymentNudge?: boolean;
+  excusedMonths?: string;
 }
 
 export interface Batch {
@@ -109,13 +110,13 @@ export interface PaymentRecord {
   studentId: string;
   month: string;
   amount: number;
-  status: 'paid' | 'unpaid' | 'pending';
+  status: 'paid' | 'unpaid' | 'pending' | 'approved' | 'rejected';
   transactionId?: string;
   paidDate?: string;
   remarks?: string;
   proofImage?: string;
   hasProof?: boolean;
-  paymentMode?: 'manual' | 'proof_upload' | 'gateway';
+  paymentMode?: string;
   createdAt: string;
 }
 
@@ -195,7 +196,9 @@ export function cleanPhone(p: any): string {
     examResults: { data: ExamResult[], time: number } | null;
     announcement: { data: string, time: number } | null;
     notifications: { data: NotificationItem[], time: number } | null;
-  } = { batches: null, library: null, users: null, payments: null, examSessions: null, examResults: null, announcement: null, notifications: null };
+    attendance: { data: AttendanceRecord[], time: number } | null;
+    settings: { data: any, time: number } | null;
+  } = { batches: null, library: null, users: null, payments: null, examSessions: null, examResults: null, announcement: null, notifications: null, attendance: null, settings: null };
 
 
   const inFlightRequests: Record<string, Promise<any>> = {};
@@ -1423,6 +1426,37 @@ export const api = {
     };
   },
 
+  bulkUpdatePaymentStatus: async (paymentIds: string[], status: PaymentRecord['status'], remarks: string = ''): Promise<{ success: boolean; count: number; error?: string }> => {
+    globalApiCache.payments = null;
+    if (USE_REAL_API) {
+      const res = await runGasMethod<{ success: boolean; count: number; error?: string }>("apiBulkUpdatePaymentStatus", paymentIds, status, remarks);
+      lastMutationTime.payments = Date.now();
+      lastMutationTime.users = Date.now();
+      return res;
+    } else {
+      const db = getMockDB();
+      db.payments = db.payments.map(p => paymentIds.includes(p.id) ? { ...p, status, ...(remarks ? { remarks } : {}) } : p);
+      saveMockDB(db);
+      return { success: true, count: paymentIds.length };
+    }
+  },
+
+  setStudentExcusedMonths: async (studentId: string, excusedMonths: string[] | string): Promise<{ success: boolean; error?: string }> => {
+    globalApiCache.users = null;
+    const rawMonths = Array.isArray(excusedMonths) ? excusedMonths.join(', ') : String(excusedMonths || '');
+    if (USE_REAL_API) {
+      const res = await runGasMethod<{ success: boolean; error?: string }>("apiSetStudentExcusedMonths", studentId, rawMonths);
+      lastMutationTime.users = Date.now();
+      return res;
+    } else {
+      const db = getMockDB();
+      const u = db.users.find(x => x.id === studentId);
+      if (u) (u as any).excusedMonths = rawMonths;
+      saveMockDB(db);
+      return { success: true };
+    }
+  },
+
   // --- 📢 NOTIFICATIONS ---
 
   getNotifications: async (userId?: string): Promise<NotificationItem[]> => {
@@ -1430,7 +1464,19 @@ export const api = {
       if (globalApiCache.notifications && Date.now() - globalApiCache.notifications.time < CACHE_TTL) {
         return globalApiCache.notifications.data;
       }
-      const data = await runGasMethod<NotificationItem[]>("apiGetNotifications");
+      let data: NotificationItem[] | null = null;
+      let source = "GAS";
+
+      const vpsData = await fetchFromVps<NotificationItem[]>("/notifications");
+      if (vpsData && Array.isArray(vpsData)) {
+        data = vpsData;
+        source = "VPS (mc-api)";
+      } else {
+        data = await runGasMethod<NotificationItem[]>("apiGetNotifications");
+        source = "GAS (fallback)";
+      }
+      console.log(`[API] getNotifications loaded from ${source} (${data.length} notifications)`);
+
       globalApiCache.notifications = { data, time: Date.now() };
       if (userId) {
         setLocalSwr(userId, 'notifications', data);
@@ -1666,23 +1712,50 @@ export const api = {
 
   getAttendance: async (): Promise<AttendanceRecord[]> => {
     if (USE_REAL_API) {
-      return runGasMethod<AttendanceRecord[]>("apiGetAttendance");
+      if (globalApiCache.attendance && Date.now() - globalApiCache.attendance.time < CACHE_TTL) {
+        return globalApiCache.attendance.data;
+      }
+      const data = await runGasMethod<AttendanceRecord[]>("apiGetAttendance");
+      globalApiCache.attendance = { data, time: Date.now() };
+      return data;
     } else {
       return getMockDB().attendance;
     }
   },
 
   getSettings: async (): Promise<any> => {
+    if (globalApiCache.settings && Date.now() - globalApiCache.settings.time < CACHE_TTL) {
+      return globalApiCache.settings.data;
+    }
+    const cachedLocal = localStorage.getItem("mc_cached_settings");
+    if (cachedLocal) {
+      try {
+        const parsed = JSON.parse(cachedLocal);
+        if (parsed && Date.now() - Number(parsed.time || 0) < CACHE_TTL) {
+          globalApiCache.settings = { data: parsed.data, time: Number(parsed.time) };
+          return parsed.data;
+        }
+      } catch (e) {}
+    }
     if (USE_REAL_API) {
-      return runGasMethod<any>("apiGetSettings");
+      const data = await runGasMethod<any>("apiGetSettings");
+      globalApiCache.settings = { data, time: Date.now() };
+      try {
+        localStorage.setItem("mc_cached_settings", JSON.stringify({ data, time: Date.now() }));
+      } catch (e) {}
+      return data;
     } else {
       const saved = localStorage.getItem("mc_mock_settings");
       if (saved) return JSON.parse(saved);
-      return { adminUpiId: "mondal.saikat185@okaxis", enablePaymentSystem: true };
+      return { adminUpiId: "", adminPayeeName: "", enablePaymentSystem: true };
     }
   },
 
   saveSettings: async (settings: any): Promise<boolean> => {
+    globalApiCache.settings = null;
+    try {
+      localStorage.removeItem("mc_cached_settings");
+    } catch (e) {}
     if (USE_REAL_API) {
       return runGasMethod<boolean>("apiSaveSettings", settings);
     } else {
@@ -1782,33 +1855,8 @@ export const api = {
     }
   },
 
-  verifyGatewayPayment: async (paymentId: string, month: string, amount: number, studentId: string): Promise<{ success: boolean; error?: string }> => {
-    if (USE_REAL_API) {
-      return runGasMethod<{ success: boolean; error?: string }>("apiVerifyGatewayPayment", paymentId, month, amount, studentId);
-    } else {
-      // Mock gateway verification for local testing
-      const db = getMockDB();
-      const user = db.users.find(u => u.id === studentId);
-      const newPay = {
-        id: "pay_" + Math.random().toString(36).substr(2, 9),
-        studentId: studentId,
-        month: month,
-        amount: amount,
-        status: "approved" as any,
-        transactionId: paymentId,
-        paidDate: new Date().toISOString(),
-        createdAt: new Date().toISOString()
-      };
-      db.payments.push(newPay);
-      
-      // Update student's pendingMonths in local storage
-      if (user) {
-        const count = month.split(',').length;
-        (user as any).pendingMonths = Math.max(0, ((user as any).pendingMonths || 0) - count);
-      }
-      saveMockDB(db);
-      return { success: true };
-    }
+  verifyGatewayPayment: async (_paymentId: string, _month: string, _amount: number, _studentId: string): Promise<{ success: boolean; error?: string }> => {
+    return { success: false, error: "Razorpay payment gateway has been disabled. Please pay via UPI or Cash." };
   },
 
   // --- 🚀 SWR & OUTBOX UTILITIES ---

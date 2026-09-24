@@ -32,6 +32,7 @@ export interface AppUser {
   paymentStatus?: string;
   reapplyReason?: string;
   excusedDates?: string;
+  excusedMonths?: string;
 }
 
 interface AuthContextType {
