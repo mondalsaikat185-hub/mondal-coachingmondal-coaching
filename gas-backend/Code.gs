@@ -2280,6 +2280,46 @@ function markSnapshotDirty() {
   }
 }
 
+function sendHeartbeatToVps() {
+  try {
+    var VPS_URL = "https://mc-api-187-127-191-163.sslip.io/heartbeat";
+    var HMAC_SECRET = PropertiesService.getScriptProperties().getProperty("MC_SYNC_SECRET");
+    if (!HMAC_SECRET || !HMAC_SECRET.trim()) {
+      Logger.log("sendHeartbeatToVps: MC_SYNC_SECRET missing, skipping.");
+      return;
+    }
+    HMAC_SECRET = HMAC_SECRET.trim();
+
+    // Heartbeat has empty body; HMAC is computed over the empty string
+    var payloadString = "";
+    var signatureBytes = Utilities.computeHmacSha256Signature(payloadString, HMAC_SECRET, Utilities.Charset.UTF_8);
+    var signatureHex = "";
+    for (var j = 0; j < signatureBytes.length; j++) {
+      var byteVal = signatureBytes[j];
+      if (byteVal < 0) byteVal += 256;
+      var hexVal = byteVal.toString(16);
+      if (hexVal.length === 1) hexVal = "0" + hexVal;
+      signatureHex += hexVal;
+    }
+
+    var options = {
+      method: "post",
+      contentType: "application/json; charset=utf-8",
+      headers: {
+        "X-MC-Signature": "sha256=" + signatureHex
+      },
+      payload: payloadString,
+      muteHttpExceptions: true
+    };
+
+    var response = UrlFetchApp.fetch(VPS_URL, options);
+    var code = response.getResponseCode();
+    Logger.log("sendHeartbeatToVps: " + code + " " + response.getContentText());
+  } catch (e) {
+    Logger.log("sendHeartbeatToVps error: " + e.toString());
+  }
+}
+
 function pushSnapshotToVps() {
   try {
     var VPS_URL = "https://mc-api-187-127-191-163.sslip.io/sync";
@@ -2419,8 +2459,9 @@ function syncIfDirty() {
     var props = PropertiesService.getScriptProperties();
     var isDirty = props.getProperty("SNAPSHOT_DIRTY");
     if (isDirty !== "1") {
-      Logger.log("syncIfDirty: SNAPSHOT_DIRTY is not 1. Nothing to sync.");
-      return { success: true, synced: false, reason: "SNAPSHOT_DIRTY is not 1" };
+      Logger.log("syncIfDirty: SNAPSHOT_DIRTY is not 1. Sending heartbeat to VPS...");
+      sendHeartbeatToVps();
+      return { success: true, synced: false, reason: "Not dirty, heartbeat sent" };
     }
 
     // Clear flag first

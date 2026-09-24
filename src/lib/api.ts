@@ -305,20 +305,24 @@ export async function checkVpsHealth(): Promise<{ ok: boolean; reason?: string; 
     }
 
     const data = await res.json();
-    const ageMs = typeof data.snapshotAgeMs === 'number' ? data.snapshotAgeMs : -1;
-    lastSnapshotAgeMs = ageMs;
+    const snapshotAgeMs = typeof data.snapshotAgeMs === 'number' ? data.snapshotAgeMs : -1;
+    lastSnapshotAgeMs = snapshotAgeMs;
 
     if (data.status !== 'ok') {
-      return { ok: false, reason: `Status not ok (${data.status})`, ageMs };
+      return { ok: false, reason: `Status not ok (${data.status})`, ageMs: snapshotAgeMs };
     }
 
-    // Snapshot must not be older than 15 minutes (900,000 ms)
-    const MAX_AGE_MS = 15 * 60 * 1000;
-    if (ageMs > MAX_AGE_MS) {
-      return { ok: false, reason: `Snapshot is older than 15 min (${(ageMs / 60000).toFixed(1)}m)`, ageMs };
+    // Use lastCheckedAgeMs (heartbeat freshness) if available, else fall back to snapshotAgeMs
+    const checkedAgeMs = typeof data.lastCheckedAgeMs === 'number' ? data.lastCheckedAgeMs : -1;
+    const effectiveAgeMs = checkedAgeMs >= 0 ? checkedAgeMs : snapshotAgeMs;
+
+    // lastCheckedAt must be within 5 minutes (updated every ~1 min by syncIfDirty heartbeat)
+    const MAX_CHECKED_AGE_MS = 5 * 60 * 1000;
+    if (effectiveAgeMs > MAX_CHECKED_AGE_MS) {
+      return { ok: false, reason: `VPS not checked in ${(effectiveAgeMs / 60000).toFixed(1)}m (limit: 5m)`, ageMs: snapshotAgeMs };
     }
 
-    return { ok: true, ageMs };
+    return { ok: true, ageMs: snapshotAgeMs };
   } catch (err: any) {
     return { ok: false, reason: err.name === 'AbortError' ? 'Health check timed out (4s)' : err.message };
   }
