@@ -1248,6 +1248,7 @@ function apiLoginUser(phone, passcode) {
     var isMatch = false;
 
     // Dual-mode verification:
+    var needsHashOnSuccess = false;
     if (user.salt && String(user.salt).trim() !== "") {
       var computedHash = hashPasscode(inputPasscodeStr, user.salt);
       if (computedHash === String(user.passcode).trim()) {
@@ -1260,11 +1261,13 @@ function apiLoginUser(phone, passcode) {
       }
       if (userPasscodeStr === inputPasscodeStr) {
         isMatch = true;
+        needsHashOnSuccess = true;
       } else {
         var cleanedUserPasscode = cleanPhone(userPasscodeStr);
         var cleanedInputPasscode = cleanPhone(inputPasscodeStr);
         if (cleanedUserPasscode && cleanedUserPasscode === cleanedInputPasscode) {
           isMatch = true;
+          needsHashOnSuccess = true;
         }
       }
     }
@@ -1292,6 +1295,20 @@ function apiLoginUser(phone, passcode) {
     // Login success: reset fail counters
     cache.remove(failKey);
     cache.remove(lockKey);
+
+    // Opportunistic migration: if user was not yet migrated (salt empty), hash on success
+    if (needsHashOnSuccess && inputPasscodeStr) {
+      try {
+        var newSalt = generateSalt();
+        var newHash = hashPasscode(inputPasscodeStr, newSalt);
+        ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"]);
+        updateRow("users", user.id, { passcode: newHash, salt: newSalt });
+        user.passcode = newHash;
+        user.salt = newSalt;
+      } catch (lazyErr) {
+        Logger.log("Lazy hash on login error: " + lazyErr.toString());
+      }
+    }
 
     // Create session token
     var sessionToken = createSession(user);
@@ -1927,21 +1944,6 @@ function apiGetSettings(type, session) {
   }
 }
 
-function adminHashTestStudentOnly() {
-  try {
-    var users = readSheet("users");
-    var testStudent = users.find(function(u) { return cleanPhone(u.phone) === "9999999901"; });
-    if (!testStudent) return { success: false, error: "Test student 9999999901 not found" };
-
-    var salt = generateSalt();
-    var hash = hashPasscode("test1234", salt);
-    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"]);
-    updateRow("users", testStudent.id, { passcode: hash, salt: salt });
-    return { success: true, message: "Hashed test student 9999999901", salt: salt, hashPrefix: hash.substring(0, 10) + "..." };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
 
 function adminMigrateAllPasscodes() {
   try {
@@ -1970,7 +1972,26 @@ function adminMigrateAllPasscodes() {
       updateRow("users", u.id, { passcode: hash, salt: salt });
       migratedCount++;
     }
-    return { success: true, backupSheet: backupSheetName, migratedCount: migratedCount };
+    var afterUsers = readSheet("users");
+    var withSaltCount = 0;
+    var plaintextRemaining = 0;
+    for (var k = 0; k < afterUsers.length; k++) {
+      var au = afterUsers[k];
+      var hasS = Boolean(au.salt && String(au.salt).trim() !== "");
+      var isH = Boolean(hasS && au.passcode && String(au.passcode).trim().length === 64);
+      if (hasS) withSaltCount++;
+      if (!isH) plaintextRemaining++;
+    }
+    var summary = {
+      success: true,
+      backupSheet: backupSheetName,
+      migratedCount: migratedCount,
+      totalUsers: afterUsers.length,
+      usersWithSaltCount: withSaltCount,
+      plaintextPasscodesRemaining: plaintextRemaining
+    };
+    Logger.log("MIGRATION_VERIFICATION: " + JSON.stringify(summary));
+    return summary;
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -2215,51 +2236,6 @@ function apiDeleteMultipleExamResults(resultIds) {
   }
 }
 
-function adminCleanupTestData() {
-  try {
-    var pBefore = readSheet("payments").length;
-    var eBefore = readSheet("examResults").length;
-
-    // 1. Delete test payment pay_1f357878
-    var deletedPayment = deleteRow("payments", "pay_1f357878");
-
-    // 2. Delete test exam results for test student
-    var testStudentId = "901f0e79-6fb1-4cc1-82d0-abc77e3cad3a";
-    var allExams = readSheet("examResults");
-    var testExamIds = [];
-    for (var i = 0; i < allExams.length; i++) {
-      if (allExams[i] && String(allExams[i].studentId).trim() === testStudentId) {
-        testExamIds.push(allExams[i].id);
-      }
-    }
-    var deletedExamsCount = 0;
-    if (testExamIds.length > 0) {
-      var delRes = apiDeleteMultipleExamResults(testExamIds);
-      deletedExamsCount = (delRes && delRes.count) ? delRes.count : 0;
-    }
-
-    // 3. Unlock test student in CacheService
-    var cache = CacheService.getScriptCache();
-    cache.remove("login_lock_9999999901");
-    cache.remove("login_fail_9999999901");
-
-    var pAfter = readSheet("payments").length;
-    var eAfter = readSheet("examResults").length;
-
-    return {
-      success: true,
-      deletedPayment: deletedPayment,
-      deletedExams: deletedExamsCount,
-      paymentsCountBefore: pBefore,
-      paymentsCountAfter: pAfter,
-      examResultsCountBefore: eBefore,
-      examResultsCountAfter: eAfter,
-      testStudentUnlocked: true
-    };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
 
 function apiGetAttendance() {
   try {
@@ -2488,15 +2464,48 @@ function doPost(e) {
       "apiSaveAnnouncement",
       "apiSaveSettings",
       "apiCreateExamSession",
-      "apiEndExamSession",
-      "adminMigrateAllPasscodes",
-      "adminHashTestStudentOnly",
-      "adminCleanupTestData"
+      "apiEndExamSession"
     ];
+
+    // 3. AUTHENTICATED USER ACTIONS (Students & Admins)
+    var USER_ACTIONS = [
+      "apiGetSettings",
+      "apiGetPayments",
+      "apiGetAttendance",
+      "apiGetExamResults",
+      "apiGetLibraryItemDetails",
+      "apiChangePasscode",
+      "apiSaveUser",
+      "apiJoinExamSession",
+      "apiSubmitExamResult",
+      "apiSubmitPaymentRequest",
+      "apiGetStudentDashboardData",
+      "apiHasSubmitted",
+      "apiCreateNotification",
+      "apiGetNotifications",
+      "apiGetMyProfile",
+      "apiGetLibrary",
+      "apiGetBatches",
+      "apiGetExamSessions",
+      "apiGetAnnouncement",
+      "apiVerifyGatewayPayment"
+    ];
+
+    var isPublic = PUBLIC_ACTIONS.indexOf(action) !== -1;
+    var isAdmin = ADMIN_ACTIONS.indexOf(action) !== -1;
+    var isUser = USER_ACTIONS.indexOf(action) !== -1;
+
+    if (!isPublic && !isAdmin && !isUser) {
+      return ContentService.createTextOutput(JSON.stringify({ 
+        success: false, 
+        error: 'Forbidden: action not allowed', 
+        code: 403 
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     var session = null;
 
-    if (PUBLIC_ACTIONS.indexOf(action) !== -1) {
+    if (isPublic) {
       if (token !== SECURITY_TOKEN) {
         session = validateSessionToken(token);
         if (!session) {
@@ -2527,7 +2536,7 @@ function doPost(e) {
         })).setMimeType(ContentService.MimeType.JSON);
       }
 
-      if (ADMIN_ACTIONS.indexOf(action) !== -1) {
+      if (isAdmin) {
         if (session.role !== 'admin') {
           return ContentService.createTextOutput(JSON.stringify({ 
             success: false, 
