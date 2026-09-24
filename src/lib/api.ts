@@ -20,8 +20,8 @@ declare const google: any;
 // =========================================================================
 // GOOGLE APPS SCRIPT WEB APP URL (For Vercel Deployment)
 // =========================================================================
-// STEP 2 PREVIEW BRANCH: Points to isolated v90 Test Deployment (Switch back to MAIN APP AKfycbxBtl... before merging to main)
-export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbwPOQIOcIXGY4naQcRicXch9wb7akVPmQZqpMdqV1-JCZY4qUbJ7d0Jm-AvvF9dEwt-Ww/exec";
+// REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL (Step 2 Production Release v94)
+export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
 export const SECURITY_TOKEN = (import.meta.env.VITE_SECURITY_TOKEN as string) || "MondalCoachingSecureToken2026!";
 
 export const SESSION_TOKEN_KEY = "mc_session_token";
