@@ -251,7 +251,12 @@ export function cleanPhone(p: any): string {
             try { localStorage.removeItem("mc_session_user"); } catch (e) {}
             window.dispatchEvent(new CustomEvent("mc-force-logout", { detail: json.error }));
           }
-          throw new Error(json.error || "API Gateway Error");
+          const gwErr = new Error(json.error || "API Gateway Error");
+          // 4xx (unauthorized / forbidden / not allowed) will never succeed on retry — fail fast.
+          if (typeof json.code === 'number' && json.code >= 400 && json.code < 500) {
+            (gwErr as any).isLogicError = true;
+          }
+          throw gwErr;
         }
 
         const response = json.data;

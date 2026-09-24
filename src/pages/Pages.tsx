@@ -169,19 +169,15 @@ export function getDueMonths(pendingMonthsCount: number, studentPayments: any[])
   const currentMonthStr = `${monthNames[today.getMonth()]} ${today.getFullYear()}`;
   const currentMonthIdx = monthOptions.indexOf(currentMonthStr);
   
-  // Start checking from 12 months ago up to future months
-  const startCheckingIdx = Math.max(0, (currentMonthIdx !== -1 ? currentMonthIdx : 12) - 12);
-  let checkedCount = 0;
-  
-  for (let idx = startCheckingIdx; idx < monthOptions.length; idx++) {
+  // Walk BACKWARDS from the current month and collect the most recent unpaid months
+  // (so the current month/year is always included and old 2025 months are not shown first).
+  const startIdx = currentMonthIdx !== -1 ? currentMonthIdx : monthOptions.length - 1;
+  for (let idx = startIdx; idx >= 0 && dueMonths.length < pendingMonthsCount; idx--) {
     if (!paidIndices.includes(idx)) {
       dueMonths.push(monthOptions[idx]);
-      checkedCount++;
-      if (checkedCount >= pendingMonthsCount) {
-        break;
-      }
     }
   }
+  dueMonths.reverse(); // show oldest → current
 
   if (dueMonths.length === 0) return `${pendingMonthsCount} month(s)`;
   return dueMonths.join(', ');

@@ -24,3 +24,17 @@ Claude restored GAS HEAD to exactly production v101 (HEAD had been corrupted to 
 5. ONLY after owner approves: new version → update MAIN APP (same ID), merge payments-upi → main (normal push), verify live, delete test deployment.
 Rollback: MAIN APP → v101; Vercel instant rollback.
 Credentials: never print; owner enters admin creds himself if needed.
+
+## ROUND 2 (Claude, after owner's preview test) — uncommitted
+Owner's preview was talking to PRODUCTION v101 (no apiDeleteNotification) → deletes hung grey. Fixes:
+- src/lib/api.ts — runGasMethod: 4xx gateway errors (401/403/404) are no longer retried 3× (was ~15-20 s hang); fail fast → UI rolls back + red toast.
+- src/pages/Pages.tsx — getDueMonths: counts BACKWARDS from current month (was starting 12 months ago → "2025" shown first). Shows oldest→current, e.g. "August 2026, September 2026".
+- src/lib/cache.ts + src/pages/StudentLibrary.tsx — "⏳ sync বাকি" badge now disappears as soon as the background exam submission finishes (event 'mc-outbox-changed'); before, it stayed until a page reload.
+tsc --noEmit = 0.
+
+## ROUND 2 deploy steps
+1. git add src/lib/api.ts src/pages/Pages.tsx src/lib/cache.ts src/pages/StudentLibrary.tsx HANDOFF_DEPLOY.md && git commit -m "fix: fail-fast on 4xx, dues from current month, clear sync badge" && npm run lint && npm run build && git push origin payments-upi
+2. Vercel: the preview MUST use the TEST backend. Owner authorizes `vercel login` (device code in browser). Then:
+   vercel env add VITE_GAS_WEB_APP_URL preview payments-upi   (value = TEST URL AKfycbxLbQVY…/exec)
+   Redeploy the payments-upi preview. Verify the preview bundle contains ONLY AKfycbxLbQVY… (not AKfycbxBtl…). Give owner the new URL.
+   Production env var must stay untouched.

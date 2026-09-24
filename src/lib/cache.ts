@@ -141,6 +141,8 @@ export function removeExamFromOutbox(userId: string, resultId: string): void {
     const outbox = getExamOutbox(userId).filter(i => i.id !== resultId);
     localStorage.setItem(`mc_exam_outbox_${userId}`, JSON.stringify(outbox));
   } catch (e) {}
+  // Tell any open screen to re-draw its "sync বাকি" badges.
+  try { window.dispatchEvent(new CustomEvent('mc-outbox-changed')); } catch (e) {}
 }
 
 export function isExamPendingSync(userId: string, examId: string): boolean {
