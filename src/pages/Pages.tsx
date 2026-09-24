@@ -1296,9 +1296,10 @@ export function AdminPayments() {
           remarks: (p as any).remarks || '',
           transactionId: (p as any).transactionId || '',
           proofImage: (p as any).proofImage || '',
+          hasProof: Boolean((p as any).hasProof || (p as any).proofImage),
           paymentMode: (p as any).paymentMode || 'manual',
           createdAt: p.createdAt
-        };
+        } as any;
       });
       const getMs = (t: any) => new Date(t).getTime() || 0;
       pData.sort((a,b) => getMs(b.createdAt) - getMs(a.createdAt));
@@ -1471,7 +1472,9 @@ export function AdminPayments() {
               )}
               <div><span className="font-bold uppercase text-zinc-500">Status:</span> <span className={`font-black uppercase ${viewingProofPayment.status === 'pending' ? 'text-yellow-600' : viewingProofPayment.status === 'approved' ? 'text-emerald-600' : 'text-red-600'}`}>{viewingProofPayment.status}</span></div>
            </div>
-           {(viewingProofPayment as any).proofImage ? (
+           {(viewingProofPayment as any).proofImage === 'LOADING_PROOF' ? (
+              <div className="text-center py-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 font-bold text-sm flex items-center justify-center gap-2"><Loader2 className="animate-spin w-5 h-5" /> Loading proof image...</div>
+           ) : (viewingProofPayment as any).proofImage ? (
               <img src={(viewingProofPayment as any).proofImage} alt="Payment proof screenshot" className="w-full border-2 border-zinc-300 dark:border-zinc-600" />
            ) : (
               <div className="text-center py-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 font-bold text-sm">No screenshot attached</div>
@@ -1618,8 +1621,21 @@ export function AdminPayments() {
                               </div>
                               {p.remarks && <div className="text-[10px] text-zinc-500 mt-2 italic border-t border-zinc-200 dark:border-zinc-800 pt-1">Reason: {p.remarks}</div>}
                               {(p as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">TXN ID: {(p as any).transactionId}</div>}
-                              {(p as any).proofImage && (
-                                 <button onClick={() => setViewingProofPayment(p)} className="mt-2 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold uppercase px-2 py-1 hover:bg-blue-200 dark:hover:bg-blue-800/30 transition-colors border border-blue-300 dark:border-blue-700 flex items-center gap-1">
+                              {((p as any).proofImage || (p as any).hasProof) && (
+                                 <button onClick={async () => {
+                                    if (!(p as any).proofImage && (p as any).hasProof) {
+                                       setViewingProofPayment({ ...p, proofImage: 'LOADING_PROOF' } as any);
+                                       try {
+                                          const fetchedProof = await api.getPaymentProof(p.id);
+                                          setViewingProofPayment({ ...p, proofImage: fetchedProof } as any);
+                                          setPayments(prev => prev.map(item => item.id === p.id ? ({ ...item, proofImage: fetchedProof } as any) : item));
+                                       } catch (err) {
+                                          setViewingProofPayment({ ...p, proofImage: '' } as any);
+                                       }
+                                    } else {
+                                       setViewingProofPayment(p);
+                                    }
+                                 }} className="mt-2 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold uppercase px-2 py-1 hover:bg-blue-200 dark:hover:bg-blue-800/30 transition-colors border border-blue-300 dark:border-blue-700 flex items-center gap-1">
                                     📸 View Proof
                                  </button>
                               )}

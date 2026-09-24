@@ -20,8 +20,8 @@ declare const google: any;
 // =========================================================================
 // GOOGLE APPS SCRIPT WEB APP URL (For Vercel Deployment)
 // =========================================================================
-// REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL (Security Phase S2 Release v83)
-export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
+// STEP 2 PREVIEW BRANCH: Points to isolated v90 Test Deployment (Switch back to MAIN APP AKfycbxBtl... before merging to main)
+export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbwPOQIOcIXGY4naQcRicXch9wb7akVPmQZqpMdqV1-JCZY4qUbJ7d0Jm-AvvF9dEwt-Ww/exec";
 export const SECURITY_TOKEN = (import.meta.env.VITE_SECURITY_TOKEN as string) || "MondalCoachingSecureToken2026!";
 
 export const SESSION_TOKEN_KEY = "mc_session_token";
@@ -114,6 +114,7 @@ export interface PaymentRecord {
   paidDate?: string;
   remarks?: string;
   proofImage?: string;
+  hasProof?: boolean;
   paymentMode?: 'manual' | 'proof_upload' | 'gateway';
   createdAt: string;
 }
@@ -418,6 +419,63 @@ async function fetchFromVps<T>(endpoint: string): Promise<T | null> {
   }
 }
 
+// Step 2: Session-authenticated VPS Read Client with silent GAS fallback (no forceLogout on VPS 401)
+const lastMutationTime = {
+  users: 0,
+  payments: 0
+};
+let optimisticUsersCache: UserProfile[] | null = null;
+let optimisticPaymentsCache: PaymentRecord[] | null = null;
+
+async function fetchFromVpsWithSession<T>(endpoint: string): Promise<{ data: T; timestamp: number; version?: string } | null> {
+  try {
+    const sessionToken = getSessionToken();
+    if (!sessionToken) {
+      return null;
+    }
+
+    const available = await isVpsAvailable();
+    if (!available) {
+      return null;
+    }
+
+    const vpsUrl = getVpsBaseUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const res = await fetch(`${vpsUrl}${endpoint}`, {
+      headers: {
+        'X-MC-Token': SECURITY_TOKEN,
+        'X-MC-Session': sessionToken
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      // IMPORTANT: VPS 401/403 (e.g. old v83 random token or not yet synced) does NOT trigger forceLogout.
+      // It silently falls back to GAS. Only a GAS 401 triggers forceLogout.
+      console.warn(`[API] VPS mc-api returned HTTP ${res.status} for ${endpoint}. Silently falling back to GAS.`);
+      return null;
+    }
+
+    const json = await res.json();
+    if (json.success === false) {
+      console.warn(`[API] VPS mc-api error for ${endpoint}:`, json.error);
+      return null;
+    }
+
+    return {
+      data: (json.data !== undefined ? json.data : json) as T,
+      timestamp: Number(json.timestamp || 0),
+      version: json.version
+    };
+  } catch (err: any) {
+    console.warn(`[API] VPS mc-api session request to ${endpoint} failed: ${err.message}. Falling back to GAS.`);
+    return null;
+  }
+}
+
 // =========================================================================
 // 2. CLIENT-SIDE LOCALSTORAGE MOCK DATABASE (DEVELOPMENT & LOCAL TESTING)
 // =========================================================================
@@ -629,7 +687,21 @@ export const api = {
       if (globalApiCache.users && Date.now() - globalApiCache.users.time < CACHE_TTL) {
         return globalApiCache.users.data;
       }
+
+      const vpsRes = await fetchFromVpsWithSession<UserProfile[]>('/users');
+      if (vpsRes && Array.isArray(vpsRes.data)) {
+        if (lastMutationTime.users > 0 && vpsRes.timestamp < lastMutationTime.users && optimisticUsersCache) {
+          console.info(`[API] Read-Your-Writes guard: keeping recent local users mutation (${lastMutationTime.users} > VPS snapshot ${vpsRes.timestamp})`);
+          globalApiCache.users = { data: optimisticUsersCache, time: Date.now() };
+          return optimisticUsersCache;
+        }
+        optimisticUsersCache = vpsRes.data;
+        globalApiCache.users = { data: vpsRes.data, time: Date.now() };
+        return vpsRes.data;
+      }
+
       const data = await runGasMethod<UserProfile[]>("apiGetUsers");
+      optimisticUsersCache = data;
       globalApiCache.users = { data, time: Date.now() };
       return data;
     } else {
@@ -639,6 +711,7 @@ export const api = {
 
   healStudentIds: async (): Promise<{ success: boolean; healedCount: number; updatedRows: number; idMap: Record<string, string> }> => {
     if (USE_REAL_API) {
+      lastMutationTime.users = Date.now();
       return runGasMethod<{ success: boolean; healedCount: number; updatedRows: number; idMap: Record<string, string> }>("apiHealStudentIds");
     } else {
       return { success: true, healedCount: 0, updatedRows: 0, idMap: {} };
@@ -648,7 +721,22 @@ export const api = {
   saveUser: async (user: Omit<UserProfile, 'id'> & { id?: string }): Promise<UserProfile> => {
     globalApiCache.users = null;
     if (USE_REAL_API) {
-      return runGasMethod<UserProfile>("apiSaveUser", user);
+      const saved = await runGasMethod<UserProfile>("apiSaveUser", user);
+      lastMutationTime.users = Date.now();
+      if (optimisticUsersCache && saved && saved.id) {
+        const idx = optimisticUsersCache.findIndex(u => String(u.id) === String(saved.id));
+        if (idx !== -1) {
+          optimisticUsersCache = [
+            ...optimisticUsersCache.slice(0, idx),
+            { ...optimisticUsersCache[idx], ...saved },
+            ...optimisticUsersCache.slice(idx + 1)
+          ];
+        } else {
+          optimisticUsersCache = [...optimisticUsersCache, saved];
+        }
+        globalApiCache.users = { data: optimisticUsersCache, time: Date.now() };
+      }
+      return saved;
     } else {
       const db = getMockDB();
       if (user.id) {
@@ -682,6 +770,18 @@ export const api = {
       if (!(res as any) || (res as any).success === false) {
         throw new Error((res as any)?.error || "Failed to update user status");
       }
+      lastMutationTime.users = Date.now();
+      if (optimisticUsersCache) {
+        const idx = optimisticUsersCache.findIndex(u => String(u.id) === String(userId));
+        if (idx !== -1) {
+          optimisticUsersCache = [
+            ...optimisticUsersCache.slice(0, idx),
+            { ...optimisticUsersCache[idx], status, ...(rejectReason ? { reapplyReason: rejectReason, rejectReason } : {}) },
+            ...optimisticUsersCache.slice(idx + 1)
+          ];
+          globalApiCache.users = { data: optimisticUsersCache, time: Date.now() };
+        }
+      }
       return res;
     } else {
       const db = getMockDB();
@@ -699,6 +799,7 @@ export const api = {
   updateUserPasscode: async (userId: string, passcode: string): Promise<UserProfile> => {
     globalApiCache.users = null;
     if (USE_REAL_API) {
+      lastMutationTime.users = Date.now();
       return runGasMethod<UserProfile>("apiUpdateUserPasscode", userId, passcode);
     } else {
       const db = getMockDB();
@@ -713,11 +814,26 @@ export const api = {
 
   getMyProfile: async (): Promise<UserProfile> => {
     if (USE_REAL_API) {
+      const vpsRes = await fetchFromVpsWithSession<UserProfile>('/me');
+      if (vpsRes && vpsRes.data && (lastMutationTime.users === 0 || vpsRes.timestamp >= lastMutationTime.users)) {
+        return vpsRes.data;
+      }
       return runGasMethod<UserProfile>("apiGetMyProfile");
     } else {
       const db = getMockDB();
       return db.users[0] || ({} as UserProfile);
     }
+  },
+
+  logoutUser: async (): Promise<void> => {
+    if (USE_REAL_API && getSessionToken()) {
+      try {
+        await runGasMethod("apiLogoutUser");
+      } catch (e) {
+        // Ignore network errors during logout
+      }
+    }
+    clearSessionToken();
   },
 
   checkApplicationStatus: async (phone: string): Promise<{ success: boolean; status: string; userId?: string; error?: string }> => {
@@ -1184,15 +1300,49 @@ export const api = {
       if (globalApiCache.payments && Date.now() - globalApiCache.payments.time < CACHE_TTL) {
         return globalApiCache.payments.data;
       }
+
+      const vpsRes = await fetchFromVpsWithSession<PaymentRecord[]>('/payments');
+      if (vpsRes && Array.isArray(vpsRes.data)) {
+        if (lastMutationTime.payments > 0 && vpsRes.timestamp < lastMutationTime.payments && optimisticPaymentsCache) {
+          console.info(`[API] Read-Your-Writes guard: keeping recent local payments mutation (${lastMutationTime.payments} > VPS snapshot ${vpsRes.timestamp})`);
+          globalApiCache.payments = { data: optimisticPaymentsCache, time: Date.now() };
+          return optimisticPaymentsCache;
+        }
+        const cleaned = vpsRes.data.map(p => ({
+          ...p,
+          month: api.cleanPaymentMonth(p.month)
+        }));
+        optimisticPaymentsCache = cleaned;
+        globalApiCache.payments = { data: cleaned, time: Date.now() };
+        return cleaned;
+      }
+
       payments = await runGasMethod<PaymentRecord[]>("apiGetPayments");
-      globalApiCache.payments = { data: payments, time: Date.now() };
+      const cleaned = (payments || []).map(p => ({
+        ...p,
+        month: api.cleanPaymentMonth(p.month)
+      }));
+      optimisticPaymentsCache = cleaned;
+      globalApiCache.payments = { data: cleaned, time: Date.now() };
+      return cleaned;
     } else {
       payments = getMockDB().payments;
+      return (payments || []).map(p => ({
+        ...p,
+        month: api.cleanPaymentMonth(p.month)
+      }));
     }
-    return (payments || []).map(p => ({
-      ...p,
-      month: api.cleanPaymentMonth(p.month)
-    }));
+  },
+
+  getPaymentProof: async (paymentId: string): Promise<string> => {
+    if (USE_REAL_API) {
+      const res = await runGasMethod<{ id: string; proofImage: string }>("apiGetPaymentProof", paymentId);
+      return res?.proofImage || "";
+    } else {
+      const db = getMockDB();
+      const found = db.payments.find(p => p.id === paymentId);
+      return found?.proofImage || "";
+    }
   },
 
   submitPaymentRequest: async (paymentData: Partial<PaymentRecord>): Promise<PaymentRecord> => {
@@ -1200,6 +1350,17 @@ export const api = {
     let savedPayment: PaymentRecord;
     if (USE_REAL_API) {
       savedPayment = await runGasMethod<PaymentRecord>("apiSubmitPaymentRequest", paymentData);
+      lastMutationTime.payments = Date.now();
+      const formattedSaved = {
+        ...savedPayment,
+        hasProof: Boolean((savedPayment as any).hasProof || paymentData.proofImage),
+        month: api.cleanPaymentMonth(savedPayment.month)
+      };
+      if (optimisticPaymentsCache) {
+        optimisticPaymentsCache = [formattedSaved, ...optimisticPaymentsCache.filter(p => p.id !== formattedSaved.id)];
+        globalApiCache.payments = { data: optimisticPaymentsCache, time: Date.now() };
+      }
+      return formattedSaved;
     } else {
       const db = getMockDB();
       const newPay: PaymentRecord = {
@@ -1227,6 +1388,17 @@ export const api = {
     let updatedPayment: PaymentRecord;
     if (USE_REAL_API) {
       updatedPayment = await runGasMethod<PaymentRecord>("apiUpdatePaymentStatus", paymentId, status, remarks);
+      lastMutationTime.payments = Date.now();
+      lastMutationTime.users = Date.now();
+      const formattedUpdated = {
+        ...updatedPayment,
+        month: api.cleanPaymentMonth(updatedPayment.month)
+      };
+      if (optimisticPaymentsCache) {
+        optimisticPaymentsCache = optimisticPaymentsCache.map(p => p.id === paymentId ? { ...p, ...formattedUpdated, status, ...(remarks ? { remarks } : {}) } : p);
+        globalApiCache.payments = { data: optimisticPaymentsCache, time: Date.now() };
+      }
+      return formattedUpdated;
     } else {
       const db = getMockDB();
       const idx = db.payments.findIndex(p => p.id === paymentId);

@@ -162,11 +162,51 @@ function cleanUserResponse(user) {
   return clone;
 }
 
+function computeHmacHex(message, secret) {
+  var sigBytes = Utilities.computeHmacSha256Signature(String(message), String(secret), Utilities.Charset.UTF_8);
+  var hex = "";
+  for (var i = 0; i < sigBytes.length; i++) {
+    var b = sigBytes[i];
+    if (b < 0) b += 256;
+    var h = b.toString(16);
+    if (h.length === 1) h = "0" + h;
+    hex += h;
+  }
+  return hex;
+}
+
+function createSignedSessionToken(user, expiresAtMs) {
+  try {
+    var sessionSecret = PropertiesService.getScriptProperties().getProperty("MC_SESSION_SECRET");
+    if (!sessionSecret || !sessionSecret.trim()) {
+      return generateSessionToken();
+    }
+    sessionSecret = sessionSecret.trim();
+    var payloadObj = {
+      userId: String(user.id),
+      role: user.role || 'student',
+      batchId: String(user.batchId || ''),
+      tv: Number(user.tokenVersion || 1),
+      iat: Date.now(),
+      exp: expiresAtMs,
+      jti: Utilities.getUuid().replace(/-/g, '').substring(0, 16)
+    };
+    var jsonStr = JSON.stringify(payloadObj);
+    var payloadB64 = Utilities.base64EncodeWebSafe(Utilities.newBlob(jsonStr).getBytes()).replace(/=+$/, '');
+    var sigHex = computeHmacHex(payloadB64, sessionSecret);
+    return payloadB64 + "." + sigHex;
+  } catch (e) {
+    Logger.log("createSignedSessionToken fallback: " + e.toString());
+    return generateSessionToken();
+  }
+}
+
 function createSession(user) {
-  var token = generateSessionToken();
-  var tokenHash = computeTokenHash(token);
   var now = new Date();
-  var expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+  var expiresAtMs = now.getTime() + 30 * 24 * 60 * 60 * 1000; // 30 days
+  var expiresAt = new Date(expiresAtMs).toISOString();
+  var token = createSignedSessionToken(user, expiresAtMs);
+  var tokenHash = computeTokenHash(token);
 
   var sessionData = {
     tokenHash: tokenHash,
@@ -200,6 +240,27 @@ function createSession(user) {
 
 function validateSessionToken(token) {
   if (!token || typeof token !== 'string') return null;
+
+  // If signed format (<payloadB64>.<sigHex>), verify signature and expiry first
+  var dotIdx = token.indexOf('.');
+  if (dotIdx > 0 && dotIdx < token.length - 1) {
+    try {
+      var sessionSecret = PropertiesService.getScriptProperties().getProperty("MC_SESSION_SECRET");
+      if (sessionSecret && sessionSecret.trim()) {
+        var payloadB64 = token.substring(0, dotIdx);
+        var sigHex = token.substring(dotIdx + 1).toLowerCase();
+        var expectedSig = computeHmacHex(payloadB64, sessionSecret.trim()).toLowerCase();
+        if (sigHex !== expectedSig) return null;
+        var decodedBytes = Utilities.base64DecodeWebSafe(payloadB64);
+        var payloadJson = Utilities.newBlob(decodedBytes).getDataAsString();
+        var payload = JSON.parse(payloadJson);
+        if (!payload || !payload.exp || Date.now() >= Number(payload.exp)) return null;
+      }
+    } catch (sigErr) {
+      return null;
+    }
+  }
+
   var tokenHash = computeTokenHash(token);
 
   // 1. Try CacheService
@@ -237,6 +298,64 @@ function validateSessionToken(token) {
   } catch (err) {
     Logger.log("validateSessionToken error: " + err.toString());
     return null;
+  }
+}
+
+function pushRevocationToVps(revokePayload) {
+  try {
+    var VPS_REVOKE_URL = "https://mc-api-187-127-191-163.sslip.io/revoke";
+    var HMAC_SECRET = PropertiesService.getScriptProperties().getProperty("MC_SYNC_SECRET");
+    if (!HMAC_SECRET || !HMAC_SECRET.trim()) return;
+    var bodyStr = JSON.stringify(revokePayload);
+    var sigHex = computeHmacHex(bodyStr, HMAC_SECRET.trim());
+    UrlFetchApp.fetch(VPS_REVOKE_URL, {
+      method: "post",
+      contentType: "application/json; charset=utf-8",
+      headers: { "X-MC-Signature": "sha256=" + sigHex },
+      payload: bodyStr,
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    Logger.log("pushRevocationToVps error: " + e.toString());
+  }
+}
+
+function bumpUserTokenVersionAndNotifyVps(userId, opts) {
+  opts = opts || {};
+  try {
+    revokeUserSessions(userId);
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt", "tokenVersion"]);
+    var newTv = 2;
+    if (!opts.deleted) {
+      var users = readSheet("users");
+      var u = users.find(function(x) { return String(x.id).trim() === String(userId).trim(); });
+      var curTv = (u && u.tokenVersion) ? Number(u.tokenVersion) : 1;
+      newTv = curTv + 1;
+      updateRow("users", userId, { tokenVersion: newTv });
+    }
+    markSnapshotDirty();
+    pushRevocationToVps({
+      userId: String(userId),
+      tokenVersion: newTv,
+      deleted: Boolean(opts.deleted),
+      status: opts.status
+    });
+    return newTv;
+  } catch (e) {
+    Logger.log("bumpUserTokenVersionAndNotifyVps error: " + e.toString());
+    return 1;
+  }
+}
+
+function apiLogoutUser(session) {
+  try {
+    if (session && session.userId) {
+      // Logout ONLY clears server session; does NOT bump tokenVersion
+      revokeUserSessions(session.userId);
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.toString() };
   }
 }
 
@@ -839,6 +958,9 @@ function apiHealStudentIds() {
       }
     }
 
+    if (healedCount > 0 || updatedRows > 0) {
+      markSnapshotDirty();
+    }
     return {
       success: true,
       healedCount: healedCount,
@@ -895,6 +1017,7 @@ function apiSaveUser(userData, session) {
         }
       }
       var updated = updateRow("users", existingUser.id, safeUpdateData);
+      markSnapshotDirty();
       var returnData = updated ? updated : {};
       returnData.id = existingUser.id;
       return { success: true, data: cleanUserResponse(returnData) };
@@ -903,11 +1026,13 @@ function apiSaveUser(userData, session) {
       userData.status = userData.status || "incomplete";
       userData.paymentStatus = userData.paymentStatus || "unpaid";
       userData.monthlyFee = userData.monthlyFee !== undefined && userData.monthlyFee !== '' && userData.monthlyFee !== null ? Number(userData.monthlyFee) : 500;
+      userData.tokenVersion = 1;
       var rawPasscode = userData.passcode ? String(userData.passcode).trim() : cleanPhone(userData.phone);
       var newSalt = generateSalt();
       userData.salt = newSalt;
       userData.passcode = hashPasscode(rawPasscode, newSalt);
       var saved = saveRow("users", userData);
+      markSnapshotDirty();
       return { success: true, data: cleanUserResponse(saved) };
     }
   } catch (err) {
@@ -938,11 +1063,13 @@ function apiRegisterUser(userData) {
     userData.status = "pending";
     userData.paymentStatus = "unpaid";
     userData.monthlyFee = 500;
+    userData.tokenVersion = 1;
     userData.passcode = hashPasscode(cleanedPhone, newSalt);
     userData.createdAt = new Date().toISOString();
 
-    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"]);
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt", "tokenVersion"]);
     var saved = saveRow("users", userData);
+    markSnapshotDirty();
     return { success: true, data: cleanUserResponse(saved) };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -964,6 +1091,7 @@ function apiDeleteUser(userId) {
     
     // ৫. ফাইনালি ইউজার শিট থেকে স্টুডেন্টকে ডিলিট করো
     var success = deleteRow("users", userId);
+    bumpUserTokenVersionAndNotifyVps(userId, { deleted: true });
     return { success: success };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1013,6 +1141,7 @@ function apiUpdateUserStatus(userId, status, rejectReason) {
       updates.rejectReason = rejectReason;
     }
     var updated = updateRow("users", userId, updates);
+    bumpUserTokenVersionAndNotifyVps(userId, { status: status });
     return { success: true, data: updated };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1022,8 +1151,11 @@ function apiUpdateUserStatus(userId, status, rejectReason) {
 
 function apiUpdateUserPasscode(userId, passcode) {
   try {
-    var updated = updateRow("users", userId, { passcode: passcode });
-    return { success: true, data: updated };
+    var newSalt = generateSalt();
+    var newHash = hashPasscode(String(passcode || "").trim(), newSalt);
+    var updated = updateRow("users", userId, { passcode: newHash, salt: newSalt });
+    bumpUserTokenVersionAndNotifyVps(userId);
+    return { success: true, data: cleanUserResponse(updated) };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -1065,7 +1197,7 @@ function apiChangePasscode(userId, currentPasscode, newPasscode, session) {
     var newSalt = generateSalt();
     var newHash = hashPasscode(String(newPasscode).trim(), newSalt);
     updateRow("users", userId, { passcode: newHash, salt: newSalt });
-    revokeUserSessions(userId);
+    bumpUserTokenVersionAndNotifyVps(userId);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1082,7 +1214,7 @@ function apiAdminResetPasscode(studentId, newPasscode) {
     var newHash = hashPasscode(String(newPasscode).trim(), newSalt);
     var updated = updateRow("users", studentId, { passcode: newHash, salt: newSalt });
     if (!updated) return { success: false, error: "ব্যবহারকারী পাওয়া যায়নি।" };
-    revokeUserSessions(studentId);
+    bumpUserTokenVersionAndNotifyVps(studentId);
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1186,7 +1318,7 @@ function apiVerifyOTPAndReset(phone, otp, newPasscode) {
     var newHash = hashPasscode(String(newPasscode).trim(), newSalt);
     updateRow("users", user.id, { passcode: newHash, salt: newSalt });
 
-    revokeUserSessions(user.id);
+    bumpUserTokenVersionAndNotifyVps(user.id);
     props.deleteProperty("otp_" + cleanedPhone);
 
     return { success: true };
@@ -1784,7 +1916,42 @@ function apiGetPayments(session) {
         return String(p.studentId).trim() === String(session.userId).trim();
       });
     }
-    return { success: true, data: all };
+    var formatted = all.map(function(p) {
+      var copy = {};
+      for (var k in p) copy[k] = p[k];
+      copy.hasProof = Boolean(p.proofImage && String(p.proofImage).trim() !== "");
+      return copy;
+    });
+    return { success: true, data: formatted };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetPaymentProof(paymentId, session) {
+  try {
+    if (!session || !session.userId) {
+      return { success: false, error: "Unauthorized access: Valid session required", code: 401 };
+    }
+    var payments = readSheet("payments");
+    var payment = payments.find(function(p) { return String(p.id) === String(paymentId); });
+    if (!payment) {
+      return { success: false, error: "Payment record not found", code: 404 };
+    }
+    if (session.role !== 'admin' && String(payment.studentId).trim() !== String(session.userId).trim()) {
+      return { success: false, error: "Forbidden: Not authorized to view this payment proof", code: 403 };
+    }
+    var rawProof = payment.proofImage ? String(payment.proofImage) : "";
+    if (rawProof.indexOf("gdrive_file_id:") === 0) {
+      rawProof = readLargeString(rawProof);
+    }
+    return {
+      success: true,
+      data: {
+        id: payment.id,
+        proofImage: rawProof
+      }
+    };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -1824,6 +1991,8 @@ function apiSubmitPaymentRequest(paymentData, session) {
 
     ensureSheetHeaders("payments", ["id", "studentId", "studentName", "month", "amount", "status", "paidVia", "paymentMode", "transactionId", "proofImage", "remarks", "paidDate", "createdAt"]);
     var saved = saveRow("payments", newPayment);
+    saved.hasProof = Boolean(newPayment.proofImage && String(newPayment.proofImage).trim() !== "");
+    markSnapshotDirty();
     return { success: true, data: saved };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1864,6 +2033,7 @@ function apiUpdatePaymentStatus(paymentId, status, remarks, session) {
     if (payment.studentId && targetStatus === 'approved') {
       updateRow("users", payment.studentId, { paymentStatus: 'paid' });
     }
+    markSnapshotDirty();
 
     return { success: true, data: updated };
   } catch (err) {
@@ -2471,10 +2641,12 @@ function doPost(e) {
     var USER_ACTIONS = [
       "apiGetSettings",
       "apiGetPayments",
+      "apiGetPaymentProof",
       "apiGetAttendance",
       "apiGetExamResults",
       "apiGetLibraryItemDetails",
       "apiChangePasscode",
+      "apiLogoutUser",
       "apiSaveUser",
       "apiJoinExamSession",
       "apiSubmitExamResult",
@@ -2487,8 +2659,7 @@ function doPost(e) {
       "apiGetLibrary",
       "apiGetBatches",
       "apiGetExamSessions",
-      "apiGetAnnouncement",
-      "apiVerifyGatewayPayment"
+      "apiGetAnnouncement"
     ];
 
     var isPublic = PUBLIC_ACTIONS.indexOf(action) !== -1;
@@ -2550,10 +2721,12 @@ function doPost(e) {
     var ACTIONS_NEEDING_SESSION = [
       "apiGetSettings",
       "apiGetPayments",
+      "apiGetPaymentProof",
       "apiGetAttendance",
       "apiGetExamResults",
       "apiGetLibraryItemDetails",
       "apiChangePasscode",
+      "apiLogoutUser",
       "apiSaveUser",
       "apiJoinExamSession",
       "apiSubmitExamResult",
@@ -2613,6 +2786,9 @@ function apiFixStudentId(oldId, newId) {
         }
       }
       SpreadsheetApp.flush();
+    }
+    if (updatedRows > 0) {
+      markSnapshotDirty();
     }
     return { success: true, updatedRows: updatedRows };
   } catch (err) {
@@ -2708,7 +2884,7 @@ function deleteLargeStringFile(val) {
 }
 
 // =========================================================================
-// VPS SYNC: Push Snapshot to Hostinger VPS mc-api (Step 1)
+// VPS SYNC: Push Snapshot to Hostinger VPS mc-api (Step 1 & Step 2)
 // =========================================================================
 function markSnapshotDirty() {
   try {
@@ -2809,6 +2985,8 @@ function pushSnapshotToVps() {
       libraryCount: snapshotObj.library.length,
       batchesCount: snapshotObj.batches.length,
       notificationsCount: snapshotObj.notifications.length,
+      usersCount: snapshotObj.users ? snapshotObj.users.length : 0,
+      paymentsCount: snapshotObj.payments ? snapshotObj.payments.length : 0,
       version: snapshotObj.version,
       timestamp: snapshotObj.timestamp
     };
@@ -2817,6 +2995,19 @@ function pushSnapshotToVps() {
     return { success: false, error: err.toString() };
   }
 }
+
+var ALLOWED_USER_SNAPSHOT_FIELDS = [
+  "id", "name", "fullName", "phone", "email", "role", "status",
+  "batchId", "address", "dob", "joinDate", "profilePhotoUrl",
+  "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus",
+  "createdAt", "updatedAt", "excusedDates", "reapplyReason",
+  "rejectReason", "showPaymentNudge", "tokenVersion"
+];
+
+var ALLOWED_PAYMENT_SNAPSHOT_FIELDS = [
+  "id", "studentId", "studentName", "month", "amount", "status",
+  "paidVia", "paymentMode", "transactionId", "remarks", "paidDate", "createdAt"
+];
 
 function apiGetFullSnapshot() {
   try {
@@ -2859,6 +3050,44 @@ function apiGetFullSnapshot() {
       resolvedLib.push(resolvedItem);
     }
 
+    // Strictly Whitelisted Users Snapshot (NEVER includes passcode, salt, otpCode, otpExpiry, tokenHash)
+    var rawUsers = readSheet("users");
+    var whitelistedUsers = [];
+    for (var uIdx = 0; uIdx < rawUsers.length; uIdx++) {
+      var rawU = rawUsers[uIdx];
+      if (!rawU || !rawU.id) continue;
+      var safeU = {};
+      for (var fIdx = 0; fIdx < ALLOWED_USER_SNAPSHOT_FIELDS.length; fIdx++) {
+        var uKey = ALLOWED_USER_SNAPSHOT_FIELDS[fIdx];
+        if (rawU[uKey] !== undefined) {
+          safeU[uKey] = rawU[uKey];
+        }
+      }
+      if (typeof safeU.profilePhotoUrl === 'string' && safeU.profilePhotoUrl.indexOf("gdrive_file_id:") === 0) {
+        safeU.profilePhotoUrl = readLargeString(safeU.profilePhotoUrl);
+      }
+      safeU.tokenVersion = Number(rawU.tokenVersion || 1);
+      whitelistedUsers.push(safeU);
+    }
+
+    // Strictly Whitelisted Payments Snapshot (excludes proofImage content, includes hasProof flag)
+    var rawPayments = readSheet("payments");
+    var whitelistedPayments = [];
+    for (var pIdx = 0; pIdx < rawPayments.length; pIdx++) {
+      var rawP = rawPayments[pIdx];
+      if (!rawP || !rawP.id) continue;
+      var safeP = {};
+      for (var pfIdx = 0; pfIdx < ALLOWED_PAYMENT_SNAPSHOT_FIELDS.length; pfIdx++) {
+        var pKey = ALLOWED_PAYMENT_SNAPSHOT_FIELDS[pfIdx];
+        if (rawP[pKey] !== undefined) {
+          safeP[pKey] = rawP[pKey];
+        }
+      }
+      safeP.hasProof = Boolean(rawP.proofImage && String(rawP.proofImage).trim() !== "");
+      safeP.proofImage = "";
+      whitelistedPayments.push(safeP);
+    }
+
     var timestamp = Date.now();
     var version = new Date(timestamp).toISOString();
 
@@ -2870,7 +3099,9 @@ function apiGetFullSnapshot() {
         batches: batchesData,
         notifications: notifsData,
         announcement: annData,
-        library: resolvedLib
+        library: resolvedLib,
+        users: whitelistedUsers,
+        payments: whitelistedPayments
       }
     };
   } catch (err) {
