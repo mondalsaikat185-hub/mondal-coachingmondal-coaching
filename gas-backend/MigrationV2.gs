@@ -44,7 +44,10 @@ function v2ResolveRow_(row) {
 
 function exportAllToVpsV2() {
   var url = PropertiesService.getScriptProperties().getProperty("V2_IMPORT_URL");
-  if (!url) throw new Error("Set script property V2_IMPORT_URL first");
+  if (!url) {
+    url = "https://mc-api2-187-127-191-163.sslip.io/import";
+    PropertiesService.getScriptProperties().setProperty("V2_IMPORT_URL", url);
+  }
   var started = Date.now();
   v2Post_(url, { step: "begin" });
   var expected = {};
