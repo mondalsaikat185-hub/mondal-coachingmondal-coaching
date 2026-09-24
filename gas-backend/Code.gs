@@ -2644,6 +2644,12 @@ function doPost(e) {
     var args = requestData.args || [];
     var token = requestData.token;
 
+    // VPS v2 relay (Drive upload / OTP e-mail), HMAC-signed — see MigrationV2.gs
+    if (action === "relayFromVps") {
+      return ContentService.createTextOutput(JSON.stringify(handleRelayFromVps_(requestData)))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     var SECURITY_TOKEN = "MondalCoachingSecureToken2026!";
 
     var func = (typeof this[action] === 'function') ? this[action] : (typeof globalThis !== 'undefined' && typeof globalThis[action] === 'function' ? globalThis[action] : null);

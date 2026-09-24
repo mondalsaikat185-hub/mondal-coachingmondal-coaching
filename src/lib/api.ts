@@ -22,6 +22,8 @@ declare const google: any;
 // =========================================================================
 // REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL (Step 2 Production Release v94)
 export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
+// When set, the whole app talks to the VPS backend (mc-api v2) instead of Google Apps Script.
+export const BACKEND_V2_URL = ((import.meta.env.VITE_BACKEND_V2_URL as string) || "").replace(/\/+$/, "");
 export const SECURITY_TOKEN = (import.meta.env.VITE_SECURITY_TOKEN as string) || "MondalCoachingSecureToken2026!";
 
 export const SESSION_TOKEN_KEY = "mc_session_token";
@@ -230,7 +232,7 @@ export function cleanPhone(p: any): string {
     while (attempt < retries) {
       try {
         const activeToken = getSessionToken() || SECURITY_TOKEN;
-        const fetchResponse = await fetch(GAS_WEB_APP_URL, {
+        const fetchResponse = await fetch(BACKEND_V2_URL ? `${BACKEND_V2_URL}/rpc` : GAS_WEB_APP_URL, {
           method: "POST",
           body: JSON.stringify({ action: methodName, args: args, token: activeToken }),
           headers: {
@@ -390,6 +392,7 @@ async function isVpsAvailable(): Promise<boolean> {
 }
 
 async function fetchFromVps<T>(endpoint: string): Promise<T | null> {
+  if (BACKEND_V2_URL) return null; // v2: everything goes through /rpc
   try {
     const available = await isVpsAvailable();
     if (!available) {
@@ -437,6 +440,7 @@ let optimisticUsersCache: UserProfile[] | null = null;
 let optimisticPaymentsCache: PaymentRecord[] | null = null;
 
 async function fetchFromVpsWithSession<T>(endpoint: string): Promise<{ data: T; timestamp: number; version?: string } | null> {
+  if (BACKEND_V2_URL) return null; // v2: everything goes through /rpc
   try {
     const sessionToken = getSessionToken();
     if (!sessionToken) {
