@@ -540,7 +540,18 @@ function cleanPhone(p) {
 
 function apiGetUsers() {
   try {
-    return { success: true, data: readSheet("users") };
+    var rawUsers = readSheet("users");
+    var cleanUsers = rawUsers.map(function(u) {
+      if (!u || typeof u !== 'object') return u;
+      var clone = {};
+      for (var k in u) {
+        if (k !== 'passcode' && k !== 'otpCode' && k !== 'otpExpiry' && k !== 'salt' && k !== 'tokenHash') {
+          clone[k] = u[k];
+        }
+      }
+      return clone;
+    });
+    return { success: true, data: cleanUsers };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -1033,7 +1044,14 @@ function apiLoginUser(phone, passcode) {
       user.passcode = "saikat123";
     }
     
-    return { success: true, data: user };
+    var safeUser = {};
+    for (var key in user) {
+      if (key !== 'passcode' && key !== 'otpCode' && key !== 'otpExpiry' && key !== 'salt' && key !== 'tokenHash') {
+        safeUser[key] = user[key];
+      }
+    }
+
+    return { success: true, data: safeUser };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
