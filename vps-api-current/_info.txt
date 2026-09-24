@@ -1,0 +1,60 @@
+=== DOCKER PS LINE (mc-api) ===
+CONTAINER ID   IMAGE                     COMMAND                  CREATED       STATUS       PORTS      NAMES
+fdb3f9d7cdd3   smartqueue-stack-mc-api   "docker-entrypoint.s…"   7 hours ago   Up 7 hours   4000/tcp   mc-api
+
+=== DOCKER COMPOSE SERVICE BLOCK (/root/smartqueue-stack/docker-compose.yml) ===
+  mc-api:
+    build: ./mc-api
+    container_name: mc-api
+    restart: always
+    environment:
+      - PORT=4000
+      - HMAC_SYNC_SECRET=${MC_SYNC_SECRET}
+      - MC_SESSION_SECRET=${MC_SESSION_SECRET}
+    volumes:
+      - /root/smartqueue-stack/mc-api/data:/data
+    networks:
+      - smartqueue-net
+
+=== CADDYFILE BLOCK (/root/smartqueue-stack/Caddyfile) ===
+mc-api-187-127-191-163.sslip.io {
+    reverse_proxy mc-api:4000
+}
+
+=== NODE VERSION & DB PATH ===
+Node version inside container: v22.23.3
+DB file path (host): /root/smartqueue-stack/mc-api/data/mc.db
+DB file path (container): /data/mc.db
+
+=== SQLITE SCHEMA ===
+CREATE TABLE library (
+    id TEXT PRIMARY KEY,
+    item_json TEXT NOT NULL,
+    summary_json TEXT NOT NULL
+);
+
+CREATE TABLE meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+
+CREATE TABLE payments (
+    id TEXT PRIMARY KEY,
+    student_id TEXT NOT NULL,
+    payment_json TEXT NOT NULL
+);
+CREATE INDEX idx_payments_student_id ON payments(student_id);
+
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+    role TEXT NOT NULL,
+    status TEXT NOT NULL,
+    token_version INTEGER NOT NULL DEFAULT 1,
+    user_json TEXT NOT NULL
+);
+
+=== SQLITE ROW COUNTS ===
+library: 1140
+meta: 7
+payments: 184
+users: 92
