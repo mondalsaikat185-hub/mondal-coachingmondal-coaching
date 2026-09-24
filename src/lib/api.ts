@@ -270,6 +270,123 @@ export function cleanPhone(p: any): string {
 }
 
 // =========================================================================
+// 1B. HOSTINGER VPS mc-api CLIENT (Step 1 Read Acceleration with Auto-Fallback)
+// =========================================================================
+
+export function getVpsBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramUrl = urlParams.get('vps_url');
+    if (paramUrl) return paramUrl;
+
+    const override = localStorage.getItem('mc_api_url_override');
+    if (override) return override;
+
+    if ((window as any).__MC_API_URL) return (window as any).__MC_API_URL;
+  }
+  return (import.meta.env.VITE_MC_API_URL as string) || "https://mc-api-187-127-191-163.sslip.io";
+}
+
+let lastCheckedUrl = '';
+let lastHealthCheckTime = 0;
+let lastHealthOk = false;
+let lastSnapshotAgeMs = -1;
+
+export async function checkVpsHealth(): Promise<{ ok: boolean; reason?: string; ageMs?: number }> {
+  const vpsUrl = getVpsBaseUrl();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`${vpsUrl}/health`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      return { ok: false, reason: `HTTP status ${res.status}` };
+    }
+
+    const data = await res.json();
+    const ageMs = typeof data.snapshotAgeMs === 'number' ? data.snapshotAgeMs : -1;
+    lastSnapshotAgeMs = ageMs;
+
+    if (data.status !== 'ok') {
+      return { ok: false, reason: `Status not ok (${data.status})`, ageMs };
+    }
+
+    // Snapshot must not be older than 15 minutes (900,000 ms)
+    const MAX_AGE_MS = 15 * 60 * 1000;
+    if (ageMs > MAX_AGE_MS) {
+      return { ok: false, reason: `Snapshot is older than 15 min (${(ageMs / 60000).toFixed(1)}m)`, ageMs };
+    }
+
+    return { ok: true, ageMs };
+  } catch (err: any) {
+    return { ok: false, reason: err.name === 'AbortError' ? 'Health check timed out (4s)' : err.message };
+  }
+}
+
+async function isVpsAvailable(): Promise<boolean> {
+  const vpsUrl = getVpsBaseUrl();
+  if (vpsUrl !== lastCheckedUrl) {
+    lastCheckedUrl = vpsUrl;
+    lastHealthCheckTime = 0;
+    lastHealthOk = false;
+  }
+
+  const now = Date.now();
+  // Cache positive health checks for 30s to avoid duplicate round-trips
+  if (lastHealthOk && (now - lastHealthCheckTime < 30000)) {
+    return true;
+  }
+
+  const result = await checkVpsHealth();
+  lastHealthCheckTime = now;
+  lastHealthOk = result.ok;
+  if (!result.ok) {
+    console.warn(`[API] VPS mc-api unavailable: ${result.reason}. Falling back to GAS.`);
+  }
+  return result.ok;
+}
+
+async function fetchFromVps<T>(endpoint: string): Promise<T | null> {
+  try {
+    const available = await isVpsAvailable();
+    if (!available) {
+      return null;
+    }
+
+    const vpsUrl = getVpsBaseUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const res = await fetch(`${vpsUrl}${endpoint}`, {
+      headers: {
+        'X-MC-Token': SECURITY_TOKEN
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      console.warn(`[API] VPS mc-api returned HTTP ${res.status} for ${endpoint}. Falling back to GAS.`);
+      lastHealthOk = false;
+      return null;
+    }
+
+    const json = await res.json();
+    if (json.success === false) {
+      console.warn(`[API] VPS mc-api error for ${endpoint}:`, json.error);
+      return null;
+    }
+
+    return (json.data !== undefined ? json.data : json) as T;
+  } catch (err: any) {
+    console.warn(`[API] VPS mc-api request to ${endpoint} failed: ${err.message}. Falling back to GAS.`);
+    lastHealthOk = false;
+    return null;
+  }
+}
+
+// =========================================================================
 // 2. CLIENT-SIDE LOCALSTORAGE MOCK DATABASE (DEVELOPMENT & LOCAL TESTING)
 // =========================================================================
 
@@ -640,7 +757,19 @@ export const api = {
 
   getAnnouncement: async (): Promise<string> => {
     if (USE_REAL_API) {
-      return runGasMethod<string>('apiGetAnnouncement');
+      let ann: string | null = null;
+      let source = "GAS";
+
+      const vpsAnn = await fetchFromVps<string>("/announcement");
+      if (typeof vpsAnn === 'string') {
+        ann = vpsAnn;
+        source = "VPS (mc-api)";
+      } else {
+        ann = await runGasMethod<string>('apiGetAnnouncement');
+        source = "GAS (fallback)";
+      }
+      console.log(`[API] getAnnouncement loaded from ${source}`);
+      return ann;
     }
     return localStorage.getItem('mc_announcement') || '';
   },
@@ -672,7 +801,19 @@ export const api = {
       if (globalApiCache.batches && Date.now() - globalApiCache.batches.time < CACHE_TTL) {
         return globalApiCache.batches.data;
       }
-      const data = await runGasMethod<Batch[]>("apiGetBatches");
+      let data: Batch[] | null = null;
+      let source = "GAS";
+
+      const vpsData = await fetchFromVps<Batch[]>("/batches");
+      if (vpsData && Array.isArray(vpsData)) {
+        data = vpsData;
+        source = "VPS (mc-api)";
+      } else {
+        data = await runGasMethod<Batch[]>("apiGetBatches");
+        source = "GAS (fallback)";
+      }
+      console.log(`[API] getBatches loaded from ${source} (${data.length} batches)`);
+
       globalApiCache.batches = { data, time: Date.now() };
       if (userId) {
         setLocalSwr(userId, 'batches', data);
@@ -752,7 +893,19 @@ export const api = {
       if (globalApiCache.library && Date.now() - globalApiCache.library.time < CACHE_TTL) {
         return globalApiCache.library.data;
       }
-      const data = await runGasMethod<LibraryItem[]>("apiGetLibrary");
+      let data: LibraryItem[] | null = null;
+      let source = "GAS";
+
+      const vpsData = await fetchFromVps<LibraryItem[]>("/library");
+      if (vpsData && Array.isArray(vpsData)) {
+        data = vpsData;
+        source = "VPS (mc-api)";
+      } else {
+        data = await runGasMethod<LibraryItem[]>("apiGetLibrary");
+        source = "GAS (fallback)";
+      }
+      console.log(`[API] getLibrary loaded from ${source} (${data.length} items)`);
+
       globalApiCache.library = { data, time: Date.now() };
       if (userId) {
         setLocalSwr(userId, 'library', data);
@@ -768,7 +921,19 @@ export const api = {
       if (cached) {
         return cached;
       }
-      const item = await runGasMethod<LibraryItem>("apiGetLibraryItemDetails", itemId);
+      let item: LibraryItem | null = null;
+      let source = "GAS";
+
+      const vpsItem = await fetchFromVps<LibraryItem>(`/library/${encodeURIComponent(itemId)}`);
+      if (vpsItem && vpsItem.id) {
+        item = vpsItem;
+        source = "VPS (mc-api)";
+      } else {
+        item = await runGasMethod<LibraryItem>("apiGetLibraryItemDetails", itemId);
+        source = "GAS (fallback)";
+      }
+      console.log(`[API] getLibraryItemDetails (${itemId}) loaded from ${source}`);
+
       if (item) {
         setCachedLibraryItemDetails(itemId, item);
       }

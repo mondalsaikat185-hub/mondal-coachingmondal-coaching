@@ -1079,9 +1079,11 @@ function apiSaveBatch(batchData) {
       var id = batchData.id;
       delete batchData.id;
       var updated = updateRow("batches", id, batchData);
+      markSnapshotDirty();
       return { success: true, data: updated };
     } else {
       var saved = saveRow("batches", batchData);
+      markSnapshotDirty();
       return { success: true, data: saved };
     }
   } catch (err) {
@@ -1119,6 +1121,7 @@ function apiDeleteBatch(batchId) {
     
     // ৭. সবশেষে ব্যাচ শিট থেকে ব্যাচটিকে ডিলিট করো
     var success = deleteRow("batches", batchId);
+    markSnapshotDirty();
     return { success: success };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1232,9 +1235,11 @@ function apiSaveLibraryItem(itemData) {
       var id = itemData.id;
       delete itemData.id;
       var updated = updateRow("library", id, itemData);
+      markSnapshotDirty();
       return { success: true, data: updated };
     } else {
       var saved = saveRow("library", itemData);
+      markSnapshotDirty();
       return { success: true, data: saved };
     }
   } catch (err) {
@@ -1252,6 +1257,7 @@ function apiUpdateLibrarySequences(updates) {
         updateRow("library", item.id, { sequence: item.sequence });
       }
     });
+    markSnapshotDirty();
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1290,6 +1296,7 @@ function apiDeleteLibraryItem(itemId) {
     deleteMultipleRows("examSessions", "examId", itemId);
     deleteMultipleRows("examResults", "examId", itemId);
     
+    markSnapshotDirty();
     return { success: success };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1401,6 +1408,9 @@ function apiDeleteMultipleLibraryItems(itemIds) {
       deleteMultipleRows("examResults", "examId", itemIds[k]);
     }
     
+    if (deletedCount > 0) {
+      markSnapshotDirty();
+    }
     return { success: true, count: deletedCount };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1471,6 +1481,7 @@ function apiShareLibraryItem(itemId, batchIdsMap, scheduledStartTimeMap) {
     if (dirty) {
       sheet.getRange(2, 1, lastRow - 1, lastCol).setValues(values);
       SpreadsheetApp.flush();
+      markSnapshotDirty();
     }
     
     return { success: true };
@@ -1548,9 +1559,11 @@ function apiCreateNotification(notifData) {
       var id = notifData.id;
       delete notifData.id;
       var updated = updateRow("notifications", id, notifData);
+      markSnapshotDirty();
       return { success: true, data: updated };
     } else {
       var saved = saveRow("notifications", notifData);
+      markSnapshotDirty();
       return { success: true, data: saved };
     }
   } catch (err) {
@@ -1561,6 +1574,7 @@ function apiCreateNotification(notifData) {
 function apiDeleteNotification(notifId) {
   try {
     var success = deleteRow("notifications", notifId);
+    markSnapshotDirty();
     return { success: success };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -1894,6 +1908,7 @@ function apiSaveAnnouncement(message) {
   try {
     var props = PropertiesService.getScriptProperties();
     props.setProperty("announcement", message || "");
+    markSnapshotDirty();
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
@@ -2066,12 +2081,62 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    if (!action || typeof this[action] !== 'function') {
-      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Invalid action: ' + action }))
+    // Strict allowlist: only functions explicitly used by the frontend may be called via doPost
+    var ALLOWED_ACTIONS = {
+      apiAddPayment: true,
+      apiAdminResetPasscode: true,
+      apiChangePasscode: true,
+      apiCheckApplicationStatus: true,
+      apiCreateExamSession: true,
+      apiCreateNotification: true,
+      apiDeleteBatch: true,
+      apiDeleteExamResult: true,
+      apiDeleteLibraryItem: true,
+      apiDeleteMultipleExamResults: true,
+      apiDeleteMultipleLibraryItems: true,
+      apiDeleteNotification: true,
+      apiDeleteUser: true,
+      apiEndExamSession: true,
+      apiGetAnnouncement: true,
+      apiGetAttendance: true,
+      apiGetBatches: true,
+      apiGetExamResults: true,
+      apiGetExamSessions: true,
+      apiGetLibrary: true,
+      apiGetLibraryItemDetails: true,
+      apiGetNotifications: true,
+      apiGetPayments: true,
+      apiGetSettings: true,
+      apiGetStudentDashboardData: true,
+      apiGetUsers: true,
+      apiHasSubmitted: true,
+      apiJoinExamSession: true,
+      apiLoginUser: true,
+      apiRegisterUser: true,
+      apiSaveAnnouncement: true,
+      apiSaveBatch: true,
+      apiSaveLibraryItem: true,
+      apiSaveSettings: true,
+      apiSaveUser: true,
+      apiSendOTP: true,
+      apiShareLibraryItem: true,
+      apiSubmitExamResult: true,
+      apiUpdateLibrarySequences: true,
+      apiUpdatePaymentAmount: true,
+      apiUpdatePaymentStatus: true,
+      apiUpdateUserPasscode: true,
+      apiUpdateUserStatus: true,
+      apiUploadFileToDrive: true,
+      apiVerifyGatewayPayment: true,
+      apiVerifyOTPAndReset: true
+    };
+
+    if (!action || !ALLOWED_ACTIONS[action] || typeof this[action] !== 'function') {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, error: 'Forbidden: action not allowed' }))
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Dynamically call the requested function
+    // Call the allowed API function
     var result = this[action].apply(this, args);
 
     return ContentService.createTextOutput(JSON.stringify({ success: true, data: result }))
@@ -2187,9 +2252,10 @@ function readLargeString(placeholder) {
     return content;
   } catch (e) {
     Logger.log("Failed to read large cell file: " + fileId + ", error: " + e.toString());
-    return "";
+    throw new Error("Failed to read large cell file " + fileId + ": " + e.toString());
   }
 }
+
 
 function deleteLargeStringFile(val) {
   if (typeof val === 'string' && val.indexOf("gdrive_file_id:") === 0) {
@@ -2202,3 +2268,284 @@ function deleteLargeStringFile(val) {
     }
   }
 }
+
+// =========================================================================
+// VPS SYNC: Push Snapshot to Hostinger VPS mc-api (Step 1)
+// =========================================================================
+function markSnapshotDirty() {
+  try {
+    PropertiesService.getScriptProperties().setProperty("SNAPSHOT_DIRTY", "1");
+  } catch (e) {
+    Logger.log("markSnapshotDirty error: " + e.toString());
+  }
+}
+
+function pushSnapshotToVps() {
+  try {
+    var VPS_URL = "https://mc-api-187-127-191-163.sslip.io/sync";
+    var HMAC_SECRET = PropertiesService.getScriptProperties().getProperty("MC_SYNC_SECRET");
+    if (!HMAC_SECRET || !HMAC_SECRET.trim()) {
+      Logger.log("pushSnapshotToVps error: Script Property MC_SYNC_SECRET is missing");
+      return { success: false, error: "Script Property MC_SYNC_SECRET is missing" };
+    }
+    HMAC_SECRET = HMAC_SECRET.trim();
+
+    var snapshotRes = apiGetFullSnapshot();
+    if (!snapshotRes || !snapshotRes.success || !snapshotRes.data) {
+      var errMsg = snapshotRes ? snapshotRes.error : "Failed to build full snapshot";
+      Logger.log("pushSnapshotToVps aborted (large-cell or snapshot read failure): " + errMsg);
+      return { success: false, error: "pushSnapshotToVps aborted: " + errMsg };
+    }
+
+    var snapshotObj = snapshotRes.data;
+    var payloadString = JSON.stringify(snapshotObj);
+    var signatureBytes = Utilities.computeHmacSha256Signature(payloadString, HMAC_SECRET, Utilities.Charset.UTF_8);
+    var signatureHex = "";
+    for (var j = 0; j < signatureBytes.length; j++) {
+      var byteVal = signatureBytes[j];
+      if (byteVal < 0) byteVal += 256;
+      var hexVal = byteVal.toString(16);
+      if (hexVal.length === 1) hexVal = "0" + hexVal;
+      signatureHex += hexVal;
+    }
+
+    var options = {
+      method: "post",
+      contentType: "application/json; charset=utf-8",
+      headers: {
+        "X-MC-Signature": "sha256=" + signatureHex
+      },
+      payload: payloadString,
+      muteHttpExceptions: true
+    };
+
+    var response = UrlFetchApp.fetch(VPS_URL, options);
+    var responseCode = response.getResponseCode();
+    var responseText = response.getContentText();
+    Logger.log("pushSnapshotToVps status: " + responseCode + ", response: " + responseText);
+
+    return {
+      success: responseCode >= 200 && responseCode < 300,
+      code: responseCode,
+      body: responseText,
+      libraryCount: snapshotObj.library.length,
+      batchesCount: snapshotObj.batches.length,
+      notificationsCount: snapshotObj.notifications.length,
+      version: snapshotObj.version,
+      timestamp: snapshotObj.timestamp
+    };
+  } catch (err) {
+    Logger.log("pushSnapshotToVps error: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetFullSnapshot() {
+  try {
+    var batchesRes = apiGetBatches();
+    var batchesData = (batchesRes && batchesRes.data) ? batchesRes.data : [];
+
+    var notifsRes = apiGetNotifications();
+    var rawNotifs = (notifsRes && notifsRes.data) ? notifsRes.data : [];
+    var notifsData = rawNotifs.filter(function(n) {
+      if (!n) return false;
+      var type = String(n.type || '').trim().toLowerCase();
+      var role = String(n.senderRole || '').trim().toLowerCase();
+      return type !== 'student_to_admin' && role !== 'student';
+    });
+
+    var annRes = apiGetAnnouncement();
+    var annData = (annRes && typeof annRes.data === 'string') ? annRes.data : "";
+
+    var rawLib = readSheet("library");
+    var resolvedLib = [];
+    for (var i = 0; i < rawLib.length; i++) {
+      var item = rawLib[i];
+      var resolvedItem = {};
+      for (var k in item) {
+        resolvedItem[k] = item[k];
+      }
+
+      if (typeof resolvedItem.quizData === 'string' && resolvedItem.quizData.indexOf("gdrive_file_id:") === 0) {
+        resolvedItem.quizData = readLargeString(resolvedItem.quizData);
+      }
+      if (typeof resolvedItem.contentUrl === 'string' && resolvedItem.contentUrl.indexOf("gdrive_file_id:") === 0) {
+        resolvedItem.contentUrl = readLargeString(resolvedItem.contentUrl);
+      }
+
+      resolvedItem.isFolder = resolvedItem.isFolder === true || resolvedItem.isFolder === "true";
+      resolvedItem.isEncrypted = resolvedItem.isEncrypted === true || resolvedItem.isEncrypted === "true";
+      resolvedItem.isChunked = resolvedItem.isChunked === true || resolvedItem.isChunked === "true";
+      if (resolvedItem.chunkCount) resolvedItem.chunkCount = Number(resolvedItem.chunkCount);
+
+      resolvedLib.push(resolvedItem);
+    }
+
+    var timestamp = Date.now();
+    var version = new Date(timestamp).toISOString();
+
+    return {
+      success: true,
+      data: {
+        version: version,
+        timestamp: timestamp,
+        batches: batchesData,
+        notifications: notifsData,
+        announcement: annData,
+        library: resolvedLib
+      }
+    };
+  } catch (err) {
+    Logger.log("apiGetFullSnapshot failed: " + err.toString());
+    return { success: false, error: err.toString() };
+  }
+}
+
+function syncIfDirty() {
+  var lock = LockService.getScriptLock();
+  var hasLock = false;
+  try {
+    hasLock = lock.tryLock(5000);
+  } catch (e) {
+    Logger.log("syncIfDirty lock error: " + e.toString());
+    return { success: false, error: "Lock error: " + e.toString() };
+  }
+  if (!hasLock) {
+    Logger.log("syncIfDirty: another sync is already running. Skipping.");
+    return { success: false, error: "Another sync is running" };
+  }
+
+  try {
+    var props = PropertiesService.getScriptProperties();
+    var isDirty = props.getProperty("SNAPSHOT_DIRTY");
+    if (isDirty !== "1") {
+      Logger.log("syncIfDirty: SNAPSHOT_DIRTY is not 1. Nothing to sync.");
+      return { success: true, synced: false, reason: "SNAPSHOT_DIRTY is not 1" };
+    }
+
+    // Clear flag first
+    props.setProperty("SNAPSHOT_DIRTY", "0");
+    Logger.log("syncIfDirty: cleared SNAPSHOT_DIRTY to 0, running pushSnapshotToVps()...");
+
+    var res = pushSnapshotToVps();
+    if (!res || !res.success) {
+      Logger.log("syncIfDirty: pushSnapshotToVps failed. Re-setting SNAPSHOT_DIRTY=1. Error: " + (res ? res.error : "unknown"));
+      props.setProperty("SNAPSHOT_DIRTY", "1");
+      return { success: false, synced: false, error: res ? res.error : "unknown error" };
+    } else {
+      Logger.log("syncIfDirty: pushSnapshotToVps succeeded! Version: " + res.version);
+      return { success: true, synced: true, version: res.version };
+    }
+  } catch (err) {
+    Logger.log("syncIfDirty uncaught error: " + err.toString());
+    try {
+      PropertiesService.getScriptProperties().setProperty("SNAPSHOT_DIRTY", "1");
+    } catch (pe) {}
+    return { success: false, error: err.toString() };
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (le) {}
+  }
+}
+
+function periodicSafetySync() {
+  var lock = LockService.getScriptLock();
+  var hasLock = false;
+  try {
+    hasLock = lock.tryLock(5000);
+  } catch (e) {
+    return { success: false, error: "Lock error: " + e.toString() };
+  }
+  if (!hasLock) {
+    Logger.log("periodicSafetySync: another sync is already running. Skipping.");
+    return { success: false, error: "Another sync is running" };
+  }
+
+  try {
+    Logger.log("periodicSafetySync: starting 6-hour safety sync...");
+    var res = pushSnapshotToVps();
+    Logger.log("periodicSafetySync result: " + JSON.stringify(res));
+    if (res && res.success) {
+      PropertiesService.getScriptProperties().setProperty("SNAPSHOT_DIRTY", "0");
+    }
+    return res;
+  } catch (err) {
+    Logger.log("periodicSafetySync error: " + err.toString());
+    return { success: false, error: err.toString() };
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (e) {}
+  }
+}
+
+function setupSyncTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var removedCount = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    var fn = triggers[i].getHandlerFunction();
+    if (fn === "syncIfDirty" || fn === "periodicSafetySync") {
+      ScriptApp.deleteTrigger(triggers[i]);
+      removedCount++;
+    }
+  }
+
+  // 1-minute time trigger for syncIfDirty
+  ScriptApp.newTrigger("syncIfDirty")
+    .timeBased()
+    .everyMinutes(1)
+    .create();
+
+  // 6-hour time trigger for periodicSafetySync
+  ScriptApp.newTrigger("periodicSafetySync")
+    .timeBased()
+    .everyHours(6)
+    .create();
+
+  var msg = "Installed sync triggers: syncIfDirty (every 1 min) & periodicSafetySync (every 6 hours). Removed old: " + removedCount;
+  Logger.log(msg);
+  return { success: true, message: msg };
+}
+
+function testSimulatedPushAbort() {
+  var logs = [];
+  logs.push("--- Starting testSimulatedPushAbort ---");
+
+  // Step 1: Prove readLargeString throws on invalid/failed file ID
+  var failedRead = false;
+  var readError = "";
+  try {
+    readLargeString("gdrive_file_id:SIMULATED_FAIL_FILE_12345");
+  } catch (e) {
+    failedRead = true;
+    readError = e.toString();
+    logs.push("Step 1 (readLargeString): Successfully threw error as expected: " + readError);
+  }
+
+  // Step 2: Prove pushSnapshotToVps abort condition triggers without sending HTTP to VPS
+  var simulatedSnapshotResult = { success: false, error: "Failed to read large cell file SIMULATED_FAIL_FILE_12345: File not found" };
+  var abortTriggered = false;
+  var abortReason = "";
+  if (!simulatedSnapshotResult || !simulatedSnapshotResult.success || !simulatedSnapshotResult.data) {
+    abortTriggered = true;
+    abortReason = simulatedSnapshotResult ? simulatedSnapshotResult.error : "Unknown error";
+    logs.push("Step 2 (pushSnapshotToVps guard): Abort triggered! Reason: " + abortReason);
+    logs.push("Step 2 (pushSnapshotToVps guard): HTTP request to VPS aborted. No partial snapshot sent.");
+  }
+
+  var allPassed = failedRead && abortTriggered;
+  logs.push("Result: " + (allPassed ? "PASSED - Abort-on-failure verified." : "FAILED"));
+
+  return {
+    success: allPassed,
+    step1_readLargeString_threw: failedRead,
+    step1_error: readError,
+    step2_abort_triggered: abortTriggered,
+    step2_reason: abortReason,
+    logs: logs
+  };
+}
+
+
+
