@@ -20,7 +20,7 @@ declare const google: any;
 // =========================================================================
 // GOOGLE APPS SCRIPT WEB APP URL (For Vercel Deployment)
 // =========================================================================
-// REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL
+// REPLACE THIS WITH YOUR LIVE DEPLOYMENT URL (Security Phase S2 Release v83)
 export const GAS_WEB_APP_URL = (import.meta.env.VITE_GAS_WEB_APP_URL as string) || "https://script.google.com/macros/s/AKfycbxBtlORQYtnf4ByrnEJWSoDBbOkJz4KfublmkFQrmniiH3G-kZyntkNVpfaaDImmLgnaA/exec";
 export const SECURITY_TOKEN = (import.meta.env.VITE_SECURITY_TOKEN as string) || "MondalCoachingSecureToken2026!";
 
