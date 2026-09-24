@@ -7,6 +7,7 @@ import { AppUser, useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { getAllAttendanceForBatch } from '../lib/exam-session-utils';
 import { formatDateOnlySafe } from '../lib/utils';
+import { showToast } from '../lib/toast';
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -18,6 +19,108 @@ export function getMonthOptions(): string[] {
     ...monthNames.map(m => `${m} ${currentYear + 1}`),
     ...monthNames.map(m => `${m} ${currentYear + 2}`)
   ];
+}
+
+export function getMonthPickerList(): string[] {
+  const now = new Date();
+  const curY = now.getFullYear();
+  const curM = now.getMonth(); // 0 to 11
+
+  const list: string[] = [];
+  // 1. CURRENT month+year first!
+  list.push(`${monthNames[curM]} ${curY}`);
+
+  // 2. Upcoming next 2 months (for advance payments)
+  for (let offset = 1; offset <= 2; offset++) {
+    const d = new Date(curY, curM + offset, 1);
+    list.push(`${monthNames[d.getMonth()]} ${d.getFullYear()}`);
+  }
+
+  // 3. Older months in descending order (last 24 months)
+  for (let offset = 1; offset <= 24; offset++) {
+    const d = new Date(curY, curM - offset, 1);
+    list.push(`${monthNames[d.getMonth()]} ${d.getFullYear()}`);
+  }
+  return list;
+}
+
+export function validateConsecutiveRule(
+  selectedMonths: string[],
+  studentPayments: any[],
+  studentExcusedMonths: string | string[] = ''
+): { valid: boolean; missingMonth?: string } {
+  const START_YEAR = 2026;
+  const START_MONTH = 10; // October 2026 (1-indexed)
+
+  const monthNamesList = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+
+  function parseYM(str: string): { y: number; m: number } | null {
+    if (!str) return null;
+    const s = str.toLowerCase().trim();
+    const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (slashMatch) return { y: parseInt(slashMatch[3]), m: parseInt(slashMatch[1]) };
+    const mMatch = s.match(/^([a-z]+)[\s-_]?(\d{4})$/);
+    if (mMatch) {
+      const idx = monthNamesList.indexOf(mMatch[1]);
+      if (idx !== -1) return { y: parseInt(mMatch[2]), m: idx + 1 };
+    }
+    const isoMatch = s.match(/^(\d{4})[-/](\d{1,2})/);
+    if (isoMatch) return { y: parseInt(isoMatch[1]), m: parseInt(isoMatch[2]) };
+    return null;
+  }
+
+  // Covered months set: 'YYYY-M'
+  const covered = new Set<string>();
+
+  // 1. Existing payments (approved, pending, paid)
+  studentPayments.forEach(p => {
+    if (p.status === 'approved' || p.status === 'pending' || p.status === 'paid') {
+      if (p.month) {
+        String(p.month).split(/[,;\n]+/).forEach((m: string) => {
+          const ym = parseYM(m.trim());
+          if (ym) covered.add(`${ym.y}-${ym.m}`);
+        });
+      }
+    }
+  });
+
+  // 2. Excused months
+  const rawExcused = Array.isArray(studentExcusedMonths) ? studentExcusedMonths.join(', ') : String(studentExcusedMonths || '');
+  rawExcused.split(/[,;\n]+/).forEach(m => {
+    const ym = parseYM(m.trim());
+    if (ym) covered.add(`${ym.y}-${ym.m}`);
+  });
+
+  // 3. Currently selected months in this checkout batch
+  selectedMonths.forEach(m => {
+    const ym = parseYM(m.trim());
+    if (ym) covered.add(`${ym.y}-${ym.m}`);
+  });
+
+  // For every selected month >= Oct 2026, check if all intermediate months between Oct 2026 and that month are covered
+  const startVal = START_YEAR * 12 + START_MONTH;
+  for (const m of selectedMonths) {
+    const targetYM = parseYM(m);
+    if (!targetYM) continue;
+    const targetVal = targetYM.y * 12 + targetYM.m;
+
+    // Months before Oct 2026 are ignored and never block
+    if (targetVal < startVal) continue;
+
+    let curY = START_YEAR;
+    let curM = START_MONTH;
+    while ((curY * 12 + curM) < targetVal) {
+      const key = `${curY}-${curM}`;
+      if (!covered.has(key)) {
+        const title = monthNamesList[curM - 1].charAt(0).toUpperCase() + monthNamesList[curM - 1].slice(1) + " " + curY;
+        return { valid: false, missingMonth: title };
+      }
+      curM++;
+      if (curM > 12) { curM = 1; curY++; }
+    }
+  }
+
+  return { valid: true };
 }
 
 export function formatDateTimeSafe(timestamp: any): string {
@@ -104,18 +207,33 @@ export function PageHeader({ title, backTo, description, onBack }: { title: stri
   );
 }
 
-// Simple global cache to prevent excessive quota reads
+// Simple global cache to prevent excessive quota reads and eliminate page buffering
 let globalStudentsCache: AppUser[] | null = null;
 let globalBatchesCache: Batch[] | null = null;
 let globalCacheTime = 0;
+let globalPaymentsListCache: Payment[] | null = null;
+let globalPaymentsCacheTime = 0;
+const globalStudentPaymentsCache: Record<string, { data: Payment[]; time: number }> = {};
 const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
 
 // ADMIN PAGES
 export function AdminStudents() {
-  const [students, setStudents] = useState<AppUser[]>([]);
-  const [batches, setBatches] = useState<Batch[]>([]);
+  const [students, setStudents] = useState<AppUser[]>(() => {
+    if (globalStudentsCache && Date.now() - globalCacheTime < CACHE_TTL) {
+      return globalStudentsCache;
+    }
+    return [];
+  });
+  const [batches, setBatches] = useState<Batch[]>(() => {
+    if (globalBatchesCache && Date.now() - globalCacheTime < CACHE_TTL) {
+      return globalBatchesCache;
+    }
+    return [];
+  });
   const [studentAbsentCount, setStudentAbsentCount] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    return !(globalStudentsCache && globalBatchesCache && Date.now() - globalCacheTime < CACHE_TTL);
+  });
   const [confirmDeleteStudentId, setConfirmDeleteStudentId] = useState<string | null>(null);
 
   const [newStudentName, setNewStudentName] = useState('');
@@ -413,19 +531,23 @@ export function AdminStudents() {
   const executeDeleteStudent = async () => {
     if (!confirmDeleteStudentId) return;
     const uid = confirmDeleteStudentId;
+    // Close the dialog and remove the row immediately (optimistic); restore on failure.
+    const snapshot = students;
+    setConfirmDeleteStudentId(null);
+    setStudents(prev => prev.filter(s => getStudentId(s) !== uid));
+    showToast('ছাত্র মুছে ফেলা হচ্ছে…', 'info', 2000);
     try {
       const success = await api.deleteUser(uid);
       if (success === false || success === null || success === undefined) {
-        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "ডিলিট হয়নি! Student Database-এ খুঁজে পাওয়া যায়নি। পেজ Refresh করুন।" }));
-        setConfirmDeleteStudentId(null);
+        setStudents(snapshot);
+        showToast('ডিলিট হয়নি — ছাত্রকে খুঁজে পাওয়া যায়নি। Refresh করুন।', 'error', 5000);
         return;
       }
       globalStudentsCache = null;
-      setStudents(students.filter(s => getStudentId(s) !== uid));
+      showToast('ছাত্র মুছে ফেলা হয়েছে ✓');
     } catch (error) {
-       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Error deleting student: " + String(error) }));
-    } finally {
-      setConfirmDeleteStudentId(null);
+      setStudents(snapshot);
+      showToast('ছাত্র মুছতে ব্যর্থ হয়েছে: ' + String(error).slice(0, 80), 'error', 5000);
     }
   };
 
@@ -1068,13 +1190,15 @@ export function AdminBatches() {
   const handleDeleteBatch = async (id: string) => {
     try {
       setLoading(true);
+      showToast('ব্যাচ মুছে ফেলা হচ্ছে…', 'info', 2000);
       await api.deleteBatch(id);
       globalBatchesCache = null;
       globalStudentsCache = null;
       await fetchBatches();
+      showToast('ব্যাচ মুছে ফেলা হয়েছে ✓');
     } catch (error) {
       console.error("handleDeleteBatch error:", error);
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Error deleting batch." }));
+      showToast('ব্যাচ মুছতে ব্যর্থ হয়েছে', 'error', 5000);
       setLoading(false);
     }
   };
@@ -1249,10 +1373,27 @@ export interface Payment {
 
 export function AdminPayments() {
   const { user } = useAuth();
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [students, setStudents] = useState<any[]>([]);
-  const [batches, setBatches] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [payments, setPayments] = useState<Payment[]>(() => {
+    if (globalPaymentsListCache && Date.now() - globalPaymentsCacheTime < CACHE_TTL) {
+      return globalPaymentsListCache;
+    }
+    return [];
+  });
+  const [students, setStudents] = useState<any[]>(() => {
+    if (globalStudentsCache && Date.now() - globalCacheTime < CACHE_TTL) {
+      return globalStudentsCache;
+    }
+    return [];
+  });
+  const [batches, setBatches] = useState<any[]>(() => {
+    if (globalBatchesCache && Date.now() - globalCacheTime < CACHE_TTL) {
+      return globalBatchesCache;
+    }
+    return [];
+  });
+  const [loading, setLoading] = useState(() => {
+    return !(globalPaymentsListCache && Date.now() - globalPaymentsCacheTime < CACHE_TTL);
+  });
 
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -1264,16 +1405,16 @@ export function AdminPayments() {
   const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
   const [editingAmount, setEditingAmount] = useState('');
 
-  const [addingOfflinePayment, setAddingOfflinePayment] = useState(false);
-  const [offlineMonth, setOfflineMonth] = useState('');
-  const [offlineAmount, setOfflineAmount] = useState('');
-  const [offlineSubmitting, setOfflineSubmitting] = useState(false);
+  const [selectedPendingIds, setSelectedPendingIds] = useState<string[]>([]);
+  const [bulkApproving, setBulkApproving] = useState(false);
   
   const monthOptions = getMonthOptions();
 
   const fetchAll = async () => {
     try {
-      setLoading(true);
+      if (!globalPaymentsListCache || Date.now() - globalPaymentsCacheTime >= CACHE_TTL) {
+        setLoading(true);
+      }
       
       const [rawPayments, rawUsers, rawBatches] = await Promise.all([
         api.getPayments(),
@@ -1304,6 +1445,8 @@ export function AdminPayments() {
       const getMs = (t: any) => new Date(t).getTime() || 0;
       pData.sort((a,b) => getMs(b.createdAt) - getMs(a.createdAt));
       setPayments(pData);
+      globalPaymentsListCache = pData;
+      globalPaymentsCacheTime = Date.now();
 
       if (globalStudentsCache && globalBatchesCache && Date.now() - globalCacheTime < CACHE_TTL) {
          setStudents(globalStudentsCache);
@@ -1329,7 +1472,8 @@ export function AdminPayments() {
               })(),
              pendingMonths: ((u as any).pendingMonths !== undefined && (u as any).pendingMonths !== '' && (u as any).pendingMonths !== null) ? Number((u as any).pendingMonths) : 0,
              exemptReason: (u as any).exemptReason || '',
-             showPaymentNudge: !!(u as any).showPaymentNudge
+             showPaymentNudge: !!(u as any).showPaymentNudge,
+             excusedMonths: (u as any).excusedMonths || ''
            }));
          setStudents(uData);
          globalStudentsCache = uData;
@@ -1365,14 +1509,22 @@ export function AdminPayments() {
     }
   };
 
+  const [processingPaymentIds, setProcessingPaymentIds] = useState<Set<string>>(new Set());
+
   const updatePaymentStatus = async (id: string, status: 'approved' | 'rejected', remarks: string = '') => {
-    if (status === 'rejected' && !remarks) {
+    if (processingPaymentIds.has(id)) return; // ignore double taps
+    if (status === 'rejected' && !remarks.trim()) {
       setRejectingPaymentId(id);
       return;
     }
+    setProcessingPaymentIds(prev => new Set(prev).add(id));
     try {
-      await api.updatePaymentStatus(id, status as any, remarks);
-      setPayments(payments.map(p => p.id === id ? { ...p, status, remarks } : p));
+      await api.updatePaymentStatus(id, status as any, remarks.trim());
+      showToast(status === 'approved' ? 'পেমেন্ট অনুমোদিত ✓' : 'পেমেন্ট বাতিল করা হয়েছে ✓');
+      const nextPayments = payments.map(p => p.id === id ? { ...p, status, remarks: remarks.trim() } : p);
+      setPayments(nextPayments);
+      globalPaymentsListCache = nextPayments;
+      setSelectedPendingIds(prev => prev.filter(pId => pId !== id));
       
       if (status === 'rejected') {
          const paymentToUpdate = payments.find(p => p.id === id);
@@ -1380,7 +1532,7 @@ export function AdminPayments() {
             await api.createNotification({
                senderId: user?.uid || 'admin',
                title: 'Payment Rejected',
-               message: `Your payment request for ${paymentToUpdate.month} has been rejected. Reason: ${remarks}`,
+               message: `Your payment request for ${paymentToUpdate.month} has been rejected. Reason: ${remarks.trim()}`,
                batchId: paymentToUpdate.studentId
             });
          }
@@ -1390,7 +1542,32 @@ export function AdminPayments() {
       }
     } catch (error) {
       console.error("updatePaymentStatus error:", error);
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to update payment status." }));
+      showToast('পেমেন্ট আপডেট ব্যর্থ হয়েছে: ' + String((error as any)?.message || error).slice(0, 80), 'error', 5000);
+    } finally {
+      setProcessingPaymentIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    if (selectedPendingIds.length === 0) return;
+    try {
+      setBulkApproving(true);
+      const res = await api.bulkUpdatePaymentStatus(selectedPendingIds, 'approved');
+      if (res && res.success) {
+        const idSet = new Set(selectedPendingIds);
+        const nextPayments = payments.map(p => idSet.has(p.id) ? { ...p, status: 'approved' } : p);
+        setPayments(nextPayments);
+        globalPaymentsListCache = nextPayments;
+        const count = res.count || selectedPendingIds.length;
+        setSelectedPendingIds([]);
+        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `সফলভাবে ${count}টি পেমেন্ট অনুমোদন করা হয়েছে!` }));
+      } else {
+        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Bulk approval failed: " + (res?.error || "Unknown error") }));
+      }
+    } catch (err: any) {
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Bulk approval error: " + err.message }));
+    } finally {
+      setBulkApproving(false);
     }
   };
 
@@ -1411,44 +1588,32 @@ export function AdminPayments() {
     }
   };
 
-  const handleAddOfflinePayment = async () => {
-     if (!selectedStudentId || !offlineMonth || !offlineAmount) return;
-     const student = students.find(s => s.id === selectedStudentId);
-     if (!student) return;
-     setOfflineSubmitting(true);
-     try {
-       const offlinePay = {
-          studentId: student.id || student.uid,
-          studentName: student.fullName || student.displayName || student.email,
-          studentEmail: student.email || '',
-          amount: Number(offlineAmount),
-          month: offlineMonth,
-          status: 'approved' as any,
-          remarks: 'Offline Payment (Cash/Direct)'
-       };
-       const pRef = await api.addPayment(offlinePay as any);
-       
-       setPayments([{ id: pRef.id, ...offlinePay, createdAt: new Date().toISOString() } as any, ...payments]);
-       setAddingOfflinePayment(false);
-       setOfflineMonth('');
-       setOfflineAmount('');
-     } catch(err) {
-       console.error("handleAddOfflinePayment error:", err);
-       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to add offline payment." }));
-     } finally {
-       setOfflineSubmitting(false);
-     }
-  };
-
   const rejectModal = rejectingPaymentId ? (
     <div className="fixed inset-0 bg-black/80 flex justify-center items-center z-[100] p-4">
       <div className="bg-white dark:bg-zinc-900 border-4 border-red-600 dark:border-red-500 w-full max-w-md p-6 transform transition-all scale-100 shadow-[8px_8px_0px_0px_rgba(220,38,38,1)]">
         <h3 className="font-black text-xl text-red-600 uppercase mb-4">Reject Payment Request</h3>
-        <p className="text-zinc-500 font-bold text-xs mb-2 uppercase">Please provide a reason for the rejection.</p>
-        <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm bg-transparent mb-4 outline-none focus:border-red-500" placeholder="e.g. Transaction ID invalid" rows={3} />
+        <p className="text-zinc-500 font-bold text-xs mb-2 uppercase">Please provide a reason for the rejection (Mandatory):</p>
+        <textarea
+          value={rejectReason}
+          onChange={e => setRejectReason(e.target.value)}
+          className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm bg-transparent mb-4 outline-none focus:border-red-500"
+          placeholder="e.g. Transaction ID invalid, wrong amount, fake proof..."
+          rows={3}
+        />
         <div className="flex gap-4">
-          <button onClick={() => updatePaymentStatus(rejectingPaymentId, 'rejected', rejectReason || 'Payment declined by admin.')} className="flex-1 border-2 border-red-600 bg-red-600 text-white shadow-[4px_4px_0px_0px_rgba(153,27,27,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform">Reject</button>
-          <button onClick={() => setRejectingPaymentId(null)} className="flex-1 border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-200 dark:bg-zinc-800 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform">Cancel</button>
+          <button
+            disabled={!rejectReason.trim()}
+            onClick={() => updatePaymentStatus(rejectingPaymentId, 'rejected', rejectReason.trim())}
+            className="flex-1 border-2 border-red-600 bg-red-600 text-white shadow-[4px_4px_0px_0px_rgba(153,27,27,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Reject
+          </button>
+          <button
+            onClick={() => { setRejectingPaymentId(null); setRejectReason(''); }}
+            className="flex-1 border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-200 dark:bg-zinc-800 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] font-bold uppercase py-2 hover:-translate-y-0.5 transition-transform"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -1508,18 +1673,29 @@ export function AdminPayments() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <form onSubmit={(e) => {
+              <form onSubmit={async (e) => {
                  e.preventDefault();
                  const formData = new FormData(e.currentTarget);
                  const feeInput = formData.get('monthlyFee');
                  const parsedFee = (feeInput !== null && feeInput !== '') ? Number(feeInput) : 500;
-                 updateStudentPaymentDetails(student.id || (student as any).uid, {
-                    monthlyFee: parsedFee,
-                    exemptReason: formData.get('exemptReason'),
-                    pendingMonths: Number(formData.get('pendingMonths')),
-                    showPaymentNudge: formData.get('showPaymentNudge') === 'on'
-                 });
-                 window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Config saved successfully!" }));
+                 const excusedVal = String(formData.get('excusedMonths') || '').trim();
+                 const studentId = student.id || (student as any).uid;
+                 try {
+                    await Promise.all([
+                       updateStudentPaymentDetails(studentId, {
+                          monthlyFee: parsedFee,
+                          exemptReason: formData.get('exemptReason'),
+                          pendingMonths: Number(formData.get('pendingMonths')),
+                          showPaymentNudge: formData.get('showPaymentNudge') === 'on',
+                          excusedMonths: excusedVal
+                       }),
+                       api.setStudentExcusedMonths(studentId, excusedVal)
+                    ]);
+                    setStudents(students.map(s => (s.id === studentId || s.uid === studentId) ? { ...s, excusedMonths: excusedVal } : s));
+                    window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Config saved successfully!" }));
+                 } catch (err) {
+                    window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to save config: " + String(err) }));
+                 }
               }} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)]">
                  <h3 className="font-black uppercase mb-4 border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">Student Payment Config</h3>
                  <div className="space-y-4">
@@ -1546,6 +1722,15 @@ export function AdminPayments() {
                          defaultValue={student.pendingMonths || 0} 
                          className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 bg-transparent font-mono" />
                     </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase mb-1">Excused Months (ফি মাফ করা মাস)</label>
+                      <input type="text" 
+                         name="excusedMonths"
+                         defaultValue={student.excusedMonths || ''} 
+                         placeholder="e.g. October 2026, November 2026"
+                         className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 bg-transparent text-sm" />
+                      <p className="text-[10px] text-zinc-500 mt-1">কমা দিয়ে লিখুন (e.g. October 2026, November 2026)। এই মাসগুলো sequential check আটকাবে না।</p>
+                    </div>
                     <label className="flex items-center gap-2 mt-4 cursor-pointer">
                        <input type="checkbox" 
                           name="showPaymentNudge"
@@ -1562,38 +1747,14 @@ export function AdminPayments() {
              <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] h-[32rem] flex flex-col">
                 <div className="flex justify-between items-center mb-4 border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">
                   <h3 className="font-black uppercase">Payment Requests</h3>
-                  <button onClick={() => { setAddingOfflinePayment(!addingOfflinePayment); setOfflineAmount(String(student.monthlyFee || 500)); }} className="px-3 py-1 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 text-xs font-bold uppercase hover:-translate-y-0.5 transition-transform flex items-center gap-1">
-                     <Plus className="w-3.5 h-3.5" /> Offline
-                  </button>
                 </div>
-
-                {addingOfflinePayment && (
-                  <div className="mb-4 space-y-3 p-3 bg-zinc-100 dark:bg-zinc-800 border-2 border-zinc-900 dark:border-zinc-100">
-                     <div>
-                       <select value={offlineMonth} onChange={e => setOfflineMonth(e.target.value)} className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 bg-white dark:bg-zinc-900 text-sm focus:outline-none">
-                          <option value="">Select Month...</option>
-                          {monthOptions.map(m => <option key={m} value={m}>{m}</option>)}
-                       </select>
-                     </div>
-                     <div>
-                       <div className="flex bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 text-sm">
-                          <span className="p-2 font-bold bg-zinc-200 dark:bg-zinc-800">₹</span>
-                          <input type="number" value={offlineAmount} onChange={e => setOfflineAmount(e.target.value)} className="w-full p-2 bg-transparent focus:outline-none font-bold" />
-                       </div>
-                     </div>
-                     <div className="flex gap-2">
-                        <button onClick={handleAddOfflinePayment} disabled={offlineSubmitting || !offlineMonth || !offlineAmount} className="flex-1 bg-green-500 text-black font-bold uppercase text-xs py-2 disabled:opacity-50">Save</button>
-                        <button onClick={() => setAddingOfflinePayment(false)} className="flex-1 bg-zinc-300 dark:bg-zinc-700 font-bold uppercase text-xs py-2 text-black dark:text-white">Cancel</button>
-                     </div>
-                  </div>
-                )}
 
                 <div className="flex-1 overflow-y-auto pr-2">
                   {studentPayments.length === 0 ? (
                      <div className="text-center text-zinc-500 font-bold py-8 border-2 border-dashed border-zinc-300 dark:border-zinc-700">No payment history.</div>
                   ) : (
                      <div className="space-y-4">
-                        {studentPayments.map((p, idx) => (
+                        {studentPayments.map((p) => (
                            <div key={p.id} className="border-2 border-zinc-200 dark:border-zinc-800 p-3">
                               <div className="flex justify-between items-center mb-2">
                                  <span className="font-black uppercase text-sm">{p.month}</span>
@@ -1604,7 +1765,7 @@ export function AdminPayments() {
                                        <button onClick={() => setEditingAmountId(null)} className="bg-red-500 text-white px-2 py-1"><X className="w-3 h-3"/></button>
                                     </div>
                                  ) : (
-                                    <span className="font-mono font-bold hover:underline cursor-pointer" onClick={() => {setEditingAmountId(p.id); setEditingAmount(p.amount.toString());}}>₹{p.amount} ✎</span>
+                                    <span className="font-mono font-bold">₹{p.amount}</span>
                                  )}
                               </div>
                               <div className="text-[10px] text-zinc-500 mb-2 font-bold font-mono">
@@ -1614,8 +1775,8 @@ export function AdminPayments() {
                                  <span className={`text-[10px] font-bold text-black uppercase px-2 py-0.5 ${p.status === 'pending' ? 'bg-yellow-300' : p.status === 'approved' ? 'bg-emerald-300' : 'bg-red-300'}`}>{p.status}</span>
                                  {p.status === 'pending' && (
                                     <div className="flex gap-2">
-                                       <button onClick={() => updatePaymentStatus(p.id, 'approved')} className="text-[10px] bg-emerald-500 text-white font-bold uppercase px-2 py-1 flex items-center gap-1 shadow-[2px_2px_0px_0px_#064e3b]"><Check className="w-3 h-3"/>Approve</button>
-                                       <button onClick={() => updatePaymentStatus(p.id, 'rejected')} className="text-[10px] bg-red-500 text-white font-bold uppercase px-2 py-1 flex items-center gap-1 shadow-[2px_2px_0px_0px_#450a0a]"><X className="w-3 h-3"/>Reject</button>
+                                       <button disabled={processingPaymentIds.has(p.id)} onClick={() => updatePaymentStatus(p.id, 'approved')} className="disabled:opacity-40 text-[10px] bg-emerald-500 text-white font-bold uppercase px-2 py-1 flex items-center gap-1 shadow-[2px_2px_0px_0px_#064e3b]">{processingPaymentIds.has(p.id) ? <Loader2 className="w-3 h-3 animate-spin"/> : <Check className="w-3 h-3"/>}Approve</button>
+                                       <button disabled={processingPaymentIds.has(p.id)} onClick={() => updatePaymentStatus(p.id, 'rejected')} className="disabled:opacity-40 text-[10px] bg-red-500 text-white font-bold uppercase px-2 py-1 flex items-center gap-1 shadow-[2px_2px_0px_0px_#450a0a]"><X className="w-3 h-3"/>Reject</button>
                                     </div>
                                  )}
                               </div>
@@ -1708,16 +1869,66 @@ export function AdminPayments() {
       <PageHeader title="Payments Management" backTo="/admin" />
 
       <div className="mb-8 border-4 border-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 p-6">
-         <h3 className="font-black text-xl uppercase mb-4 text-yellow-800 dark:text-yellow-400">Needs Verification ({allPending.length})</h3>
+         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+           <h3 className="font-black text-xl uppercase text-yellow-800 dark:text-yellow-400">Needs Verification ({allPending.length})</h3>
+           {allPending.length > 0 && (
+             <div className="flex items-center gap-3">
+               <button
+                 type="button"
+                 onClick={() => {
+                   if (selectedPendingIds.length === allPending.length) {
+                     setSelectedPendingIds([]);
+                   } else {
+                     setSelectedPendingIds(allPending.map(p => p.id));
+                   }
+                 }}
+                 className="px-3 py-1.5 bg-white dark:bg-zinc-800 border-2 border-zinc-900 dark:border-zinc-100 font-bold uppercase text-xs hover:-translate-y-0.5 transition-transform"
+               >
+                 {selectedPendingIds.length === allPending.length ? 'Deselect All' : 'Select All'}
+               </button>
+               <button
+                 type="button"
+                 onClick={handleBulkApprove}
+                 disabled={selectedPendingIds.length === 0 || bulkApproving}
+                 className="px-4 py-1.5 bg-emerald-600 text-white font-black uppercase text-xs hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_#064e3b] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+               >
+                 {bulkApproving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                 Approve Selected ({selectedPendingIds.length})
+               </button>
+             </div>
+           )}
+         </div>
+
          {allPending.length === 0 ? (
            <div className="text-zinc-600 dark:text-zinc-400 font-bold italic">You're all caught up! No pending payments to verify.</div>
          ) : (
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-           {allPending.map((p, idx) => (
+           {allPending.map((p) => (
               <div key={p.id} className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)]">
-                <div className="text-xs font-bold uppercase text-zinc-500 mb-1">{p.studentName || p.studentEmail}</div>
-                <div className="flex justify-between items-center mb-3">
-                  <span className="font-black">{p.month}</span>
+                <div className="flex items-center justify-between mb-2">
+                   <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedPendingIds.includes(p.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedPendingIds(prev => [...prev, p.id]);
+                          } else {
+                            setSelectedPendingIds(prev => prev.filter(id => id !== p.id));
+                          }
+                        }}
+                        className="w-4 h-4 accent-emerald-600"
+                      />
+                      <span className="text-xs font-bold uppercase text-zinc-700 dark:text-zinc-300">{p.studentName || p.studentEmail}</span>
+                   </label>
+                   {p.paymentMode && (
+                      <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 border ${p.paymentMode === 'upi' ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-zinc-100 text-zinc-800 border-zinc-300'}`}>
+                         {p.paymentMode}
+                      </span>
+                   )}
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-black text-sm">{p.month}</span>
                   {editingAmountId === p.id ? (
                      <div className="flex bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 text-sm">
                         <input type="number" value={editingAmount} onChange={e => setEditingAmount(e.target.value)} className="w-20 p-1 bg-transparent focus:outline-none font-bold text-black dark:text-white" />
@@ -1725,12 +1936,38 @@ export function AdminPayments() {
                         <button onClick={() => setEditingAmountId(null)} className="bg-red-500 text-white px-2 py-1 flex items-center justify-center"><X className="w-3 h-3"/></button>
                      </div>
                   ) : (
-                     <span className="font-mono font-bold text-lg hover:underline cursor-pointer" onClick={() => {setEditingAmountId(p.id); setEditingAmount(p.amount.toString());}}>₹{p.amount} ✎</span>
+                     <span className="font-mono font-bold text-lg">₹{p.amount}</span>
                   )}
                 </div>
+
+                {(p as any).transactionId && (
+                   <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold font-mono mb-2">
+                      UTR: {(p as any).transactionId}
+                   </div>
+                )}
+
+                {((p as any).proofImage || (p as any).hasProof) && (
+                   <button onClick={async () => {
+                      if (!(p as any).proofImage && (p as any).hasProof) {
+                         setViewingProofPayment({ ...p, proofImage: 'LOADING_PROOF' } as any);
+                         try {
+                            const fetchedProof = await api.getPaymentProof(p.id);
+                            setViewingProofPayment({ ...p, proofImage: fetchedProof } as any);
+                            setPayments(prev => prev.map(item => item.id === p.id ? ({ ...item, proofImage: fetchedProof } as any) : item));
+                         } catch (err) {
+                            setViewingProofPayment({ ...p, proofImage: '' } as any);
+                         }
+                      } else {
+                         setViewingProofPayment(p);
+                      }
+                   }} className="mb-3 text-[10px] bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold uppercase px-2 py-1 border border-blue-300 dark:border-blue-700 flex items-center justify-center gap-1 w-full">
+                      📸 View Proof
+                   </button>
+                )}
+
                 <div className="flex gap-2">
-                  <button onClick={() => updatePaymentStatus(p.id, 'approved')} className="flex-1 text-[10px] bg-emerald-500 text-white font-black uppercase px-2 py-2 flex justify-center items-center gap-1 shadow-[2px_2px_0px_0px_#064e3b] hover:-translate-y-0.5"><Check className="w-3 h-3"/>Approve</button>
-                  <button onClick={() => updatePaymentStatus(p.id, 'rejected')} className="flex-1 text-[10px] bg-red-500 text-white font-black uppercase px-2 py-2 flex justify-center items-center gap-1 shadow-[2px_2px_0px_0px_#450a0a] hover:-translate-y-0.5"><X className="w-3 h-3"/>Reject</button>
+                  <button disabled={processingPaymentIds.has(p.id)} onClick={() => updatePaymentStatus(p.id, 'approved')} className="disabled:opacity-40 flex-1 text-[10px] bg-emerald-500 text-white font-black uppercase px-2 py-2 flex justify-center items-center gap-1 shadow-[2px_2px_0px_0px_#064e3b] hover:-translate-y-0.5">{processingPaymentIds.has(p.id) ? <Loader2 className="w-3 h-3 animate-spin"/> : <Check className="w-3 h-3"/>}Approve</button>
+                  <button disabled={processingPaymentIds.has(p.id)} onClick={() => updatePaymentStatus(p.id, 'rejected')} className="disabled:opacity-40 flex-1 text-[10px] bg-red-500 text-white font-black uppercase px-2 py-2 flex justify-center items-center gap-1 shadow-[2px_2px_0px_0px_#450a0a] hover:-translate-y-0.5"><X className="w-3 h-3"/>Reject</button>
                 </div>
               </div>
            ))}
@@ -1835,15 +2072,64 @@ export function AdminPayments() {
 export function StudentPayments() {
   const { user } = useAuth();
   
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [payments, setPayments] = useState<Payment[]>(() => {
+    if (user?.uid && globalStudentPaymentsCache[user.uid] && Date.now() - globalStudentPaymentsCache[user.uid].time < CACHE_TTL) {
+      return globalStudentPaymentsCache[user.uid].data;
+    }
+    return [];
+  });
+  const [loading, setLoading] = useState(() => {
+    return !(user?.uid && globalStudentPaymentsCache[user.uid] && Date.now() - globalStudentPaymentsCache[user.uid].time < CACHE_TTL);
+  });
   const [submitting, setSubmitting] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [proofImage, setProofImage] = useState<string>('');
-  const [transactionId, setTransactionId] = useState('');
+  const [utrNumber, setUtrNumber] = useState('');
   const [imagePreview, setImagePreview] = useState<string>('');
+  const [settings, setSettings] = useState(() => {
+    try {
+      const cached = localStorage.getItem("mc_cached_settings");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.data) return parsed.data;
+      }
+    } catch (e) {}
+    return {
+      adminUpiId: '',
+      adminPayeeName: '',
+      enablePaymentSystem: true
+    };
+  });
 
-  // Image compression utility — compress screenshot to max ~200KB Base64
+  const [settingsLoaded, setSettingsLoaded] = useState(() => {
+    try {
+      const cached = localStorage.getItem("mc_cached_settings");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.data) return true;
+      }
+    } catch (e) {}
+    return false;
+  });
+
+  const [paymentMode, setPaymentMode] = useState<'upi' | 'cash'>(() => {
+    try {
+      const cached = localStorage.getItem("mc_cached_settings");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.data?.adminUpiId?.trim() && parsed?.data?.adminPayeeName?.trim()) {
+          return 'upi';
+        } else if (parsed?.data) {
+          return 'cash';
+        }
+      }
+    } catch (e) {}
+    return 'upi';
+  });
+
+  const pickerMonths = getMonthPickerList();
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([pickerMonths[0]]);
+
   const compressImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1874,7 +2160,6 @@ export function StudentPayments() {
           if (!ctx) { reject('Canvas context failed'); return; }
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Compress to JPEG at 60% quality
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
           resolve(compressedBase64);
         };
@@ -1906,83 +2191,37 @@ export function StudentPayments() {
       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Failed to process image. Please try again.' }));
     }
   };
-  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
-  const [settings, setSettings] = useState({
-    adminUpiId: '',
-    enablePaymentSystem: true,
-    paymentMethod: 'manual',
-    razorpayKeyId: '',
-    razorpayKeySecret: ''
-  });
 
   const monthlyFeeAmount = Number(user?.monthlyFee) || 0;
   const isFeeWaived = user?.monthlyFee === 0 || user?.monthlyFee === "0";
-  
-  const calculatedAmount = selectedMonths.length > 0 ? selectedMonths.length * (monthlyFeeAmount > 0 ? monthlyFeeAmount : 500) : (monthlyFeeAmount > 0 ? monthlyFeeAmount : 500);
+  const feePerMonth = monthlyFeeAmount > 0 ? monthlyFeeAmount : 500;
+  const calculatedAmount = selectedMonths.length * feePerMonth;
 
   useEffect(() => {
      if (!user) return;
      
-     // Dynamically load Razorpay standard script for safe, smooth checkout
-     const rzpScript = document.createElement("script");
-     rzpScript.src = "https://checkout.razorpay.com/v1/checkout.js";
-     rzpScript.async = true;
-     document.body.appendChild(rzpScript);
-     
      const loadSettings = async () => {
        try {
-         let adminUpiId = 'mondal.saikat185@okaxis';
-         let enablePaymentSystem = true;
-         let paymentMethod = 'manual';
-         let razorpayKeyId = '';
-         let razorpayKeySecret = '';
-
-         const cached = localStorage.getItem("mc_settings_general");
-         if (cached) {
-           try {
-             const data = JSON.parse(cached);
-             adminUpiId = data.adminUpiId || adminUpiId;
-             enablePaymentSystem = data.enablePaymentSystem !== false;
-             paymentMethod = data.paymentMethod || 'manual';
-             razorpayKeyId = data.razorpayKeyId || '';
-             razorpayKeySecret = data.razorpayKeySecret || '';
-           } catch (e) {}
-         }
-
-         if (api.isProduction()) {
-           try {
-             // @ts-ignore
-             if (typeof google !== 'undefined') {
-               // @ts-ignore
-               const gasSettings = await new Promise<any>((res, rej) => {
-                 // @ts-ignore
-                 google.script.run
-                   .withSuccessHandler(res)
-                   .withFailureHandler(rej)
-                   .apiGetSettings("general");
-               });
-               if (gasSettings) {
-                 adminUpiId = gasSettings.adminUpiId || adminUpiId;
-                 enablePaymentSystem = gasSettings.enablePaymentSystem !== false;
-                 paymentMethod = gasSettings.paymentMethod || 'manual';
-                 razorpayKeyId = gasSettings.razorpayKeyId || '';
-                 razorpayKeySecret = gasSettings.razorpayKeySecret || '';
-               }
-             }
-           } catch (err) {
-             console.warn("GAS apiGetSettings failed", err);
-           }
-         }
+         const generalSettings = await api.getSettings();
+         const adminUpiId = generalSettings?.adminUpiId || '';
+         const adminPayeeName = generalSettings?.adminPayeeName || '';
+         const enablePaymentSystem = generalSettings?.enablePaymentSystem !== false;
 
          setSettings({
            adminUpiId,
-           enablePaymentSystem,
-           paymentMethod,
-           razorpayKeyId,
-           razorpayKeySecret
+           adminPayeeName,
+           enablePaymentSystem
          });
+
+         if (adminUpiId.trim() && adminPayeeName.trim()) {
+           setPaymentMode('upi');
+         } else {
+           setPaymentMode('cash');
+         }
        } catch (err) {
          console.error("Failed to load settings:", err);
+       } finally {
+         setSettingsLoaded(true);
        }
      };
      loadSettings();
@@ -2008,6 +2247,9 @@ export function StudentPayments() {
          const getMs = (t: any) => new Date(t).getTime() || 0;
          data.sort((a, b) => getMs(b.createdAt) - getMs(a.createdAt));
          setPayments(data);
+         if (user?.uid) {
+           globalStudentPaymentsCache[user.uid] = { data, time: Date.now() };
+         }
          setLoading(false);
        } catch (error) {
          console.error("Payment fetch error:", error);
@@ -2016,227 +2258,77 @@ export function StudentPayments() {
      };
 
      fetchPayments();
-
-     return () => {
-       try {
-         document.body.removeChild(rzpScript);
-       } catch (e) {}
-     };
   }, [user?.uid]);
-
-  const monthOptions = getMonthOptions();
 
   const toggleMonth = (m: string) => {
     if (selectedMonths.includes(m)) {
-      setSelectedMonths(selectedMonths.filter(x => x !== m));
+      if (selectedMonths.length > 1) {
+        setSelectedMonths(selectedMonths.filter(x => x !== m));
+      }
     } else {
       setSelectedMonths([...selectedMonths, m]);
     }
   };
-  const currentYear = new Date().getFullYear();
-  const currentMonthStr = `${monthNames[new Date().getMonth()]} ${currentYear}`;
-  
-  // Calculate oldest unpaid month on mount or when payments load
-  useEffect(() => {
-    if (!user || payments.length === 0) return;
-    const paidMonths = payments
-      .filter(p => p.status === 'approved' || p.status === 'pending' || p.status === 'paid')
-      .flatMap(p => p.month ? String(p.month).split(',').map(m => m.trim()) : []);
-    const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
-    
-    const joinTime = user.createdAt ? new Date(user.createdAt).getTime() : 0;
-    const currentMonthIdx = monthOptions.indexOf(currentMonthStr);
-    
-    const dueIndices: number[] = [];
-    monthOptions.forEach((m, idx) => {
-       const mDate = new Date(m);
-       if (joinTime && mDate.getTime() < joinTime - 28 * 24 * 60 * 60 * 1000) return;
-       if (idx > (currentMonthIdx !== -1 ? currentMonthIdx : 24)) return;
-       if (!paidIndices.includes(idx)) dueIndices.push(idx);
-    });
-    
-    if (dueIndices.length > 0 && selectedMonths.length === 0) {
-       setSelectedMonths([monthOptions[dueIndices[0]]]);
-    }
-  }, [payments, user]);
 
-  const handleRazorpayCheckout = async () => {
-    if (selectedMonths.length === 0 || !user) {
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select at least one month." }));
-      return;
-    }
+  const hasUpi = Boolean(settings.adminUpiId.trim() && settings.adminPayeeName.trim());
 
-    if (isFeeWaived) {
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।" }));
-      return;
-    }
-
-    // Reuse consecutive month validations:
-    const paidMonths = payments.filter(p => p.studentId === user.uid && p.status !== 'rejected').flatMap(p => p.month ? String(p.month).split(',').map(m => m.trim()) : []);
-    const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
-    const maxPaidIndex = paidIndices.length > 0 ? Math.max(...paidIndices) : -1;
-    const selectedIndices = selectedMonths.map(m => monthOptions.indexOf(m)).sort((a, b) => a - b);
-    
-    for (let i = 1; i < selectedIndices.length; i++) {
-       if (selectedIndices[i] !== selectedIndices[i-1] + 1) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select strictly consecutive months." }));
-          return;
-       }
-    }
-    
-    if (maxPaidIndex !== -1) {
-       const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
-       if (alreadyPaid) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "You have already submitted a payment for one or more of the selected months." }));
-          return;
-       }
-       if (selectedIndices[0] !== maxPaidIndex + 1) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `You must pay consecutively. Your next due month is ${monthOptions[maxPaidIndex + 1]}.` }));
-          return;
-       }
-    }
-
-    if ((user as any).isSimulatedAdmin) {
-       const isRealStudent = localStorage.getItem('simulatedStudentId');
-       if (!isRealStudent) {
-         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select a real student from the dropdown above to test the payment gateway checkout flow." }));
-         return;
-       }
-    }
-
-    // Default test key ID if admin has not configured their own
-    const keyId = settings.razorpayKeyId || 'rzp_test_mX3qXFv3Xv9Xv9'; 
-
-    setSubmitting(true);
-    try {
-      const options = {
-        key: keyId,
-        amount: calculatedAmount * 100, // Amount in paise
-        currency: "INR",
-        name: "M-C Tuition Classes",
-        description: `Tuition Fees for ${selectedMonths.join(', ')}`,
-        image: user.profilePhotoUrl || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=200&auto=format&fit=crop",
-        handler: async function (response: any) {
-          try {
-            setSubmitting(true);
-            const verifyRes = await api.verifyGatewayPayment(
-              response.razorpay_payment_id,
-              selectedMonths.join(', '),
-              calculatedAmount,
-              user.uid
-            );
-
-            if (verifyRes.success) {
-              window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "পেমেন্ট সফল এবং অনুমোদিত হয়েছে! (Payment Successful and Instantly Approved!)" }));
-              setSelectedMonths([]);
-              setPaymentSuccess(true);
-              setTimeout(() => setPaymentSuccess(false), 3000);
-              
-              // Force local cache invalidation & reload to fetch updated user profile (pendingMonths etc.)
-              window.location.reload(); 
-            } else {
-              window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Verification failed: " + (verifyRes.error || "Unknown Error") }));
-            }
-          } catch (err) {
-            console.error("Verification error:", err);
-            window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Payment verification failed, please contact administrator with Payment ID: " + response.razorpay_payment_id }));
-          } finally {
-            setSubmitting(false);
-          }
-        },
-        prefill: {
-          name: user.fullName || user.displayName || "",
-          email: user.email || "",
-          contact: user.phone || ""
-        },
-        theme: {
-          color: "#eab308" // Yellow Neo-Brutalist Theme
-        }
-      };
-
-      // @ts-ignore
-      const rzp = new window.Razorpay(options);
-      rzp.open();
-    } catch (err) {
-      console.error("Razorpay Checkout failed to open:", err);
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to initialize Razorpay payment. Please try again." }));
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  // UPI link construction (tn <= 48 safe alphanumeric + space chars)
+  const cleanName = (user?.fullName || user?.displayName || 'Student').replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  const cleanMonths = selectedMonths.join(' ').replace(/[^a-zA-Z0-9 ]/g, '').trim();
+  const rawNote = `${cleanName} ${cleanMonths}`.trim().slice(0, 48);
+  const upiLink = hasUpi
+    ? `upi://pay?pa=${encodeURIComponent(settings.adminUpiId.trim())}&pn=${encodeURIComponent(settings.adminPayeeName.trim())}&am=${Number(calculatedAmount).toFixed(2)}&tn=${encodeURIComponent(rawNote)}&cu=INR`
+    : '';
 
   const handleSubmitPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedMonths.length === 0 || !user) {
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select at least one month." }));
+    if (!user) return;
+    if (selectedMonths.length === 0) {
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "কমপক্ষে একটি মাস নির্বাচন করুন।" }));
       return;
     }
-    
-    // Validate Sequential Month Selection
-    const paidMonths = payments
-      .filter(p => p.status === 'approved' || p.status === 'pending' || p.status === 'paid')
-        .flatMap(p => p.month ? String(p.month).split(',').map(m => m.trim()) : []);
-    const paidIndices = paidMonths.map(m => monthOptions.indexOf(m)).filter(idx => idx !== -1);
-    
-    const selectedIndices = selectedMonths.map(m => monthOptions.indexOf(m)).sort((a, b) => a - b);
-    
-    // 1. Check if they are trying to pay an already paid/pending month
-    const alreadyPaid = selectedIndices.some(idx => paidIndices.includes(idx));
-    if (alreadyPaid) {
-       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "You have already submitted a payment for one or more of the selected months." }));
-       return;
-    }
-    
-    // 2. Check if the selected months themselves are consecutive
-    for (let i = 1; i < selectedIndices.length; i++) {
-       if (selectedIndices[i] !== selectedIndices[i-1] + 1) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select strictly consecutive months." }));
-          return;
-       }
-    }
-    
-    // 3. Force them to pay from the oldest unpaid month onwards
-    const today = new Date();
-    const currentMonthStr = `${monthNames[today.getMonth()]} ${today.getFullYear()}`;
-    const currentMonthIdx = monthOptions.indexOf(currentMonthStr);
-    const joinTime = user.createdAt ? new Date(user.createdAt).getTime() : 0;
-    
-    // Find all unpaid months from join time up to the current month
-    const dueIndices: number[] = [];
-    monthOptions.forEach((m, idx) => {
-       const mDate = new Date(m);
-       if (joinTime && mDate.getTime() < joinTime - 28 * 24 * 60 * 60 * 1000) {
-          return; // Skip months before user joined
-       }
-       if (idx > (currentMonthIdx !== -1 ? currentMonthIdx : 12)) {
-          return; // Skip future months for due month check (they are optional)
-       }
-       if (!paidIndices.includes(idx)) {
-          dueIndices.push(idx);
-       }
-    });
 
-    if (dueIndices.length > 0) {
-       const oldestUnpaidIdx = dueIndices[0];
-       if (selectedIndices[0] > oldestUnpaidIdx) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `You must pay consecutively. Your oldest unpaid month is ${monthOptions[oldestUnpaidIdx]}.` }));
-          return;
-       }
-    }
-    
     if (isFeeWaived) {
       window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "আপনার fee waived করা আছে। Payment submit করার প্রয়োজন নেই।" }));
       return;
     }
-    
+
+    // 1. Check duplicate / already covered months
+    const paidOrPendingMonths = payments
+      .filter(p => p.status === 'approved' || p.status === 'pending' || p.status === 'paid')
+      .flatMap(p => p.month ? String(p.month).split(/[,;\n]+/).map(m => m.trim().toLowerCase()) : []);
+    const overlap = selectedMonths.some(m => paidOrPendingMonths.includes(m.trim().toLowerCase()));
+    if (overlap) {
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "নির্বাচিত মাসের পেমেন্ট ইতিমধ্যে জমা করা বা অনুমোদিত হয়েছে।" }));
+      return;
+    }
+
+    // 2. Consecutive Rule (strictly for months >= October 2026; prior months ignored)
+    const consecutiveCheck = validateConsecutiveRule(selectedMonths, payments, (user as any).excusedMonths);
+    if (!consecutiveCheck.valid) {
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: `আগে বাকি মাস (${consecutiveCheck.missingMonth}) পরিশোধ করুন` }));
+      return;
+    }
+
+    // 3. Mode-specific validation
+    const mode = hasUpi ? paymentMode : 'cash';
+    let finalUtr = '';
+    if (mode === 'upi') {
+      finalUtr = utrNumber.trim();
+      if (!finalUtr || !/^\d{12}$/.test(finalUtr)) {
+        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "সঠিক ১২ সংখ্যার UTR / ট্রানজাকশন নম্বর লিখুন (Must be exactly 12 numeric digits)." }));
+        return;
+      }
+    }
+
     if ((user as any).isSimulatedAdmin) {
        const isRealStudent = localStorage.getItem('simulatedStudentId');
        if (!isRealStudent) {
-         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select a real student from the dropdown above to test the payment submission flow. Submitting as the 'Default Admin UID' is blocked." }));
+         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Please select a real student from the dropdown above to test payment submission." }));
          return;
        }
     }
-    
+
     try {
       setSubmitting(true);
       const paymentData: any = {
@@ -2246,34 +2338,25 @@ export function StudentPayments() {
         month: selectedMonths.join(', '),
         amount: calculatedAmount,
         status: 'pending',
-        paymentMode: settings.paymentMethod || 'manual',
+        paymentMode: mode,
+        transactionId: finalUtr,
+        proofImage: mode === 'upi' ? (proofImage || '') : ''
       };
-      
-      // Attach proof data if using proof_upload mode
-      if (settings.paymentMethod === 'proof_upload') {
-        if (!proofImage) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Please upload a payment screenshot as proof.' }));
-          setSubmitting(false);
-          return;
-        }
-        if (!transactionId.trim()) {
-          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'Please enter the Transaction ID / UTR Number.' }));
-          setSubmitting(false);
-          return;
-        }
-        paymentData.proofImage = proofImage;
-        paymentData.transactionId = transactionId.trim();
+
+      const res: any = await api.submitPaymentRequest(paymentData);
+      if (res && res.error) {
+        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: res.error }));
+        return;
       }
-      
-      await api.submitPaymentRequest(paymentData);
-      setSelectedMonths([]);
+
+      setSelectedMonths([pickerMonths[0]]);
+      setUtrNumber('');
       setProofImage('');
       setImagePreview('');
-      setTransactionId('');
       setPaymentSuccess(true);
-      setTimeout(() => setPaymentSuccess(false), 3000);
+      setTimeout(() => setPaymentSuccess(false), 4000);
 
-      // Refresh payments history list manually
+      // Refresh payments list
       const rawPayments = await api.getPayments();
       const studentPayments = rawPayments.filter(p => p.studentId === user.uid);
       const data: Payment[] = studentPayments.map(p => ({
@@ -2293,9 +2376,13 @@ export function StudentPayments() {
       const getMs = (t: any) => new Date(t).getTime() || 0;
       data.sort((a, b) => getMs(b.createdAt) - getMs(a.createdAt));
       setPayments(data);
-    } catch (error) {
+      if (user?.uid) {
+        globalStudentPaymentsCache[user.uid] = { data, time: Date.now() };
+      }
+      globalPaymentsListCache = null;
+    } catch (error: any) {
       console.error("handleSubmitPayment error:", error);
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "Failed to submit payment details." }));
+      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "পেমেন্ট জমা দিতে সমস্যা হয়েছে: " + (error?.message || String(error)) }));
     } finally {
       setSubmitting(false);
     }
@@ -2316,7 +2403,7 @@ export function StudentPayments() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-1 bg-yellow-300 dark:bg-yellow-600 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] h-max flex flex-col text-zinc-900">
-          <h3 className="font-black uppercase mb-4 text-xl">Submit Payment Details</h3>
+          <h3 className="font-black uppercase mb-4 text-xl">Submit Payment</h3>
           
           {!settings.enablePaymentSystem ? (
              <div className="mb-6 p-4 bg-zinc-100 dark:bg-zinc-800 border-2 border-zinc-400 flex flex-col justify-center items-center gap-4 text-center mt-4">
@@ -2334,138 +2421,6 @@ export function StudentPayments() {
              </div>
           ) : (
           <>
-          {settings.paymentMethod === 'gateway' ? (
-             <div className="mb-6 p-4 bg-yellow-100 dark:bg-yellow-950/20 border-2 border-yellow-600 flex flex-col justify-center items-center gap-3 text-center mt-2 w-full text-zinc-900 dark:text-yellow-100">
-                <h4 className="font-black text-yellow-800 dark:text-yellow-400 uppercase text-sm tracking-wide">Automated Gateway Checkout</h4>
-                <p className="text-xs font-bold text-yellow-700 dark:text-yellow-300">Fast & Secure Payments via Cards, UPI (GPay, PhonePe, Paytm), Netbanking, and Wallets. Instantly unlocks features!</p>
-                <div className="mt-2 text-[10px] font-bold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 px-2 py-1 uppercase tracking-widest animate-pulse">
-                   ⚡ Instant Auto-Approval
-                </div>
-             </div>
-          ) : settings.paymentMethod === 'proof_upload' ? (
-              <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
-                 <div className="text-xs font-bold uppercase mb-3 dark:text-yellow-100">📸 Upload Payment Screenshot</div>
-                 
-                 {settings.adminUpiId && (
-                    <div className="mb-3 w-full">
-                       <div className="text-[10px] text-zinc-500 mb-1">Pay to this UPI ID first:</div>
-                       <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 dark:border-zinc-600 select-all bg-zinc-50 dark:bg-zinc-800">{settings.adminUpiId}</div>
-                       <button 
-                         type="button"
-                         onClick={() => {
-                            navigator.clipboard.writeText(settings.adminUpiId);
-                            window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'UPI ID copied!' }));
-                         }}
-                         className="mt-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
-                       >
-                         📋 Copy UPI ID
-                       </button>
-                    </div>
-                 )}
-
-                 <div className="w-full border-t-2 border-zinc-200 dark:border-zinc-700 pt-3 mt-1">
-                    {imagePreview ? (
-                       <div className="relative mb-3">
-                          <img src={imagePreview} alt="Payment proof" className="max-h-48 mx-auto border-2 border-emerald-500 shadow-[3px_3px_0px_0px_rgba(16,185,129,1)]" />
-                          <button
-                            type="button"
-                            onClick={() => { setProofImage(''); setImagePreview(''); }}
-                            className="absolute top-1 right-1 bg-red-500 text-white p-1 text-xs font-bold hover:bg-red-600"
-                          >
-                            ✕ Remove
-                          </button>
-                          <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-1">✅ Screenshot attached</div>
-                       </div>
-                    ) : (
-                       <label className="cursor-pointer block">
-                          <div className="border-2 border-dashed border-zinc-400 dark:border-zinc-600 p-6 hover:border-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-colors">
-                             <div className="text-3xl mb-2">📷</div>
-                             <div className="text-xs font-bold text-zinc-600 dark:text-zinc-400">Tap to upload payment screenshot</div>
-                             <div className="text-[10px] text-zinc-400 dark:text-zinc-500 mt-1">JPG, PNG — Max 10MB</div>
-                          </div>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            capture="environment"
-                            onChange={handleImageUpload}
-                            className="hidden"
-                          />
-                       </label>
-                    )}
-                 </div>
-
-                 <div className="w-full mt-3">
-                    <label className="block text-[10px] font-bold uppercase text-left mb-1 dark:text-yellow-100">Transaction ID / UTR Number</label>
-                    <input
-                       type="text"
-                       value={transactionId}
-                       onChange={e => setTransactionId(e.target.value)}
-                       placeholder="e.g. 412345678901 or UPI Ref No."
-                       className="w-full border-2 border-zinc-900 dark:border-zinc-100 bg-transparent p-2 text-sm focus:outline-none font-mono dark:text-white"
-                    />
-                 </div>
-              </div>
-           ) : (
-             <div className="mb-6 p-4 bg-white dark:bg-zinc-900 border-2 border-dashed border-zinc-900 dark:border-zinc-100 text-center flex flex-col items-center">
-                <div className="text-xs font-bold uppercase mb-2 dark:text-yellow-100">Scan to Pay via UPI</div>
-                {settings.adminUpiId ? (
-                   (() => {
-                      const upiId = (settings.adminUpiId || '').trim();
-                      const am = Number(calculatedAmount || 500).toFixed(2);
-                      const tn = encodeURIComponent(`Tuition Fee`);
-                      const pn = encodeURIComponent('Tutor');
-                      const genericUpi = `upi://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`;
-                      return (
-                         <>
-                            <div className="bg-white p-2 border-2 border-zinc-900 inline-block mb-2">
-                               <QRCodeSVG value={genericUpi} size={120} />
-                             </div>
-                             <div className="text-[10px] font-bold opacity-70 dark:text-yellow-100 mb-2">{settings.adminUpiId}</div>
-                             
-                             <p className="text-xs font-bold text-zinc-500 mt-2 mb-2">OR PAY USING APP</p>
-                             <div className="flex flex-wrap justify-center gap-2 mb-2 w-full">
-                                <a href={genericUpi} className="px-3 py-1.5 bg-purple-600 text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">PhonePe / App</a>
-                                <a href={`tez://upi/pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-white text-zinc-900 border-2 border-zinc-200 font-bold text-xs hover:-translate-y-0.5 transition-transform flex items-center gap-1"><span className="text-blue-500 font-black">G</span>Pay</a>
-                                <a href={`paytmmp://pay?pa=${upiId}&pn=${pn}&am=${am}&tn=${tn}&cu=INR`} className="px-3 py-1.5 bg-[#00b9f1] text-white font-bold text-xs hover:-translate-y-0.5 transition-transform">Paytm</a>
-                                <a href={genericUpi} className="px-3 py-1.5 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-bold text-xs hover:-translate-y-0.5 transition-transform">Any UPI</a>
-                             </div>
-                             
-                             {!settings.adminUpiId.includes('@') && (
-                                <div className="mt-2 text-red-600 dark:text-red-400 text-[10px] bg-red-100 dark:bg-red-900/30 p-2 font-bold text-justify">
-                                   Warning: The configured UPI ID "{settings.adminUpiId}" appears to be a regular phone number. It MUST include an "@" suffix (e.g. @ybl, @okaxis) for direct payment links to work. If apps crash, this is why!
-                                </div>
-                             )}
-                             
-                             <div className="mt-4 border-t-2 border-zinc-200 dark:border-zinc-800 pt-4 w-full">
-                                <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">UPI links not working or failing?</p>
-                                <p className="text-[10px] mt-1 text-zinc-500">You can copy the UPI ID below and paste it directly into your UPI app (like GPay, PhonePe, or Paytm):</p>
-                                <div className="flex items-center justify-center gap-2 mt-2">
-                                   <div className="text-sm font-black text-zinc-900 dark:text-white p-2 border-2 border-zinc-300 select-all">{upiId}</div>
-                                   <button 
-                                     onClick={(e) => {
-                                        e.preventDefault();
-                                        navigator.clipboard.writeText(upiId);
-                                        window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'UPI ID copied to clipboard!' }));
-                                     }}
-                                     className="p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 font-bold text-xs uppercase"
-                                   >
-                                     Copy ID
-                                   </button>
-                                </div>
-                             </div>
-                         </>
-                      );
-                   })()
-                ) : (
-                   <div className="text-red-500 font-bold text-sm bg-red-100 p-3 w-full border border-red-500">
-                      ⚠️ Setup Required: Admin UPI ID is not configured.
-                   </div>
-                )}
-             </div>
-          )}
-
-          <p className="text-sm font-medium mb-6 dark:text-yellow-100 text-center px-2">After completing the payment via UPI, explicitly select your paid month(s) and submit details to notify the administrator.</p>
-          
           {paymentSuccess && (
             <div className="mb-4 bg-emerald-100 dark:bg-emerald-900/30 border-2 border-emerald-600 p-4 text-emerald-800 dark:text-emerald-400 font-bold uppercase text-xs flex items-center justify-center text-center shadow-[4px_4px_0px_0px_rgba(5,150,105,1)]">
               ✅ Payment request submitted! Admin will verify shortly.
@@ -2473,52 +2428,177 @@ export function StudentPayments() {
           )}
 
           <form onSubmit={handleSubmitPayment} className="flex flex-col gap-4">
+             {/* 1. Month Picker */}
              <div className="bg-white dark:bg-zinc-900 p-4 border-2 border-zinc-900 dark:border-zinc-100 dark:text-white">
-                <label className="block text-xs font-bold uppercase mb-2">Select Month(s)<span className="ml-2 text-[10px] text-emerald-600 dark:text-emerald-400 font-black tracking-widest">{selectedMonths.length} SELECTED</span></label>
-                <div className="h-44 overflow-y-auto border-2 border-zinc-200 dark:border-zinc-700 p-1 space-y-1 bg-zinc-50 dark:bg-zinc-950">
-                  {monthOptions.map(m => (
+                <div className="flex justify-between items-center mb-2">
+                   <label className="text-xs font-black uppercase">মাস নির্বাচন করুন (Select Months)</label>
+                   <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">{selectedMonths.length} SELECTED</span>
+                </div>
+                <div className="max-h-52 overflow-y-auto border-2 border-zinc-200 dark:border-zinc-700 p-1 space-y-1 bg-zinc-50 dark:bg-zinc-950">
+                  {pickerMonths.map(m => (
                     <button
                       key={m}
                       type="button"
                       onClick={() => toggleMonth(m)}
-                      className={`w-full text-left px-3 py-2 text-sm font-bold transition-colors ${
+                      className={`w-full text-left px-3 py-2 text-xs font-bold transition-colors flex justify-between items-center ${
                         selectedMonths.includes(m) 
                           ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                           : 'bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
                       }`}
                     >
-                      {m}
-                      {selectedMonths.includes(m) && <span className="float-right text-xs">✓</span>}
+                      <span>{m}</span>
+                      {selectedMonths.includes(m) && <Check className="w-3.5 h-3.5" />}
                     </button>
                   ))}
                 </div>
-                <p className="text-[10px] text-zinc-500 mt-2 font-bold italic">Tip: Click to toggle selections for multiple adjacent months.</p>
+                <p className="text-[10px] text-zinc-500 mt-2 font-medium">ক্লিক করে এক বা একাধিক মাস একসাথে সিলেক্ট করুন।</p>
              </div>
-            <div className="bg-white dark:bg-zinc-900 p-4 border-2 border-zinc-900 dark:border-zinc-100 dark:text-white">
-               <label className="block text-xs font-bold uppercase mb-1">Total Amount Paid (₹)</label>
-               <div className="w-full border-b-2 border-zinc-200 dark:border-zinc-700 p-2 bg-transparent text-2xl font-black text-center">
-                 ₹{calculatedAmount}
+
+             {/* 2. Amount Summary */}
+             <div className="bg-white dark:bg-zinc-900 p-4 border-2 border-zinc-900 dark:border-zinc-100 dark:text-white">
+                <label className="block text-xs font-bold uppercase mb-1">মোট প্রদেয় ফি (Total Amount)</label>
+                <div className="text-2xl font-black text-center font-mono py-1">
+                  ₹{calculatedAmount}
+                  <span className="text-xs font-bold text-zinc-500 ml-2 font-sans">({selectedMonths.length} × ₹{feePerMonth})</span>
+                </div>
+             </div>
+
+             {/* 3. Payment Mode Tabs */}
+             {!settingsLoaded ? (
+               <div className="p-3 bg-zinc-100 dark:bg-zinc-800 border-2 border-zinc-400 text-xs font-bold text-center text-zinc-500 animate-pulse">
+                 পেমেন্ট অপশন লোড হচ্ছে...
                </div>
-            </div>
-            
-            {settings.paymentMethod === 'gateway' ? (
-              <button 
-                type="button" 
-                onClick={handleRazorpayCheckout}
-                disabled={submitting || selectedMonths.length === 0} 
-                className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2"
-              >
-                {submitting ? 'Initializing Checkout...' : `Pay ₹${calculatedAmount} via Razorpay`}
-              </button>
-            ) : settings.paymentMethod === 'proof_upload' ? (
-               <button type="submit" disabled={submitting || selectedMonths.length === 0 || !proofImage || !transactionId.trim()} className="mt-2 bg-emerald-600 text-white font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-emerald-800 disabled:opacity-50 disabled:hover:translate-y-0 flex items-center justify-center gap-2">
-                 {submitting ? 'Uploading Proof...' : `📸 Submit Proof for ₹${calculatedAmount}`}
-               </button>
+             ) : hasUpi ? (
+               <div className="flex border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-200 dark:bg-zinc-800 p-1 gap-1">
+                 <button
+                   type="button"
+                   onClick={() => setPaymentMode('upi')}
+                   className={`flex-1 py-2 font-black uppercase text-xs transition-colors ${
+                     paymentMode === 'upi' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'text-zinc-700 dark:text-zinc-300 hover:text-black'
+                   }`}
+                 >
+                   📱 Pay via UPI
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => setPaymentMode('cash')}
+                   className={`flex-1 py-2 font-black uppercase text-xs transition-colors ${
+                     paymentMode === 'cash' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'text-zinc-700 dark:text-zinc-300 hover:text-black'
+                   }`}
+                 >
+                   💵 Pay in Cash
+                 </button>
+               </div>
              ) : (
-               <button type="submit" disabled={submitting || selectedMonths.length === 0} className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:hover:translate-y-0">
-                 {submitting ? 'Submitting...' : 'Submit to Admin'}
-               </button>
+               <div className="p-3 bg-zinc-100 dark:bg-zinc-800 border-2 border-zinc-400 text-xs font-bold text-center text-zinc-700 dark:text-zinc-300">
+                 💵 Cash Payment (শিক্ষককে সরাসরি নগদ প্রদান)
+               </div>
              )}
+
+             {/* 4. Payment Mode Details */}
+             {hasUpi && paymentMode === 'upi' ? (
+               <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 text-center flex flex-col items-center">
+                  <div className="text-xs font-black uppercase mb-3 dark:text-yellow-100">QR কোড স্ক্যান করে পে করুন</div>
+                  <div className="bg-white p-2 border-2 border-zinc-900 inline-block mb-3 shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
+                     <QRCodeSVG value={upiLink} size={150} />
+                  </div>
+                  
+                  <div className="text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1">
+                     UPI ID: <span className="font-mono font-black text-black dark:text-white select-all">{settings.adminUpiId}</span>
+                  </div>
+                  <div className="text-[11px] font-bold text-zinc-500 mb-3">
+                     Payee: {settings.adminPayeeName}
+                  </div>
+
+                  <div className="flex flex-wrap justify-center gap-2 w-full mb-3">
+                     <button
+                       type="button"
+                       onClick={() => {
+                          navigator.clipboard.writeText(settings.adminUpiId);
+                          window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: 'UPI ID কপি করা হয়েছে!' }));
+                       }}
+                       className="px-3 py-1.5 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-400 font-black uppercase text-xs hover:-translate-y-0.5 transition-transform"
+                     >
+                       📋 Copy UPI ID
+                     </button>
+                     <a
+                       href={upiLink}
+                       className="px-3 py-1.5 bg-purple-600 text-white font-black uppercase text-xs hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_#3b0764]"
+                     >
+                       📱 Open UPI App
+                     </a>
+                  </div>
+
+                  {/* 12-Digit UTR Input */}
+                  <div className="w-full border-t-2 border-zinc-200 dark:border-zinc-700 pt-3 text-left">
+                     <label className="block text-xs font-black uppercase mb-1 dark:text-yellow-100">
+                        12-Digit UTR / Transaction ID <span className="text-red-600">*</span>
+                     </label>
+                     <input
+                        type="text"
+                        value={utrNumber}
+                        onChange={e => setUtrNumber(e.target.value.replace(/\D/g, '').slice(0, 12))}
+                        placeholder="12 সংখ্যার UTR নম্বর (e.g. 412345678901)"
+                        maxLength={12}
+                        className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm font-mono bg-white dark:bg-zinc-800 dark:text-white focus:outline-none"
+                        required
+                     />
+                     <p className="text-[10px] text-zinc-500 mt-1">পেমেন্ট করার পর UPI অ্যাপের রসিদ থেকে ১২ সংখ্যার UTR / Ref No বসান।</p>
+                  </div>
+
+                  {/* Optional Screenshot */}
+                  <div className="w-full border-t border-zinc-200 dark:border-zinc-700 pt-3 mt-3 text-left">
+                     <label className="block text-[11px] font-bold uppercase mb-1 dark:text-yellow-100">পেমেন্ট স্ক্রিনশট (ঐচ্ছিক / Optional)</label>
+                     {imagePreview ? (
+                        <div className="relative mb-2">
+                           <img src={imagePreview} alt="Payment proof" className="max-h-36 mx-auto border-2 border-emerald-500 shadow-[2px_2px_0px_0px_rgba(16,185,129,1)]" />
+                           <button
+                             type="button"
+                             onClick={() => { setProofImage(''); setImagePreview(''); }}
+                             className="absolute top-1 right-1 bg-red-600 text-white p-1 text-xs font-bold hover:bg-red-700"
+                           >
+                             ✕ Remove
+                           </button>
+                        </div>
+                     ) : (
+                        <label className="cursor-pointer block border-2 border-dashed border-zinc-400 dark:border-zinc-600 p-3 text-center hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                           <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400">📷 স্ক্রিনশট আপলোড করুন</span>
+                           <input
+                             type="file"
+                             accept="image/*"
+                             onChange={handleImageUpload}
+                             className="hidden"
+                           />
+                        </label>
+                     )}
+                  </div>
+               </div>
+             ) : (
+               <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 text-center">
+                  <div className="text-3xl mb-2">💵</div>
+                  <div className="text-sm font-black uppercase mb-1 dark:text-white">নগদ পেমেন্ট (Cash to Teacher)</div>
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+                     শিক্ষক মহাশয়কে সরাসরি নগদ টাকা জমা দিলে এই বোতাম টিপে রিকোয়েস্ট পাঠান। শিক্ষক মহাশয় টাকা পেয়ে তা অনুমোদন করবেন।
+                  </p>
+               </div>
+             )}
+
+             <button
+               type="submit"
+               disabled={submitting || selectedMonths.length === 0}
+               className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-black uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)]"
+             >
+               {submitting ? (
+                 <>
+                   <Loader2 className="w-4 h-4 animate-spin" />
+                   Submitting...
+                 </>
+               ) : hasUpi && paymentMode === 'upi' ? (
+                 'পেমেন্ট রিকোয়েস্ট জমা দিন (Submit Payment)'
+               ) : (
+                 'নগদ পেমেন্ট রিকোয়েস্ট জমা দিন (Submit Cash Request)'
+               )}
+             </button>
           </form>
           </>
           )}
@@ -2538,7 +2618,7 @@ export function StudentPayments() {
                   No payment history found.
                 </div>
               )}
-              {payments.map((payment, idx) => (
+              {payments.map((payment) => (
                 <div key={payment.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-4 border-2 border-zinc-200 dark:border-zinc-800 gap-4">
                   <div>
                     <h4 className="font-black text-lg uppercase text-zinc-900 dark:text-zinc-100">Fee for {payment.month}</h4>
@@ -2546,8 +2626,14 @@ export function StudentPayments() {
                       Received on: {formatDateTimeSafe(payment.createdAt)}
                     </div>
                     <div className="text-zinc-500 font-bold font-mono mt-1 text-sm">Amount: ₹{payment.amount}</div>
-                    {(payment as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">TXN ID: {(payment as any).transactionId}</div>}
-                    {(payment as any).paymentMode === 'proof_upload' && <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">📸 Proof Uploaded</div>}
+                    {(payment as any).transactionId && <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-1">UTR: {(payment as any).transactionId}</div>}
+                    {(payment as any).paymentMode && (
+                      <span className={`inline-block mt-1 text-[9px] font-black uppercase px-1.5 py-0.5 border ${
+                        (payment as any).paymentMode === 'upi' ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-zinc-100 text-zinc-800 border-zinc-300'
+                      }`}>
+                        {(payment as any).paymentMode}
+                      </span>
+                    )}
                   </div>
                   <div>
                     {payment.status === 'pending' && <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold uppercase rounded-full border-2 border-yellow-200">Pending Review</span>}

@@ -6,6 +6,7 @@ import { useParams } from 'react-router-dom';
 import { safeToDate } from '../lib/utils';
 import { useAuth } from '../components/AuthProvider';
 import { getLocalSwr, getExamOutbox } from '../lib/cache';
+import { showToast } from '../lib/toast';
 
 export function AdminResults() {
   const { user } = useAuth();
@@ -153,10 +154,11 @@ export function AdminResults() {
     try {
       setDeleting(true);
       await api.deleteMultipleExamResults(idsArray);
+      showToast(`${idsArray.length}টি রেজাল্ট মুছে ফেলা হয়েছে ✓`);
     } catch (error) {
       console.error("delete results failed:", error);
       setResults(prevResults);
-      alert("ডিলিট করতে ব্যর্থ হয়েছে (Failed to delete results)");
+      showToast("ডিলিট করতে ব্যর্থ হয়েছে — রেজাল্টগুলো ফিরিয়ে আনা হয়েছে", 'error', 4000);
     } finally {
       setDeleting(false);
     }
@@ -313,13 +315,15 @@ export function AdminResults() {
                </thead>
                <tbody>
                  {displayResults.map((r, idx) => (
-                   <tr key={r.id} className={`border-b border-zinc-200 dark:border-zinc-800 ${selectedIds.has(r.id) ? 'bg-red-50 dark:bg-red-900/20' : ''}`}>
+                   <tr key={r.id} onClick={() => { if (!deleting) handleSelect(r.id); }} className={`border-b cursor-pointer select-none transition-colors ${selectedIds.has(r.id) ? 'bg-red-100 dark:bg-red-900/40 border-red-400 outline outline-2 outline-red-500' : 'border-zinc-200 dark:border-zinc-800'}`}>
                      <td className="p-2">
                         <input 
                           type="checkbox" 
                           checked={selectedIds.has(r.id)} 
+                          disabled={deleting}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={() => handleSelect(r.id)} 
-                          className="w-4 h-4 accent-red-600 cursor-pointer"
+                          className="w-5 h-5 accent-red-600 cursor-pointer"
                         />
                      </td>
                      <td className="p-2 text-xs font-mono opacity-70">

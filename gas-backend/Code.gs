@@ -1898,6 +1898,21 @@ function apiGetPaymentProof(paymentId, session) {
   }
 }
 
+function apiDeletePayment(paymentId, session) {
+  try {
+    if (!session || session.role !== 'admin') {
+      return { success: false, error: "Forbidden: Admin access required", code: 403 };
+    }
+    var success = deleteRow("payments", paymentId);
+    if (success) {
+      markSnapshotDirty();
+    }
+    return { success: success };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
 function apiSubmitPaymentRequest(paymentData, session) {
   try {
     if (!session || !session.userId) {
@@ -1914,6 +1929,103 @@ function apiSubmitPaymentRequest(paymentData, session) {
     var paidVia = String(paymentData.paymentMode || paymentData.paidVia || "upi").toLowerCase().trim();
     if (paidVia !== "cash" && paidVia !== "upi") paidVia = "upi";
 
+    var txnId = String(paymentData.transactionId || "").trim();
+
+    // 1. UPI Validation: 12-digit UTR and Duplicate Check
+    if (paidVia === "upi") {
+      if (!/^\d{12}$/.test(txnId)) {
+        return { success: false, error: "সঠিক ১২ সংখ্যার UTR নম্বর আবশ্যক (12-digit numeric UTR required)" };
+      }
+      var existingPayments = readSheet("payments");
+      var duplicate = existingPayments.find(function(p) {
+        return p.transactionId && String(p.transactionId).trim() === txnId;
+      });
+      if (duplicate) {
+        return { success: false, error: "এই UTR নম্বরটি ইতিমধ্যে ব্যবহৃত হয়েছে (Duplicate UTR)" };
+      }
+    }
+
+    // 2. Consecutive Rule (ONLY from October 2026 onward)
+    // Everything before October 2026 is ignored and never blocks.
+    var reqMonths = monthStr.split(/[,;\n]+/).map(function(m) { return m.trim(); }).filter(Boolean);
+    var monthNamesList = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+
+    function parseYearMonth(str) {
+      if (!str) return null;
+      var s = str.toLowerCase().trim();
+      var slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (slashMatch) return { y: parseInt(slashMatch[3]), m: parseInt(slashMatch[1]) };
+      var mMatch = s.match(/^([a-z]+)[\s-_]?(\d{4})$/);
+      if (mMatch) {
+        var idx = monthNamesList.indexOf(mMatch[1]);
+        if (idx !== -1) return { y: parseInt(mMatch[2]), m: idx + 1 };
+      }
+      var isoMatch = s.match(/^(\d{4})[-/](\d{1,2})/);
+      if (isoMatch) return { y: parseInt(isoMatch[1]), m: parseInt(isoMatch[2]) };
+      return null;
+    }
+
+    // Gather existing covered months for this student (approved, pending, paid, or excused)
+    var allPayments = readSheet("payments");
+    var coveredMonthSet = {};
+    allPayments.forEach(function(p) {
+      if (String(p.studentId) === String(session.userId) && (p.status === 'approved' || p.status === 'pending' || p.status === 'paid')) {
+        if (p.month) {
+          p.month.split(/[,;\n]+/).forEach(function(m) {
+            var ym = parseYearMonth(m.trim());
+            if (ym) coveredMonthSet[ym.y + "-" + ym.m] = true;
+          });
+        }
+      }
+    });
+
+    // Also include excused months from user profile
+    var allUsers = readSheet("users");
+    var studentUser = allUsers.find(function(u) { return String(u.id) === String(session.userId); });
+    if (studentUser && (studentUser.excusedMonths || studentUser.excusedDates)) {
+      var rawExcused = String(studentUser.excusedMonths || studentUser.excusedDates || "");
+      rawExcused.split(/[,;\n]+/).forEach(function(m) {
+        var ym = parseYearMonth(m.trim());
+        if (ym) coveredMonthSet[ym.y + "-" + ym.m] = true;
+      });
+    }
+
+    // Also include months in the current request
+    reqMonths.forEach(function(m) {
+      var ym = parseYearMonth(m);
+      if (ym) coveredMonthSet[ym.y + "-" + ym.m] = true;
+    });
+
+    // Check consecutive constraint for every requested month >= Oct 2026
+    var START_YEAR = 2026;
+    var START_MONTH = 10; // October 2026
+
+    for (var i = 0; i < reqMonths.length; i++) {
+      var targetYM = parseYearMonth(reqMonths[i]);
+      if (!targetYM) continue;
+      var targetTotal = targetYM.y * 12 + targetYM.m;
+      var startTotal = START_YEAR * 12 + START_MONTH;
+
+      // If requested month is before October 2026, rule does not apply (ignored)
+      if (targetTotal < startTotal) continue;
+
+      // Check all intermediate months from Oct 2026 up to targetYM
+      var checkY = START_YEAR;
+      var checkM = START_MONTH;
+      while ((checkY * 12 + checkM) < targetTotal) {
+        var key = checkY + "-" + checkM;
+        if (!coveredMonthSet[key]) {
+          var monthTitle = monthNamesList[checkM - 1].charAt(0).toUpperCase() + monthNamesList[checkM - 1].slice(1) + " " + checkY;
+          return {
+            success: false,
+            error: "আগে বাকি মাস (" + monthTitle + ") পরিশোধ করুন"
+          };
+        }
+        checkM++;
+        if (checkM > 12) { checkM = 1; checkY++; }
+      }
+    }
+
     var newPayment = {
       id: "pay_" + Utilities.getUuid().substring(0, 8),
       studentId: String(session.userId),
@@ -1923,7 +2035,7 @@ function apiSubmitPaymentRequest(paymentData, session) {
       status: "pending",
       paidVia: paidVia,
       paymentMode: paidVia,
-      transactionId: String(paymentData.transactionId || "").trim(),
+      transactionId: txnId,
       proofImage: paymentData.proofImage || "",
       remarks: paymentData.remarks || "",
       paidDate: new Date().toISOString(),
@@ -1935,6 +2047,52 @@ function apiSubmitPaymentRequest(paymentData, session) {
     saved.hasProof = Boolean(newPayment.proofImage && String(newPayment.proofImage).trim() !== "");
     markSnapshotDirty();
     return { success: true, data: saved };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiBulkUpdatePaymentStatus(paymentIds, status, remarks, session) {
+  try {
+    if (!session || session.role !== 'admin') {
+      return { success: false, error: "Forbidden: Admin access required", code: 403 };
+    }
+    if (!paymentIds || !Array.isArray(paymentIds) || paymentIds.length === 0) {
+      return { success: false, error: "No payment IDs provided" };
+    }
+    var targetStatus = String(status || 'approved').toLowerCase().trim();
+    if (targetStatus === 'paid') targetStatus = 'approved';
+
+    var payments = readSheet("payments");
+    var updatedCount = 0;
+    paymentIds.forEach(function(pid) {
+      var p = payments.find(function(item) { return String(item.id) === String(pid); });
+      if (p) {
+        var updateObj = { status: targetStatus };
+        if (remarks) updateObj.remarks = String(remarks).trim();
+        updateRow("payments", pid, updateObj);
+        if (p.studentId && targetStatus === 'approved') {
+          updateRow("users", p.studentId, { paymentStatus: 'paid' });
+        }
+        updatedCount++;
+      }
+    });
+    markSnapshotDirty();
+    return { success: true, count: updatedCount };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiSetStudentExcusedMonths(studentId, excusedMonths, session) {
+  try {
+    if (!session || session.role !== 'admin') {
+      return { success: false, error: "Forbidden: Admin access required", code: 403 };
+    }
+    ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt", "tokenVersion", "excusedMonths"]);
+    updateRow("users", studentId, { excusedMonths: String(excusedMonths || "").trim() });
+    markSnapshotDirty();
+    return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -2022,6 +2180,26 @@ function apiCreateNotification(notifData, session) {
   }
 }
 
+function apiDeleteNotification(notifId, session) {
+  try {
+    if (!session || !session.userId) {
+      return { success: false, error: "Unauthorized access: Valid session required", code: 401 };
+    }
+    if (session.role !== 'admin') {
+      var notifs = readSheet("notifications");
+      var n = notifs.find(function(x) { return String(x.id) === String(notifId); });
+      if (!n || String(n.senderId) !== String(session.userId)) {
+        return { success: false, error: "Forbidden: you can delete only your own notification", code: 403 };
+      }
+    }
+    var success = deleteRow("notifications", notifId);
+    markSnapshotDirty();
+    return { success: success };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
 function apiGetMyProfile(session) {
   try {
     if (!session || !session.userId) {
@@ -2036,24 +2214,6 @@ function apiGetMyProfile(session) {
   }
 }
 
-function apiGetSettings(type, session) {
-  try {
-    var all = readSheet("settings");
-    if (type) {
-      var setting = all.find(function(s) { return s.type === type; });
-      var data = setting ? setting.data : null;
-      if (session && session.role !== 'admin' && data) {
-        // Strip sensitive admin secrets for students
-        delete data.razorpayKeySecret;
-        delete data.adminPassword;
-      }
-      return { success: true, data: data };
-    }
-    return { success: true, data: all };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
-}
 
 
 function adminMigrateAllPasscodes() {
@@ -2414,7 +2574,7 @@ function apiGetSettings() {
     if (saved) {
       return { success: true, data: JSON.parse(saved) };
     }
-    return { success: true, data: { adminUpiId: "mondal.saikat185@okaxis", enablePaymentSystem: true } };
+    return { success: true, data: { adminUpiId: "", adminPayeeName: "", enablePaymentSystem: true } };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
@@ -2423,103 +2583,21 @@ function apiGetSettings() {
 function apiSaveSettings(settings) {
   try {
     var props = PropertiesService.getScriptProperties();
-    props.setProperty("appSettings", JSON.stringify(settings));
+    var cleanSettings = {
+      adminUpiId: String((settings && settings.adminUpiId) || "").trim(),
+      adminPayeeName: String((settings && settings.adminPayeeName) || "").trim(),
+      enablePaymentSystem: settings ? (settings.enablePaymentSystem !== false) : true
+    };
+    props.setProperty("appSettings", JSON.stringify(cleanSettings));
+    markSnapshotDirty();
     return { success: true };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
 }
 
-function apiVerifyGatewayPayment(paymentId, months, amount, studentId) {
-  try {
-    var props = PropertiesService.getScriptProperties();
-    var savedSettings = props.getProperty("appSettings");
-    var keyId = "";
-    var keySecret = "";
-    if (savedSettings) {
-      var parsed = JSON.parse(savedSettings);
-      keyId = parsed.razorpayKeyId || "";
-      keySecret = parsed.razorpayKeySecret || "";
-    }
-
-    // Default standard Sandbox key if admin has not configured their own keys
-    if (!keyId) {
-      keyId = "rzp_test_mX3qXFv3Xv9Xv9";
-    }
-
-    var isVerified = false;
-    if (keySecret) {
-      try {
-        var authString = keyId + ":" + keySecret;
-        var headers = {
-          "Authorization": "Basic " + Utilities.base64Encode(authString)
-        };
-        var options = {
-          "method": "get",
-          "headers": headers,
-          "muteHttpExceptions": true
-        };
-        var response = UrlFetchApp.fetch("https://api.razorpay.com/v1/payments/" + paymentId, options);
-        var responseCode = response.getResponseCode();
-        var responseBody = response.getContentText();
-        
-        if (responseCode === 200) {
-          var paymentData = JSON.parse(responseBody);
-          if (paymentData.status === 'captured' || paymentData.status === 'authorized') {
-            isVerified = true;
-          }
-        }
-      } catch (e) {
-        Logger.log("Razorpay fetch error: " + e.toString());
-      }
-    } else {
-      // Sandbox/Test mode fallback: if no keySecret is configured, approve the mock checkout instantly
-      isVerified = true;
-    }
-
-    if (!isVerified) {
-      return { success: false, error: "Razorpay verification failed (Payment not captured or unauthorized)" };
-    }
-
-    // 1. Create approved payment record in the sheet
-    var paymentRecord = {
-      id: "pay_" + Utilities.getUuid().substring(0, 8),
-      studentId: studentId,
-      month: months,
-      amount: Number(amount) || 0,
-      status: "approved",
-      transactionId: paymentId,
-      paidDate: new Date().toISOString(),
-      createdAt: new Date().toISOString()
-    };
-    saveRow("payments", paymentRecord);
-
-    // 2. Fetch student details and decrement pendingMonths
-    var users = readSheet("users");
-    var user = null;
-    for (var i = 0; i < users.length; i++) {
-      if (String(users[i].id) === String(studentId)) {
-        user = users[i];
-        break;
-      }
-    }
-
-    if (user) {
-      var count = months.split(',').length;
-      var currentPending = Number(user.pendingMonths) || 0;
-      var newPending = Math.max(0, currentPending - count);
-      
-      updateRow("users", studentId, {
-        paymentStatus: "approved",
-        pendingMonths: newPending,
-        updatedAt: new Date().toISOString()
-      });
-    }
-
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.toString() };
-  }
+function apiVerifyGatewayPayment() {
+  return { success: false, error: "Razorpay payment gateway has been disabled. Please submit payment via UPI or Cash." };
 }
 
 function apiUploadFileToDrive(base64Data, fileName, folderId) {
@@ -2601,11 +2679,13 @@ function doPost(e) {
       "apiUpdatePaymentStatus",
       "apiDeleteExamResult",
       "apiDeleteMultipleExamResults",
-      "apiGetAttendance",
       "apiSaveAnnouncement",
       "apiSaveSettings",
       "apiCreateExamSession",
-      "apiEndExamSession"
+      "apiEndExamSession",
+      "apiBulkUpdatePaymentStatus",
+      "apiSetStudentExcusedMonths",
+      "apiDeletePayment"
     ];
 
     // 3. AUTHENTICATED USER ACTIONS (Students & Admins)
@@ -2625,6 +2705,7 @@ function doPost(e) {
       "apiGetStudentDashboardData",
       "apiHasSubmitted",
       "apiCreateNotification",
+      "apiDeleteNotification",
       "apiGetNotifications",
       "apiGetMyProfile",
       "apiGetLibrary",
@@ -2704,8 +2785,12 @@ function doPost(e) {
       "apiSubmitPaymentRequest",
       "apiGetStudentDashboardData",
       "apiUpdatePaymentStatus",
+      "apiBulkUpdatePaymentStatus",
+      "apiSetStudentExcusedMonths",
+      "apiDeletePayment",
       "apiHasSubmitted",
       "apiCreateNotification",
+      "apiDeleteNotification",
       "apiGetNotifications",
       "apiGetMyProfile"
     ];
@@ -2972,7 +3057,7 @@ var ALLOWED_USER_SNAPSHOT_FIELDS = [
   "batchId", "address", "dob", "joinDate", "profilePhotoUrl",
   "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus",
   "createdAt", "updatedAt", "excusedDates", "reapplyReason",
-  "rejectReason", "showPaymentNudge", "tokenVersion"
+  "rejectReason", "showPaymentNudge", "tokenVersion", "excusedMonths"
 ];
 
 var ALLOWED_PAYMENT_SNAPSHOT_FIELDS = [

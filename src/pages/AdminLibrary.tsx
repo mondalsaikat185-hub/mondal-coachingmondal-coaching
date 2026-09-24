@@ -5,6 +5,7 @@ import { PageHeader } from './Pages';
 import { Loader2, Plus, Eye, Share2, Trash2, FileText, FileDown, BookOpen, Folder, FolderPlus, ChevronRight, Pencil, GripVertical } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
+import { showToast } from '../lib/toast';
 
 export interface LibraryItem {
   id: string;
@@ -632,23 +633,35 @@ export function AdminLibrary() {
 
   const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
 
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
+
   const handleDelete = async (id: string) => {
-     if (!window.confirm("Are you sure you want to permanently delete this? This action cannot be undone.")) return;
+     if (submitting || deletingItemId) return; // block double-taps while a delete is running
+     const target = items.find(i => i.id === id);
+     const label = target?.title ? `"${String(target.title).slice(0, 40)}"` : 'এটি';
+     if (!window.confirm(`${label} স্থায়ীভাবে মুছে ফেলবেন? (ফোল্ডার হলে ভেতরের সব কিছুও মুছে যাবে)`)) return;
+     const snapshot = items;
      try {
        setSubmitting(true);
+       setDeletingItemId(id);
 
        const idsToDelete = await getItemsToDelete(id);
+       // Optimistic: remove from screen immediately
+       setItems(prev => prev.filter(i => !idsToDelete.includes(i.id)));
 
        // Delete all items/folders in one single API request to avoid lock failures and ensure high speed!
        await api.deleteMultipleLibraryItems(idsToDelete);
 
        setDeleteItemId(null);
+       showToast('মুছে ফেলা হয়েছে ✓');
        handleRefreshFolder();
      } catch (err: any) {
        console.error(err);
-       alert("Error deleting: " + String(err.message || err));
+       setItems(snapshot);
+       showToast('মুছতে ব্যর্থ হয়েছে — আইটেম ফিরিয়ে আনা হয়েছে', 'error', 4000);
      } finally {
        setSubmitting(false);
+       setDeletingItemId(null);
      }
   };
 
@@ -758,14 +771,23 @@ export function AdminLibrary() {
            }
         });
 
-        await api.shareLibraryItem(selectedItem.id, batchIdsMap, scheduledStartTimeMap);
-        await fetchBatches();
-
+        // Close the dialog immediately; save runs in the background with clear feedback.
+        const itemTitle = String(selectedItem.title || '').slice(0, 40);
         setIsShareModalOpen(false);
+        showToast(`"${itemTitle}" শেয়ার হচ্ছে…`, 'info', 2500);
+        api.shareLibraryItem(selectedItem.id, batchIdsMap, scheduledStartTimeMap)
+          .then(async () => {
+             showToast(`"${itemTitle}" শেয়ার সম্পন্ন ✓`);
+             try { await fetchBatches(); } catch (e) { console.error(e); }
+          })
+          .catch((err: any) => {
+             console.error(err);
+             showToast(`শেয়ার ব্যর্থ হয়েছে: ${String(err?.message || err).slice(0, 80)}`, 'error', 5000);
+          })
+          .finally(() => setSubmitting(false));
      } catch (err: any) {
         console.error(err);
-        alert("Failed to save sharing: " + String(err.message || err));
-     } finally {
+        showToast("শেয়ার ব্যর্থ হয়েছে: " + String(err.message || err).slice(0, 80), 'error', 5000);
         setSubmitting(false);
      }
   };
@@ -1068,8 +1090,8 @@ export function AdminLibrary() {
                        <button onClick={(e) => { e.stopPropagation(); handleEditItemClick(folder); }} className="action-btn flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900 px-3 py-1.5 font-bold text-xs hover:bg-blue-100 whitespace-nowrap">
                          <Pencil className="w-3.5 h-3.5" /> Edit
                        </button>
-                       <button onClick={(e) => { e.stopPropagation(); handleDelete(folder.id); }} disabled={submitting} className="action-btn flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900 px-3 py-1.5 font-bold text-xs hover:bg-red-100 ms-auto sm:ms-0">
-                         {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} 
+                       <button onClick={(e) => { e.stopPropagation(); handleDelete(folder.id); }} disabled={submitting} className="action-btn flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900 px-3 py-1.5 font-bold text-xs hover:bg-red-100 ms-auto sm:ms-0 disabled:opacity-40">
+                         {deletingItemId === folder.id ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> মুছছে…</> : <Trash2 className="w-3.5 h-3.5" />} 
                        </button>
                      </div>
                   </div>
@@ -1164,8 +1186,8 @@ export function AdminLibrary() {
                   <button onClick={() => handleEditItemClick(item)} className="flex items-center gap-1 bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900 px-3 py-1.5 font-bold text-xs hover:bg-blue-100 whitespace-nowrap">
                     <Pencil className="w-3.5 h-3.5" /> Edit
                   </button>
-                  <button onClick={() => handleDelete(item.id)} disabled={submitting} className="flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900 px-3 py-1.5 font-bold text-xs hover:bg-red-100 whitespace-nowrap ms-auto sm:ms-0">
-                    {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />} 
+                  <button onClick={() => handleDelete(item.id)} disabled={submitting} className="flex items-center gap-1 bg-red-50 text-red-600 border border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900 px-3 py-1.5 font-bold text-xs hover:bg-red-100 whitespace-nowrap ms-auto sm:ms-0 disabled:opacity-40">
+                    {deletingItemId === item.id ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> মুছছে…</> : <Trash2 className="w-3.5 h-3.5" />} 
                   </button>
                </div>
             </div>

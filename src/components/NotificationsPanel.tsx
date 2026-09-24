@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { showToast } from '../lib/toast';
 import { X, Bell, Plus, Edit, Trash2, Loader2 } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import { api, NotificationItem } from '../lib/api';
@@ -31,6 +32,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const [showCreate, setShowCreate] = useState(false);
   const [editItem, setEditItem] = useState<any | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [batches, setBatches] = useState<any[]>([]);
 
   // Form states
@@ -153,16 +155,24 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
      e.stopPropagation();
+     if (deletingIds.size > 0 || deletingIds.has(id)) return; // one delete at a time, no double-tap
      if (confirmDeleteId !== id) {
         setConfirmDeleteId(id);
-        setTimeout(() => setConfirmDeleteId(null), 3000);
+        setTimeout(() => setConfirmDeleteId(prev => (prev === id ? null : prev)), 3000);
         return;
      }
+     setConfirmDeleteId(null);
+     setDeletingIds(prev => new Set(prev).add(id));
      try {
         await api.deleteNotification(id);
-        setConfirmDeleteId(null);
         setNotifications(prev => prev.filter(n => n.id !== id));
-     } catch(e) { console.error(e); }
+        showToast('নোটিফিকেশন মুছে ফেলা হয়েছে ✓');
+     } catch(e) {
+        console.error(e);
+        showToast('মুছতে ব্যর্থ হয়েছে, আবার চেষ্টা করুন', 'error');
+     } finally {
+        setDeletingIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+     }
   };
 
   const markAsRead = async (item: any) => {
@@ -273,7 +283,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                           <div 
                              key={notif.id} 
                              onClick={() => isUnread && markAsRead(notif)}
-                             className={`border-2 p-3 flex flex-col gap-2 relative transition-colors ${
+                             className={`border-2 p-3 flex flex-col gap-2 relative transition-colors ${deletingIds.has(notif.id) ? 'opacity-40 pointer-events-none grayscale ' : ''}${
                                 isUnread 
                                   ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-[4px_4px_0px_0px_rgba(37,99,235,1)] dark:shadow-[4px_4px_0px_0px_rgba(59,130,246,1)]' 
                                   : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900'
@@ -300,8 +310,8 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                                 {user.role === 'admin' && (
                                    <div className="flex items-center gap-1">
                                       <button onClick={(e) => { e.stopPropagation(); handleEdit(notif); }} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 transition-colors"><Edit className="w-3.5 h-3.5" /></button>
-                                      <button onClick={(e) => handleDelete(notif.id, e)} className="p-1 hover:bg-red-100 hover:text-red-600 transition-colors">
-                                         {confirmDeleteId === notif.id ? <span className="text-[10px] uppercase font-black px-1 text-red-600">Sure?</span> : <Trash2 className="w-3.5 h-3.5" />}
+                                      <button disabled={deletingIds.size > 0} onClick={(e) => handleDelete(notif.id, e)} className={`p-1 transition-colors disabled:opacity-40 ${confirmDeleteId === notif.id ? 'bg-red-600 text-white' : 'hover:bg-red-100 hover:text-red-600'}`}>
+                                         {deletingIds.has(notif.id) ? <span className="text-[10px] font-black px-1 text-red-600">মুছছে…</span> : confirmDeleteId === notif.id ? <span className="text-[10px] uppercase font-black px-1">নিশ্চিত? আবার চাপুন</span> : <Trash2 className="w-3.5 h-3.5" />}
                                       </button>
                                    </div>
                                 )}
