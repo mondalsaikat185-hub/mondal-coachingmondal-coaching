@@ -404,63 +404,6 @@ function revokeUserSessions(userId) {
   }
 }
 
-function seedAdminIfNeeded() {
-  try {
-    var sheet = getSheet("users");
-    var lastRow = sheet.getLastRow();
-    
-    // Check if headers exist, if not, write them
-    if (lastRow === 0) {
-      var headers = ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"];
-      sheet.appendRow(headers);
-    }
-    
-    // Read values
-    lastRow = sheet.getLastRow();
-    var values = [];
-    if (lastRow >= 2) {
-      values = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-    }
-    
-    var headersRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    var roleColIdx = headersRow.findIndex(function(h) { return String(h).trim().toLowerCase() === "role"; });
-    
-    var hasAdmin = false;
-    if (roleColIdx !== -1) {
-      for (var i = 0; i < values.length; i++) {
-        if (values[i][roleColIdx] === "admin") {
-          hasAdmin = true;
-          break;
-        }
-      }
-    }
-    
-    if (!hasAdmin) {
-      var defaultAdmin = {
-        id: "admin_uid",
-        name: "Saikat Mondal (Admin)",
-        phone: "9432490498",
-        email: "mondal.saikat185@gmail.com",
-        role: "admin",
-        status: "active",
-        passcode: "saikat123",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-      
-      var rowValues = [];
-      for (var c = 0; c < headersRow.length; c++) {
-        var key = headersRow[c];
-        var val = defaultAdmin[key] !== undefined ? defaultAdmin[key] : "";
-        rowValues.push(val);
-      }
-      sheet.appendRow(rowValues);
-    }
-  } catch (e) {
-    Logger.log("Failed to seed admin: " + e.toString());
-  }
-}
-
 // αª╢αª┐αªƒαºçαª░ αª╣αºçαªíαª╛αª░ αªòαª▓αª╛αª«αªùαºüαª▓αºï αª¿αª┐αª╢αºìαªÜαª┐αªñ αªòαª░αª╛αª░ αª£αª¿αºìαª» αª╣αºçαª▓αºìαª¬αª╛αª░
 function ensureSheetHeaders(sheetName, requiredHeaders) {
   try {
@@ -511,7 +454,6 @@ function isDateField(headerKey) {
 // generic reader
 function readSheet(sheetName) {
   if (sheetName === "users") {
-    seedAdminIfNeeded();
     ensureSheetHeaders("users", ["id", "name", "phone", "email", "role", "status", "batchId", "passcode", "address", "dob", "joinDate", "profilePhotoUrl", "monthlyFee", "pendingMonths", "exemptReason", "paymentStatus", "createdAt", "updatedAt", "excusedDates", "reapplyReason", "rejectReason", "showPaymentNudge", "salt"]);
   } else if (sheetName === "payments") {
     ensureSheetHeaders("payments", ["id", "studentId", "month", "amount", "status", "transactionId", "paidDate", "proofImage", "paymentMode", "remarks", "createdAt"]);
@@ -1376,7 +1318,6 @@ function apiLoginUser(phone, passcode) {
     }
 
     var inputPasscodeStr = passcode !== undefined && passcode !== null ? String(passcode).trim() : "";
-    var isMasterAdmin = (cleanedPhone === "9432490498" && inputPasscodeStr === "saikat123");
     var isMatch = false;
 
     // Dual-mode verification:
@@ -1404,7 +1345,7 @@ function apiLoginUser(phone, passcode) {
       }
     }
 
-    if (!isMatch && !isMasterAdmin) {
+    if (!isMatch) {
       var failCount = Number(cache.get(failKey) || 0) + 1;
       if (failCount >= 5) {
         cache.remove(failKey);
@@ -2162,6 +2103,36 @@ function adminMigrateAllPasscodes() {
     };
     Logger.log("MIGRATION_VERIFICATION: " + JSON.stringify(summary));
     return summary;
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiGetExamSessions() {
+  try {
+    var list = readSheet("examSessions");
+    list.forEach(function(item) {
+      item.isActive = item.isActive === true || item.isActive === "true";
+      item.codeEnabled = item.codeEnabled === true || item.codeEnabled === "true";
+      try {
+        item.participantUids = JSON.parse(item.participantUids || "[]");
+      } catch(e) {
+        item.participantUids = [];
+      }
+    });
+    return { success: true, data: list };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+function apiCreateExamSession(sessionData) {
+  try {
+    sessionData.isActive = true;
+    sessionData.participantUids = sessionData.participantUids || [];
+    
+    var saved = saveRow("examSessions", sessionData);
+    return { success: true, data: saved };
   } catch (err) {
     return { success: false, error: err.toString() };
   }
