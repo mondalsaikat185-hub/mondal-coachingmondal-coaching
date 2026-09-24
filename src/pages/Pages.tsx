@@ -8,6 +8,7 @@ import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { getAllAttendanceForBatch } from '../lib/exam-session-utils';
 import { formatDateOnlySafe } from '../lib/utils';
 import { showToast } from '../lib/toast';
+import { confirmAsync } from '../lib/confirmDialog';
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -1996,7 +1997,7 @@ export function AdminPayments() {
               </span>
               <button 
                 onClick={async () => {
-                  if (window.confirm(`${s.fullName || s.email}-কে পেমেন্ট অ্যালার্ট পাঠাতে চান?`)) {
+                  if (await confirmAsync(`${s.fullName || s.email}-কে পেমেন্ট অ্যালার্ট পাঠাতে চান?`)) {
                     try {
                       const apiModule = await import('../lib/api');
                       await apiModule.api.saveUser({ id: s.id || (s as any).uid, forcePaymentNudge: true } as any);
@@ -2021,7 +2022,7 @@ export function AdminPayments() {
             {s.forcePaymentNudge && (
               <button 
                 onClick={async () => {
-                  if (window.confirm(`অ্যালার্টটি কি রিমুভ করতে চান?`)) {
+                  if (await confirmAsync(`অ্যালার্টটি কি রিমুভ করতে চান?`)) {
                     const apiModule = await import('../lib/api');
                     await apiModule.api.saveUser({ id: s.id || (s as any).uid, forcePaymentNudge: false } as any);
                     const newSt = [...students];

@@ -704,7 +704,7 @@ function TopNav() {
   }, []);
 
   const handleForceClearPwaCache = async () => {
-    if (confirm("অ্যাপ সম্পূর্ণ রিফ্রেশ করবেন? নতুন আপডেট লোড হবে, লগইন থাকবে।")) {
+    if (await confirmAsync("অ্যাপ সম্পূর্ণ রিফ্রেশ করবেন? নতুন আপডেট লোড হবে, লগইন থাকবে।")) {
       setShowDropdown(false);
       await fullResetKeepLogin();
     }
@@ -907,7 +907,7 @@ function TopNav() {
                       onClick={handleForceClearPwaCache}
                       className="w-full text-left px-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center gap-2 font-bold text-sm uppercase text-orange-600 dark:text-orange-400 border-t border-b border-zinc-100 dark:border-zinc-800"
                     >
-                      <RefreshCw className="w-4 h-4 animate-spin" /> Reset Cache
+                      <RefreshCw className="w-4 h-4" /> Reset Cache
                     </button>
                     <button
                       onClick={() => {
@@ -2394,6 +2394,7 @@ function GlobalAlert() {
 
 import { ReloadPrompt } from "./components/ReloadPrompt";
 import { fullResetKeepLogin } from "./lib/autoUpdate";
+import { confirmAsync } from './lib/confirmDialog';
 import { InstallPrompt } from "./components/InstallPrompt";
 
 export default function App() {

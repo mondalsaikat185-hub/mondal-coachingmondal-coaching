@@ -7,6 +7,7 @@ import { safeToDate } from '../lib/utils';
 import { useAuth } from '../components/AuthProvider';
 import { getLocalSwr, getExamOutbox } from '../lib/cache';
 import { showToast } from '../lib/toast';
+import { confirmAsync } from '../lib/confirmDialog';
 
 export function AdminResults() {
   const { user } = useAuth();
@@ -143,7 +144,7 @@ export function AdminResults() {
 
   const handleDeleteSelected = async () => {
     if (selectedIds.size === 0) return;
-    if (!window.confirm(`Are you sure you want to permanently delete ${selectedIds.size} result(s)? This action cannot be undone.`)) return;
+    if (!await confirmAsync(`Are you sure you want to permanently delete ${selectedIds.size} result(s)? This action cannot be undone.`)) return;
     
     const idsArray = Array.from(selectedIds) as string[];
     const prevResults = results;

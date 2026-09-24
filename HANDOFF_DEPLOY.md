@@ -53,3 +53,14 @@ tsc --noEmit = 0.
 2. Verify dist/version.json exists and its build id also appears inside dist/index.html.
 3. git push origin payments-upi. Wait for the Vercel preview of THIS commit (not a redeploy of an old one). Verify with `vercel inspect`: commit = this commit, bundle contains only AKfycbxLbQVY…, and <preview>/version.json returns {"build": "..."}.
 4. Give owner the preview URL.
+
+## ROUND 4 (Claude, after owner test of adet0chyh) — uncommitted
+ROOT CAUSE of "some deletes / Reset Cache / payment alert do nothing": browser window.confirm() is silently blocked on phones / installed apps → returns false.
+- src/lib/confirmDialog.ts (NEW) — in-app confirmAsync(). Replaced ALL 6 confirm() calls (AdminLibrary ×2, AdminResults, Pages ×2 [payment alert send/remove], App.tsx Reset Cache). Reset Cache icon no longer spins.
+- src/lib/api.ts — admin notifications read from GAS (VPS copy excludes student→admin messages, so admin was missing them); students still use VPS. deleteNotification clears cached list. "Recently deleted" filter (3 min) so a stale VPS copy can't make deleted library items / notifications reappear.
+- src/pages/StudentLibrary.tsx — Take Exam: instant spinner "খুলছে…", repeated taps ignored.
+tsc --noEmit = 0.
+
+## ROUND 4 deploy
+1. git add src/lib/confirmDialog.ts src/pages/AdminLibrary.tsx src/pages/AdminResults.tsx src/pages/Pages.tsx src/App.tsx src/lib/api.ts src/pages/StudentLibrary.tsx HANDOFF_DEPLOY.md && git commit -m "fix: in-app confirm (native confirm blocked on phones), admin notifications from GAS, hide recently deleted, Take Exam feedback" && npm run lint && npm run build && git push origin payments-upi
+2. Wait for the Vercel preview of THIS commit; verify commit, only AKfycbxLbQVY… in bundle, /version.json works. Give owner the URL.

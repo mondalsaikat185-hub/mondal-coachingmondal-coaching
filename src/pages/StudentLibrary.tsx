@@ -1242,6 +1242,8 @@ export function StudentLibrary() {
 
 function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChunked, onDownloadUrl, downloadingId, scheduledStartTimeMap }: { key?: React.Key, item: LibraryItem, onPreview: () => void, formatDate: (ts: any) => string, showPath?: boolean, items?: LibraryItem[], onDownloadChunked?: () => void, onDownloadUrl?: () => void, downloadingId?: string | null, scheduledStartTimeMap?: Record<string, string> }) {
    const { user } = useAuth();
+   // "Take Exam" gives instant feedback and ignores repeated taps while the exam is loading.
+   const [opening, setOpening] = useState(false);
    // Re-draw when a background exam submission finishes syncing (clears "sync বাকি" badge).
    const [, setOutboxTick] = useState(0);
    useEffect(() => {
@@ -1335,11 +1337,16 @@ function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChun
               </button>
            ) : item.type === 'exam' ? (
               <button
-                onClick={onPreview}
-                className={`flex items-center gap-1 hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] px-4 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold text-xs whitespace-nowrap ${isLocked ? 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-500' : 'bg-blue-100 text-blue-900'}`}
+                onClick={() => {
+                  if (opening) return;
+                  if (!isLocked) { setOpening(true); setTimeout(() => setOpening(false), 6000); }
+                  onPreview();
+                }}
+                disabled={opening}
+                className={`${opening ? 'opacity-70 ' : ''}flex items-center gap-1 hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] px-4 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold text-xs whitespace-nowrap ${isLocked ? 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-500' : 'bg-blue-100 text-blue-900'}`}
               >
-                 {isLocked ? '🔒 Locked' : <BookOpen className="w-3.5 h-3.5" />} 
-                 {isLocked ? 'Locked' : 'Take Exam'}
+                 {isLocked ? '🔒 Locked' : opening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookOpen className="w-3.5 h-3.5" />} 
+                 {isLocked ? 'Locked' : opening ? 'খুলছে…' : 'Take Exam'}
               </button>
            ) : null}
          </div>

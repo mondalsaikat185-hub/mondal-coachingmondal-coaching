@@ -6,6 +6,7 @@ import { Loader2, Plus, Eye, Share2, Trash2, FileText, FileDown, BookOpen, Folde
 import { useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { showToast } from '../lib/toast';
+import { confirmAsync } from '../lib/confirmDialog';
 
 export interface LibraryItem {
   id: string;
@@ -260,7 +261,7 @@ export function AdminLibrary() {
      // If it's an exam, try auto-extraction
      setAutoExtractMsg('Extracting...');
      const reader = new FileReader();
-     reader.onload = (evo) => {
+     reader.onload = async (evo) => {
         const text = evo.target?.result as string;
 
         if (uploadFile.name.endsWith('.json')) {
@@ -352,7 +353,7 @@ export function AdminLibrary() {
             }
           } else {
              // fallback to function eval
-             if (!window.confirm("Could not securely extract data. The system must execute the file as JavaScript to parse it. Only proceed if you trust this file completely. Do you want to proceed?")) {
+             if (!await confirmAsync("Could not securely extract data. The system must execute the file as JavaScript to parse it. Only proceed if you trust this file completely. Do you want to proceed?")) {
                  setAutoExtractMsg('Extraction aborted for security.');
                  return;
              }
@@ -639,7 +640,7 @@ export function AdminLibrary() {
      if (submitting || deletingItemId) return; // block double-taps while a delete is running
      const target = items.find(i => i.id === id);
      const label = target?.title ? `"${String(target.title).slice(0, 40)}"` : 'এটি';
-     if (!window.confirm(`${label} স্থায়ীভাবে মুছে ফেলবেন? (ফোল্ডার হলে ভেতরের সব কিছুও মুছে যাবে)`)) return;
+     if (!await confirmAsync(`${label} স্থায়ীভাবে মুছে ফেলবেন? (ফোল্ডার হলে ভেতরের সব কিছুও মুছে যাবে)`)) return;
      const snapshot = items;
      try {
        setSubmitting(true);

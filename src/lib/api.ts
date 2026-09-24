@@ -685,6 +685,19 @@ function removeLibraryItemCache(itemId: string): void {
 // 3. EXPORTED UINFIED API ENGINE
 // =========================================================================
 
+// Items deleted in this session are hidden for 3 minutes, so a slightly stale VPS copy can't make them reappear.
+const recentlyDeletedIds = new Map<string, number>();
+function markDeleted(ids: string[]): void {
+  const until = Date.now() + 3 * 60 * 1000;
+  ids.forEach(id => { if (id) recentlyDeletedIds.set(String(id), until); });
+}
+function dropDeleted<T>(arr: T[]): T[] {
+  if (!Array.isArray(arr) || recentlyDeletedIds.size === 0) return arr;
+  const now = Date.now();
+  recentlyDeletedIds.forEach((until, id) => { if (until < now) recentlyDeletedIds.delete(id); });
+  return arr.filter((x: any) => !(x && recentlyDeletedIds.has(String(x.id))));
+}
+
 export const api = {
   // Check if we are running in production Apps Script web app
   isProduction: () => USE_REAL_API,
@@ -1061,7 +1074,7 @@ export const api = {
   getLibrary: async (userId?: string): Promise<LibraryItem[]> => {
     if (USE_REAL_API) {
       if (globalApiCache.library && Date.now() - globalApiCache.library.time < CACHE_TTL) {
-        return globalApiCache.library.data;
+        return dropDeleted(globalApiCache.library.data);
       }
       let data: LibraryItem[] | null = null;
       let source = "GAS";
@@ -1074,6 +1087,7 @@ export const api = {
         data = await runGasMethod<LibraryItem[]>("apiGetLibrary");
         source = "GAS (fallback)";
       }
+      data = dropDeleted(data);
       console.log(`[API] getLibrary loaded from ${source} (${data.length} items)`);
 
       globalApiCache.library = { data, time: Date.now() };
@@ -1169,7 +1183,9 @@ export const api = {
     globalApiCache.library = null;
     removeLibraryItemCache(itemId);
     if (USE_REAL_API) {
-      return runGasMethod<boolean>("apiDeleteLibraryItem", itemId);
+      const ok = await runGasMethod<boolean>("apiDeleteLibraryItem", itemId);
+      markDeleted([itemId]);
+      return ok;
     } else {
       const db = getMockDB();
       const initialLength = db.library.length;
@@ -1191,7 +1207,9 @@ export const api = {
     globalApiCache.library = null;
     globalApiCache.batches = null;
     if (USE_REAL_API) {
-      return runGasMethod<{ success: boolean; count?: number }>("apiDeleteMultipleLibraryItems", itemIds);
+      const res = await runGasMethod<{ success: boolean; count?: number }>("apiDeleteMultipleLibraryItems", itemIds);
+      markDeleted(itemIds);
+      return res;
     } else {
       const db = getMockDB();
       const initialLength = db.library.length;
@@ -1468,12 +1486,15 @@ export const api = {
   getNotifications: async (userId?: string): Promise<NotificationItem[]> => {
     if (USE_REAL_API) {
       if (globalApiCache.notifications && Date.now() - globalApiCache.notifications.time < CACHE_TTL) {
-        return globalApiCache.notifications.data;
+        return dropDeleted(globalApiCache.notifications.data);
       }
       let data: NotificationItem[] | null = null;
       let source = "GAS";
 
-      const vpsData = await fetchFromVps<NotificationItem[]>("/notifications");
+      // Admin must see ALL notifications incl. student→admin messages, which the VPS copy excludes → admin reads from GAS.
+      let isAdminUser = false;
+      try { isAdminUser = JSON.parse(localStorage.getItem("mc_session_user") || "{}").role === "admin"; } catch (e) {}
+      const vpsData = isAdminUser ? null : await fetchFromVps<NotificationItem[]>("/notifications");
       if (vpsData && Array.isArray(vpsData)) {
         data = vpsData;
         source = "VPS (mc-api)";
@@ -1481,6 +1502,7 @@ export const api = {
         data = await runGasMethod<NotificationItem[]>("apiGetNotifications");
         source = "GAS (fallback)";
       }
+      data = dropDeleted(data);
       console.log(`[API] getNotifications loaded from ${source} (${data.length} notifications)`);
 
       globalApiCache.notifications = { data, time: Date.now() };
@@ -1529,8 +1551,11 @@ export const api = {
   },
 
   deleteNotification: async (notifId: string): Promise<boolean> => {
+    globalApiCache.notifications = null;
     if (USE_REAL_API) {
-      return runGasMethod<boolean>("apiDeleteNotification", notifId);
+      const ok = await runGasMethod<boolean>("apiDeleteNotification", notifId);
+      markDeleted([notifId]);
+      return ok;
     } else {
       const db = getMockDB();
       const initialLength = db.notifications.length;
