@@ -2215,6 +2215,52 @@ function apiDeleteMultipleExamResults(resultIds) {
   }
 }
 
+function adminCleanupTestData() {
+  try {
+    var pBefore = readSheet("payments").length;
+    var eBefore = readSheet("examResults").length;
+
+    // 1. Delete test payment pay_1f357878
+    var deletedPayment = deleteRow("payments", "pay_1f357878");
+
+    // 2. Delete test exam results for test student
+    var testStudentId = "901f0e79-6fb1-4cc1-82d0-abc77e3cad3a";
+    var allExams = readSheet("examResults");
+    var testExamIds = [];
+    for (var i = 0; i < allExams.length; i++) {
+      if (allExams[i] && String(allExams[i].studentId).trim() === testStudentId) {
+        testExamIds.push(allExams[i].id);
+      }
+    }
+    var deletedExamsCount = 0;
+    if (testExamIds.length > 0) {
+      var delRes = apiDeleteMultipleExamResults(testExamIds);
+      deletedExamsCount = (delRes && delRes.count) ? delRes.count : 0;
+    }
+
+    // 3. Unlock test student in CacheService
+    var cache = CacheService.getScriptCache();
+    cache.remove("login_lock_9999999901");
+    cache.remove("login_fail_9999999901");
+
+    var pAfter = readSheet("payments").length;
+    var eAfter = readSheet("examResults").length;
+
+    return {
+      success: true,
+      deletedPayment: deletedPayment,
+      deletedExams: deletedExamsCount,
+      paymentsCountBefore: pBefore,
+      paymentsCountAfter: pAfter,
+      examResultsCountBefore: eBefore,
+      examResultsCountAfter: eAfter,
+      testStudentUnlocked: true
+    };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
 function apiGetAttendance() {
   try {
     return { success: true, data: readSheet("attendance") };
@@ -2444,7 +2490,8 @@ function doPost(e) {
       "apiCreateExamSession",
       "apiEndExamSession",
       "adminMigrateAllPasscodes",
-      "adminHashTestStudentOnly"
+      "adminHashTestStudentOnly",
+      "adminCleanupTestData"
     ];
 
     var session = null;
