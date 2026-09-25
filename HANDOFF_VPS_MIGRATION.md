@@ -76,3 +76,14 @@ mc-api2-187-127-191-163.sslip.io {
 2. Script property `V2_IMPORT_URL` = `https://mc-api2-187-127-191-163.sslip.io/import`.
 3. Tell Saikat to open the Apps Script editor, select function `exportAllToVpsV2`, press Run, approve if asked, and copy the two log lines "SHEET COUNTS" and "VPS COUNTS". (Or run it yourself via clasp/API if you can.)
 4. Report both lines. They must match for every sheet. STOP.
+
+---
+## M3 RESULT (2026-09-25 05:27): all 9 sheets copied, counts match exactly
+users 92, batches 7, library 1140, payments 184, notifications 4, examSessions 57, examResults 130, attendance 605, sessions 183.
+
+## ROUND M4 — preview on the new backend
+1. Vercel → Project → Settings → Environment Variables: add `VITE_BACKEND_V2_URL` = `https://mc-api2-187-127-191-163.sslip.io`, scope = Preview, branch = `payments-upi` ONLY. (Do NOT add to Production.)
+2. Trigger a new preview build of the latest `payments-upi` commit (empty commit is fine: `git commit --allow-empty -m "build: preview on mc-api v2"; git push origin payments-upi`).
+3. Verify the preview JS bundle contains `mc-api2-187-127-191-163.sslip.io`.
+4. From the preview origin, test (curl with Origin header is fine): `POST https://mc-api2-187-127-191-163.sslip.io/rpc` body `{"action":"apiGetAnnouncement","args":[],"token":"<public token>"}` → must return 401 JSON (needs login), proving CORS+rpc work. Do not print tokens.
+5. Report: preview URL + commit hash. STOP.
