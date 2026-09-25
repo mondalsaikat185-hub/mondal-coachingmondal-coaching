@@ -31,15 +31,15 @@ export function getMonthPickerList(): string[] {
   // 1. CURRENT month+year first!
   list.push(`${monthNames[curM]} ${curY}`);
 
-  // 2. Upcoming next 2 months (for advance payments)
-  for (let offset = 1; offset <= 2; offset++) {
-    const d = new Date(curY, curM + offset, 1);
+  // 2. Previous months right below it (newest first, last 24 months)
+  for (let offset = 1; offset <= 24; offset++) {
+    const d = new Date(curY, curM - offset, 1);
     list.push(`${monthNames[d.getMonth()]} ${d.getFullYear()}`);
   }
 
-  // 3. Older months in descending order (last 24 months)
-  for (let offset = 1; offset <= 24; offset++) {
-    const d = new Date(curY, curM - offset, 1);
+  // 3. Next 2 months at the end (advance payment)
+  for (let offset = 1; offset <= 2; offset++) {
+    const d = new Date(curY, curM + offset, 1);
     list.push(`${monthNames[d.getMonth()]} ${d.getFullYear()}`);
   }
   return list;
@@ -51,7 +51,7 @@ export function validateConsecutiveRule(
   studentExcusedMonths: string | string[] = ''
 ): { valid: boolean; missingMonth?: string } {
   const START_YEAR = 2026;
-  const START_MONTH = 10; // October 2026 (1-indexed)
+  const START_MONTH = 9; // September 2026 (1-indexed)
 
   const monthNamesList = ["january","february","march","april","may","june","july","august","september","october","november","december"];
 
@@ -2264,9 +2264,7 @@ export function StudentPayments() {
 
   const toggleMonth = (m: string) => {
     if (selectedMonths.includes(m)) {
-      if (selectedMonths.length > 1) {
-        setSelectedMonths(selectedMonths.filter(x => x !== m));
-      }
+      setSelectedMonths(selectedMonths.filter(x => x !== m));
     } else {
       setSelectedMonths([...selectedMonths, m]);
     }
@@ -2317,7 +2315,7 @@ export function StudentPayments() {
     let finalUtr = '';
     if (mode === 'upi') {
       finalUtr = utrNumber.trim();
-      if (!finalUtr || !/^\d{12}$/.test(finalUtr)) {
+      if (finalUtr && !/^\d{12}$/.test(finalUtr)) {
         window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "সঠিক ১২ সংখ্যার UTR / ট্রানজাকশন নম্বর লিখুন (Must be exactly 12 numeric digits)." }));
         return;
       }
@@ -2471,12 +2469,12 @@ export function StudentPayments() {
                  পেমেন্ট অপশন লোড হচ্ছে...
                </div>
              ) : hasUpi ? (
-               <div className="flex border-2 border-zinc-900 dark:border-zinc-100 bg-zinc-200 dark:bg-zinc-800 p-1 gap-1">
+               <div className="flex p-1 gap-3">
                  <button
                    type="button"
                    onClick={() => setPaymentMode('upi')}
-                   className={`flex-1 py-2 font-black uppercase text-xs transition-colors ${
-                     paymentMode === 'upi' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'text-zinc-700 dark:text-zinc-300 hover:text-black'
+                   className={`flex-1 py-3 rounded-xl font-black uppercase text-sm transition-all active:translate-y-1 ${
+                     paymentMode === 'upi' ? 'bg-gradient-to-b from-violet-500 to-purple-700 text-white border-2 border-purple-900 shadow-[0_4px_0_0_#3b0764] -translate-y-0.5' : 'bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border-2 border-zinc-400 shadow-[0_3px_0_0_#a1a1aa]'
                    }`}
                  >
                    📱 Pay via UPI
@@ -2484,8 +2482,8 @@ export function StudentPayments() {
                  <button
                    type="button"
                    onClick={() => setPaymentMode('cash')}
-                   className={`flex-1 py-2 font-black uppercase text-xs transition-colors ${
-                     paymentMode === 'cash' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]' : 'text-zinc-700 dark:text-zinc-300 hover:text-black'
+                   className={`flex-1 py-3 rounded-xl font-black uppercase text-sm transition-all active:translate-y-1 ${
+                     paymentMode === 'cash' ? 'bg-gradient-to-b from-emerald-500 to-emerald-700 text-white border-2 border-emerald-900 shadow-[0_4px_0_0_#064e3b] -translate-y-0.5' : 'bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 border-2 border-zinc-400 shadow-[0_3px_0_0_#a1a1aa]'
                    }`}
                  >
                    💵 Pay in Cash
@@ -2534,7 +2532,7 @@ export function StudentPayments() {
                   {/* 12-Digit UTR Input */}
                   <div className="w-full border-t-2 border-zinc-200 dark:border-zinc-700 pt-3 text-left">
                      <label className="block text-xs font-black uppercase mb-1 dark:text-yellow-100">
-                        12-Digit UTR / Transaction ID <span className="text-red-600">*</span>
+                        12-Digit UTR / Transaction ID <span className="text-zinc-500 normal-case">(ঐচ্ছিক / Optional)</span>
                      </label>
                      <input
                         type="text"
@@ -2543,7 +2541,6 @@ export function StudentPayments() {
                         placeholder="12 সংখ্যার UTR নম্বর (e.g. 412345678901)"
                         maxLength={12}
                         className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm font-mono bg-white dark:bg-zinc-800 dark:text-white focus:outline-none"
-                        required
                      />
                      <p className="text-[10px] text-zinc-500 mt-1">পেমেন্ট করার পর UPI অ্যাপের রসিদ থেকে ১২ সংখ্যার UTR / Ref No বসান।</p>
                   </div>
@@ -2588,7 +2585,11 @@ export function StudentPayments() {
              <button
                type="submit"
                disabled={submitting || selectedMonths.length === 0}
-               className="mt-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-black uppercase text-xs px-4 py-4 hover:-translate-y-0.5 transition-transform border-2 border-transparent disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)]"
+               className={`mt-3 rounded-2xl text-white font-black uppercase text-sm px-4 py-5 border-2 transition-all active:translate-y-1.5 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 animate-[pulse_2.5s_ease-in-out_infinite] ${
+                 hasUpi && paymentMode === 'upi'
+                   ? 'bg-gradient-to-b from-fuchsia-500 via-purple-600 to-indigo-700 border-indigo-900 shadow-[0_6px_0_0_#1e1b4b,0_10px_18px_rgba(79,70,229,0.45)] active:shadow-[0_1px_0_0_#1e1b4b]'
+                   : 'bg-gradient-to-b from-lime-400 via-emerald-500 to-emerald-700 border-emerald-900 shadow-[0_6px_0_0_#064e3b,0_10px_18px_rgba(16,185,129,0.45)] active:shadow-[0_1px_0_0_#064e3b]'
+               }`}
              >
                {submitting ? (
                  <>

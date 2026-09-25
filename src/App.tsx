@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
+  Home,
 } from "lucide-react";
 import { api } from "./lib/api";
 import { getLocalSwr } from "./lib/cache";
@@ -831,7 +832,7 @@ function TopNav() {
   };
 
   return (
-    <nav className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b-2 border-zinc-900 dark:border-zinc-100 p-4 sticky top-0 z-10">
+    <nav className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b-2 border-zinc-900 dark:border-zinc-100 p-4 sticky top-0 z-40">
       <div className="font-black italic uppercase text-xs sm:text-base shrink-0">Tuition Portal</div>
       <div className="flex items-center gap-4">
         {user && (
@@ -847,17 +848,21 @@ function TopNav() {
         {user && user.role === "student" && (
           <Link
             to="/"
-            className="px-2.5 py-1 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 font-bold uppercase text-[10px] hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,1)] flex items-center gap-1"
+            aria-label="Home / হোম"
+            title="Home / হোম"
+            className="w-10 h-10 rounded-full flex items-center justify-center text-white bg-gradient-to-b from-orange-400 to-orange-600 border-2 border-orange-800 shadow-[0_4px_0_0_#7c2d12,0_6px_10px_rgba(0,0,0,0.35)] hover:from-orange-300 hover:to-orange-500 active:translate-y-1 active:shadow-[0_1px_0_0_#7c2d12] active:from-emerald-400 active:to-emerald-600 active:border-emerald-800 transition-all"
           >
-            Dashboard / ড্যাশবোর্ড
+            <Home className="w-5 h-5" strokeWidth={2.75} />
           </Link>
         )}
         {user && user.role === "admin" && (
           <Link
             to="/admin"
-            className="text-xs font-bold uppercase hover:underline text-emerald-600 dark:text-emerald-400"
+            aria-label="Home / হোম"
+            title="Home / হোম"
+            className="w-10 h-10 rounded-full flex items-center justify-center text-white bg-gradient-to-b from-orange-400 to-orange-600 border-2 border-orange-800 shadow-[0_4px_0_0_#7c2d12,0_6px_10px_rgba(0,0,0,0.35)] hover:from-orange-300 hover:to-orange-500 active:translate-y-1 active:shadow-[0_1px_0_0_#7c2d12] active:from-emerald-400 active:to-emerald-600 active:border-emerald-800 transition-all"
           >
-            Admin Dashboard
+            <Home className="w-5 h-5" strokeWidth={2.75} />
           </Link>
         )}
         <button

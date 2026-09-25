@@ -724,8 +724,8 @@ function apiSubmitPaymentRequest(paymentData, session) {
     const txnId = String(paymentData.transactionId || "").trim();
     const allPayments = readSheet("payments");
     if (paidVia === "upi") {
-      if (!/^\d{12}$/.test(txnId)) return { success: false, error: "সঠিক ১২ সংখ্যার UTR নম্বর আবশ্যক (12-digit numeric UTR required)" };
-      if (allPayments.find(p => p.transactionId && String(p.transactionId).trim() === txnId)) return { success: false, error: "এই UTR নম্বরটি ইতিমধ্যে ব্যবহৃত হয়েছে (Duplicate UTR)" };
+      if (txnId && !/^\d{12}$/.test(txnId)) return { success: false, error: "সঠিক ১২ সংখ্যার UTR নম্বর আবশ্যক (12-digit numeric UTR required)" };
+      if (txnId && allPayments.find(p => p.transactionId && String(p.transactionId).trim() === txnId)) return { success: false, error: "এই UTR নম্বরটি ইতিমধ্যে ব্যবহৃত হয়েছে (Duplicate UTR)" };
     }
     const reqMonths = monthStr.split(/[,;\n]+/).map(m => m.trim()).filter(Boolean);
     const covered = {};
@@ -739,7 +739,7 @@ function apiSubmitPaymentRequest(paymentData, session) {
       String(stu.excusedMonths || stu.excusedDates || "").split(/[,;\n]+/).forEach(m => { const ym = parseYearMonth(m.trim()); if (ym) covered[ym.y + "-" + ym.m] = true; });
     }
     reqMonths.forEach(m => { const ym = parseYearMonth(m); if (ym) covered[ym.y + "-" + ym.m] = true; });
-    const START_Y = 2026, START_M = 10;
+    const START_Y = 2026, START_M = 9;
     for (const rm of reqMonths) {
       const t = parseYearMonth(rm);
       if (!t) continue;

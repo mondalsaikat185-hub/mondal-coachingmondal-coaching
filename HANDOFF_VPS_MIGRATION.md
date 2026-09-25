@@ -87,3 +87,12 @@ users 92, batches 7, library 1140, payments 184, notifications 4, examSessions 5
 3. Verify the preview JS bundle contains `mc-api2-187-127-191-163.sslip.io`.
 4. From the preview origin, test (curl with Origin header is fine): `POST https://mc-api2-187-127-191-163.sslip.io/rpc` body `{"action":"apiGetAnnouncement","args":[],"token":"<public token>"}` → must return 401 JSON (needs login), proving CORS+rpc work. Do not print tokens.
 5. Report: preview URL + commit hash. STOP.
+
+---
+## ROUND R7 — payment form + home button (code already edited by Claude; do NOT change code)
+Files: src/App.tsx, src/pages/Pages.tsx, vps-api-v2/api.js
+Changes: consecutive rule starts September 2026 (client+server); UTR optional (if typed must be 12 digits; duplicate check only when given); current month preselected but can be unselected; month list = current, then previous months, then next 2; colourful 3D UPI/Cash tabs + submit button; round 3D Home button replaces "Dashboard" text (student + admin), header z-40.
+1. `cd vps-api-v2 && node test/selftest.js` → ALL TESTS PASSED. Root: `npm run lint && npm run build` → pass.
+2. `git add src/App.tsx src/pages/Pages.tsx vps-api-v2/api.js HANDOFF_VPS_MIGRATION.md && git commit -m "feat: optional UTR, Sept-2026 rule, month order, 3D payment buttons, home button" && git push origin payments-upi`
+3. VPS: `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js` then `cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2`. curl /health → counts must be same as before or higher (never lower), importEnabled false.
+4. Report preview URL of the new commit + /health output. STOP (production merge only after Saikat checks the preview).
