@@ -2650,6 +2650,12 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    if (PropertiesService.getScriptProperties().getProperty("APP_MOVED_TO_VPS") === "1") {
+      return ContentService.createTextOutput(JSON.stringify({ success: false, code: 410,
+        error: "অ্যাপ আপডেট হয়েছে। অ্যাপটি পুরো বন্ধ করে আবার খুলুন। (App updated - please close and reopen)" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     var SECURITY_TOKEN = "MondalCoachingSecureToken2026!";
 
     var func = (typeof this[action] === 'function') ? this[action] : (typeof globalThis !== 'undefined' && typeof globalThis[action] === 'function' ? globalThis[action] : null);
