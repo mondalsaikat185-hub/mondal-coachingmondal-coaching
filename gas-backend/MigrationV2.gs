@@ -101,3 +101,8 @@ function handleRelayFromVps_(req) {
   }
   return { success: false, error: "unknown relay op", code: 400 };
 }
+
+function setAppMovedToVps() {
+  PropertiesService.getScriptProperties().setProperty("APP_MOVED_TO_VPS", "1");
+  Logger.log("APP_MOVED_TO_VPS is now: " + PropertiesService.getScriptProperties().getProperty("APP_MOVED_TO_VPS"));
+}
