@@ -419,10 +419,16 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
   const [batches, setBatches] = useState<any[]>([]);
   const [photoNote, setPhotoNote] = useState("");
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [batchLoading, setBatchLoading] = useState(true);
+  const [batchErr, setBatchErr] = useState("");
 
   useEffect(() => {
     // test batches are hidden from new students
-    api.getBatches().then(list => setBatches((list || []).filter((b: any) => !/test/i.test(String(b.name || ''))))).catch(console.error);
+    setBatchErr("");
+    api.getPublicBatches()
+      .then(list => { const l = (list || []).filter((b: any) => !/test/i.test(String(b.name || ''))); setBatches(l); if (!l.length) setBatchErr("কোনো batch পাওয়া যায়নি।"); })
+      .catch(() => setBatchErr("Batch-এর তালিকা আনা গেল না। ইন্টারনেট দেখে আবার চেষ্টা করুন।"))
+      .finally(() => setBatchLoading(false));
   }, []);
 
   const set = (k: string, v: string) => setFormData(f => ({ ...f, [k]: v }));
@@ -518,7 +524,8 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
             <div>
               <label className={lab}>Select Batch *</label>
               <div className="grid gap-2">
-                {batches.length === 0 && <div className="text-sm text-zinc-500"><Loader2 className="w-4 h-4 animate-spin inline" /> Loading…</div>}
+                {batchLoading && <div className="text-sm text-zinc-500"><Loader2 className="w-4 h-4 animate-spin inline" /> Loading…</div>}
+                {!batchLoading && batchErr && <div className="text-sm font-semibold text-rose-600 bn">{batchErr}</div>}
                 {batches.map(b => {
                   const on = selected.includes(b.id);
                   return (
@@ -898,7 +905,7 @@ function TopNav() {
       {user && user.role === "student" && <StudentBottomNav />}
       {user && (user.role === "student" || user.role === "admin") && <WelcomeSplash name={user.fullName || user.displayName} admin={user.role === "admin"} />}
       {user && user.role === "student" ? (
-        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mc-open-profile"))} className="flex items-center gap-2 shrink-0 min-w-0 text-left" aria-label="My profile">
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mc-open-profile"))} className="mc-nofx flex items-center gap-2 shrink-0 min-w-0 text-left" aria-label="My profile">
           <span className="w-9 h-9 rounded-xl overflow-hidden grid place-items-center text-white font-extrabold bg-gradient-to-b from-amber-400 to-amber-600 shadow-[0_3px_0_0_#b45309] shrink-0">
             {(user as any).profilePhotoUrl ? <img src={(user as any).profilePhotoUrl} alt="" className="w-full h-full object-cover" /> : String(user.fullName || user.displayName || "S").charAt(0)}
           </span>
@@ -917,16 +924,6 @@ function TopNav() {
               [{user.role}]
             </span>
           </div>
-        )}
-        {user && user.role === "admin" && (
-          <Link
-            to="/admin"
-            aria-label="Home / হোম"
-            title="Home / হোম"
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white bg-gradient-to-b from-orange-400 to-orange-600 border-2 border-orange-800 shadow-[0_4px_0_0_#7c2d12,0_6px_10px_rgba(0,0,0,0.35)] hover:from-orange-300 hover:to-orange-500 active:translate-y-1 active:shadow-[0_1px_0_0_#7c2d12] active:from-emerald-400 active:to-emerald-600 active:border-emerald-800 transition-all"
-          >
-            <Home className="w-5 h-5" strokeWidth={2.75} />
-          </Link>
         )}
         <ShareAppButton colorful />
         <button

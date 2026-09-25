@@ -177,6 +177,17 @@ const PUB = 'MondalCoachingSecureToken2026!';
     r = await call('apiLoginUser', ['9000000001', 'adminpass']); const ad3 = r.data.data.sessionToken;
     r = await call('apiDeleteUser', [nu.id], ad3); assert.equal(r.success, true);
     assert.equal(S.findRowById('users', nu.id), null); assert.equal(S.findRowById('notifications', 'msgNew'), null);
+    r = await call('apiGetPublicBatches', []);
+    assert.equal(r.success, true); assert.ok(r.data.data.length >= 1); assert.equal(r.data.data[0].assignedItemsMap, undefined);
+    assert.ok(r.data.data.every(b => !/test/i.test(b.name)));
+    r = await call('apiRegisterUser', [{ name: 'Bad', phone: '9876500002', batchId: 'nope' }]); assert.equal(r.success, false);
+    r = await call('apiRegisterUser', [{ name: 'Two', phone: '9876500003', batchId: 'b3, B2x' }]); assert.equal(r.success, true, r.error);
+    // batch delete removes its only-batch students (with photos) and the batch's notifications
+    S.saveRow('batches', { id: 'bDel', name: 'Delete Me', assignedItemsMap: {}, scheduledStartTimeMap: {} });
+    S.saveRow('users', { id: 'uDel', name: 'Gone', phone: '9876500009', role: 'student', status: 'active', batchId: 'bDel', profilePhotoUrl: small });
+    S.saveRow('notifications', { id: 'nDel', batchId: 'bDel', type: 'exam_request' });
+    r = await call('apiDeleteBatch', ['bDel'], ad3); assert.equal(r.success, true);
+    assert.equal(S.findRowById('users', 'uDel'), null); assert.equal(S.findRowById('notifications', 'nDel'), null);
     console.log('profile photo / register / last exam tests OK');
   }
 

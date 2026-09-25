@@ -102,11 +102,13 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.01em; text
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  filter: drop-shadow(0 0 2px rgba(255,184,64,.45));
+  filter: drop-shadow(0 0 1.5px rgba(255,184,64,.5));
   transition: opacity .3s ease, inset .3s ease, padding .3s ease, filter .3s ease;
-  animation: mc-spin 6s linear infinite; animation-play-state: paused;
+  animation: mc-spin 5s linear infinite; animation-play-state: paused;
 }
-.dark .mc-fx::after { opacity: .7; }
+/* colours keep circulating around the border (only for items on screen, to save battery) */
+.mc-fx.mc-vis::after { animation-play-state: running; }
+.dark .mc-fx::after { opacity: .75; }
 .mc-fx.mc-hot::after {
   opacity: 1; inset: -2px; padding: 2px; animation-duration: 2.8s; animation-play-state: running;
   filter: drop-shadow(0 0 4px rgba(255,184,64,.95)) drop-shadow(0 0 10px rgba(255,90,95,.55)) drop-shadow(0 0 16px rgba(91,127,255,.4));

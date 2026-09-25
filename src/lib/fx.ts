@@ -12,6 +12,7 @@ function pick(target: EventTarget | null): HTMLElement | null {
   // big page panels do not lift (only cards, tiles, buttons, options)
   if (r.width * r.height > window.innerWidth * window.innerHeight * 0.45 || r.height > window.innerHeight * 0.7) return null;
   if (!el.classList.contains('mc-fx')) {
+    if (io) io.observe(el);
     const cs = getComputedStyle(el);
     if (cs.position === 'static') el.classList.add('mc-rel');
     if (r.width < 64 && r.height < 64) el.classList.add('mc-small');
@@ -19,6 +20,11 @@ function pick(target: EventTarget | null): HTMLElement | null {
   }
   return el;
 }
+
+// rings animate only while the item is on screen
+const io: IntersectionObserver | null = typeof IntersectionObserver !== 'undefined'
+  ? new IntersectionObserver(entries => entries.forEach(en => (en.target as HTMLElement).classList.toggle('mc-vis', en.isIntersecting)), { rootMargin: '60px' })
+  : null;
 
 let hot: HTMLElement | null = null;
 function setHot(el: HTMLElement | null) {

@@ -889,6 +889,15 @@ export const api = {
     }
   },
 
+  // no login needed: batch names for the New Joining form
+  getPublicBatches: async (): Promise<{ id: string; name: string }[]> => {
+    if (USE_REAL_API) {
+      const list = await runGasMethod<{ id: string; name: string }[]>("apiGetPublicBatches");
+      return Array.isArray(list) ? list : [];
+    }
+    return getMockDB().batches.map((b: any) => ({ id: b.id, name: b.name }));
+  },
+
   registerUser: async (userData: Partial<UserProfile>): Promise<{ success: boolean; status: string; message?: string; data?: any }> => {
     globalApiCache.users = null;
     if (USE_REAL_API) {

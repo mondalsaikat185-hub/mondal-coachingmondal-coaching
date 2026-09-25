@@ -293,6 +293,11 @@ function apiRegisterUser(userData) {
     const pick = {};
     for (const k of ["name", "phone", "email", "address", "batchId", "joinDate", "dob", "profilePhotoUrl"]) if (userData[k] !== undefined) pick[k] = String(userData[k]).slice(0, k === "profilePhotoUrl" ? PHOTO_MAX_CHARS : 500);
     userData = pick;
+    // every chosen batch must exist
+    const known = new Set(readSheet("batches").map(b => String(b.id)));
+    const chosen = String(userData.batchId || '').split(',').map(x => x.trim()).filter(Boolean);
+    if (!chosen.length || chosen.some(id => !known.has(id))) return { success: false, error: "ব্যাচ নির্বাচন ঠিক হয়নি, আবার বেছে নিন।" };
+    userData.batchId = chosen.join(', ');
     if (userData.profilePhotoUrl !== undefined) {
       const ph = sanitizePhoto(userData.profilePhotoUrl);
       if (ph === null) return { success: false, error: "ছবিটা নেওয়া গেল না। ছবি ছাড়া আবার জমা দিন।" };
@@ -528,6 +533,16 @@ function apiGetBatches() {
   } catch (err) { return { success: false, error: String(err) }; }
 }
 
+// Public (no login): batch names for the New Joining form. Test batches are hidden.
+function apiGetPublicBatches() {
+  try {
+    const list = readSheet("batches")
+      .filter(b => b && b.id && !/test/i.test(String(b.name || '')))
+      .map(b => ({ id: String(b.id), name: String(b.name || '') }));
+    return { success: true, data: list };
+  } catch (err) { return { success: false, error: String(err) }; }
+}
+
 function apiSaveBatch(batchData) {
   try {
     if (batchData.id) {
@@ -551,7 +566,8 @@ function apiDeleteBatch(batchId) {
             deleteMultipleRows("attendance", "studentId", u.id);
             deleteMultipleRows("examResults", "studentId", u.id);
             removeUserFromExamSessions(u.id);
-            deleteRow("users", u.id);
+            S.deleteWhere("notifications", n => String(n.senderId || '') === String(u.id));
+            deleteRow("users", u.id); // photo + last-exam summary live in this row
           } else {
             ids.splice(index, 1);
             updateRow("users", u.id, { batchId: ids.join(', ') });
@@ -560,6 +576,7 @@ function apiDeleteBatch(batchId) {
       }
     });
     deleteMultipleRows("examSessions", "batchId", batchId);
+    S.deleteWhere("notifications", n => String(n.batchId || '') === String(batchId));
     return { success: deleteRow("batches", batchId) };
   } catch (err) { return { success: false, error: String(err) }; }
 }
@@ -1372,11 +1389,11 @@ function apiFixStudentId(oldId, newId) {
 // =========================================================================
 // DISPATCH (same allowlists as Code.gs doPost)
 // =========================================================================
-const PUBLIC_ACTIONS = ["apiLoginUser", "apiRegisterUser", "apiCheckApplicationStatus", "apiSendOTP", "apiVerifyOTPAndReset"];
+const PUBLIC_ACTIONS = ["apiGetPublicBatches", "apiLoginUser", "apiRegisterUser", "apiCheckApplicationStatus", "apiSendOTP", "apiVerifyOTPAndReset"];
 const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment"];
 const USER_ACTIONS = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetLibrary", "apiGetBatches", "apiGetExamSessions", "apiGetAnnouncement", "apiGetExamRequestOptions", "apiCreateExamNotification"];
 const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification"];
-const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions"]);
+const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions", "apiGetPublicBatches"]);
 
 const FUNCS = {
   apiLoginUser, apiRegisterUser, apiCheckApplicationStatus, apiSendOTP, apiVerifyOTPAndReset,
@@ -1389,7 +1406,7 @@ const FUNCS = {
   apiChangePasscode, apiLogoutUser, apiSaveUser, apiJoinExamSession, apiSubmitExamResult, apiSubmitPaymentRequest,
   apiGetStudentDashboardData, apiHasSubmitted, apiCreateNotification, apiDeleteNotification, apiGetNotifications,
   apiGetMyProfile, apiGetLibrary, apiGetBatches, apiGetExamSessions, apiGetAnnouncement,
-  apiGetExamRequestOptions, apiCreateExamNotification,
+  apiGetExamRequestOptions, apiCreateExamNotification, apiGetPublicBatches,
   // not allow-listed (same as GAS) but kept for parity
   apiHealStudentIds, apiFixStudentId, apiVerifyGatewayPayment,
 };

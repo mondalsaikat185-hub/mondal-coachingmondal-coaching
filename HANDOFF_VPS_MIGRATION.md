@@ -165,3 +165,14 @@ Raw output into `R15_REPORT.md` (not committed). No force-push. No VPS step.
 1. `npm run lint` and `npm run build` → both pass.
 2. `git add <files above>`; `git commit -m "feat: stylish admin home + admin welcome splash"`; `git push origin payments-upi`.
 3. Report commit hash + preview URL. STOP.
+
+---
+## ROUND R16 — New Joining batch list fix (public batch list), admin top Home removed, living colour rings, no ring on student name, batch-delete cleanup. Code by Claude; do NOT change code.
+Files (add ONLY these): src/App.tsx, src/index.css, src/lib/fx.ts, src/lib/api.ts, vps-api-v2/api.js, vps-api-v2/test/selftest.js, HANDOFF_VPS_MIGRATION.md
+Raw output into `R16_REPORT.md` (not committed). No force-push. Do not touch production data.
+1. `cd vps-api-v2 && node test/selftest.js` → "exam notification tests OK", "profile photo / register / last exam tests OK", "ALL TESTS PASSED".
+2. Root: `npm run lint` and `npm run build` → both pass.
+3. `git add <files above>`; `git commit -m "fix: new joining batch list (public), admin header, living rings, batch delete cleanup"`; `git push origin payments-upi`.
+4. Backend: `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`; wait 20 s; `/health` (counts not lower, importEnabled false); logs --tail=20.
+5. Check the public batch list works without login: `curl -s -X POST https://mc-api2-187-127-191-163.sslip.io/rpc -H "Content-Type: text/plain" -H "Origin: https://mondal-coachingmondal-coaching.vercel.app" --data "{\"action\":\"apiGetPublicBatches\",\"args\":[],\"token\":\"MondalCoachingSecureToken2026!\"}"` → success true with batch names (no test batches). (This is the app's public client token, not a secret.)
+6. Report commit hash + preview URL. STOP.
