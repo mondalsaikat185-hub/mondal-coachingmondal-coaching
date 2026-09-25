@@ -191,6 +191,36 @@ const PUB = 'MondalCoachingSecureToken2026!';
     console.log('profile photo / register / last exam tests OK');
   }
 
+  // ---------- full new-student journey: join -> pending -> admin approves -> login works ----------
+  {
+    r = await call('apiLoginUser', ['9000000001', 'adminpass']); const adm = r.data.data.sessionToken;
+    r = await call('apiGetPublicBatches', []); const bId = r.data.data[0].id;
+    r = await call('apiRegisterUser', [{ name: 'Journey Kid', phone: '9876512345', batchId: bId }]); assert.equal(r.success, true, r.error);
+    r = await call('apiRegisterUser', [{ name: 'Journey Kid', phone: '+91 98765 12345', batchId: bId }]); assert.equal(r.data.status, 'pending'); // same phone again -> tells status, no duplicate
+    assert.equal(S.readSheet('users').filter(u => u.phone === '9876512345').length, 1);
+    r = await call('apiCheckApplicationStatus', ['98765-12345']); assert.equal(r.data.status || r.status, 'pending');
+    r = await call('apiLoginUser', ['9876512345', 'wrong']); assert.equal(r.success, false);
+    r = await call('apiLoginUser', ['+91 98765 12345', '9876512345']); assert.equal(r.success, true, r.error);
+    let kid = r.data.data.sessionToken; const kidId = r.data.data.id;
+    assert.equal(r.data.data.status, 'pending'); assert.ok(!r.data.data.passcode && !r.data.data.salt);
+    r = await call('apiGetLibrary', [], kid); assert.equal(r.code, 403); assert.equal(r.notApproved, true);
+    r = await call('apiGetMyProfile', [], kid); assert.equal(r.success, true);
+    r = await call('apiCreateNotification', [{ title: 'Please approve', message: 'hi', batchId: 'all' }], kid);
+    assert.equal(S.findRowById('notifications', r.data.data.id).obj.batchId, 'admin');
+    r = await call('apiUpdateUserStatus', [kidId, 'active', ''], adm); assert.equal(r.success, true);
+    r = await call('apiLoginUser', ['9876512345', '9876512345']); kid = r.data.data.sessionToken; assert.equal(r.data.data.status, 'active');
+    r = await call('apiGetLibrary', [], kid); assert.equal(r.success, true);
+    // rejected student can re-apply (status back to pending) but cannot touch fees/role
+    r = await call('apiUpdateUserStatus', [kidId, 'rejected', 'wrong batch'], adm);
+    r = await call('apiGetLibrary', [], kid); assert.equal(r.code, 401); // status change logs the old session out
+    r = await call('apiLoginUser', ['9876512345', '9876512345']); kid = r.data.data.sessionToken; assert.equal(r.data.data.status, 'rejected');
+    r = await call('apiGetLibrary', [], kid); assert.equal(r.code, 403);
+    r = await call('apiSaveUser', [{ id: kidId, name: 'Journey Kid', status: 'pending', batchId: bId, monthlyFee: 0, role: 'admin' }], kid); assert.equal(r.success, true, r.error);
+    let row = S.findRowById('users', kidId).obj; assert.equal(row.status, 'pending'); assert.equal(row.role, 'student'); assert.equal(Number(row.monthlyFee), 500);
+    r = await call('apiSaveUser', [{ id: kidId, status: 'active' }], kid); assert.equal(S.findRowById('users', kidId).obj.status, 'pending'); // cannot self-approve
+    console.log('new student journey tests OK');
+  }
+
   // transaction rollback: failing write leaves no partial data
   const before = S.counts();
   try { S.tx(() => { S.saveRow('payments', { x: 1 }); throw new Error('boom'); }); } catch (e) {}

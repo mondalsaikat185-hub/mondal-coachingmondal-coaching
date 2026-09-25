@@ -235,6 +235,7 @@ function apiSaveUser(userData, session) {
     if (userData.id) existingUser = users.find(u => String(u.id) === String(userData.id));
     if (!existingUser && userData.phone) existingUser = users.find(u => cleanPhone(u.phone) === cleanPhone(userData.phone));
 
+    const reapply = { status: userData.status, batchId: userData.batchId, joinDate: userData.joinDate };
     if (session && session.role !== 'admin') {
       if (existingUser && String(existingUser.id) !== String(session.userId)) return { success: false, error: "Forbidden: Cannot edit other users' profile", code: 403 };
       if (userData.id && String(userData.id) !== String(session.userId)) return { success: false, error: "Forbidden: Cannot edit other users' profile", code: 403 };
@@ -243,6 +244,16 @@ function apiSaveUser(userData, session) {
       for (const key of allowed) if (userData[key] !== undefined) filtered[key] = userData[key];
       userData = filtered;
       if (existingUser) userData.id = existingUser.id;
+      // re-apply / complete profile: a rejected or incomplete student may send the request again (status -> pending)
+      const cur = existingUser ? String(existingUser.status || '').toLowerCase() : '';
+      if (existingUser && (cur === 'rejected' || cur === 'incomplete') && reapply && String(reapply.status || '') === 'pending') {
+        const known = new Set(readSheet("batches").map(b => String(b.id)));
+        const chosen = String(reapply.batchId || '').split(',').map(x => x.trim()).filter(Boolean);
+        if (!chosen.length || chosen.some(id => !known.has(id))) return { success: false, error: "ব্যাচ নির্বাচন ঠিক হয়নি।" };
+        userData.status = 'pending';
+        userData.batchId = chosen.join(', ');
+        if (reapply.joinDate) userData.joinDate = String(reapply.joinDate).slice(0, 20);
+      }
     }
     if (userData.profilePhotoUrl !== undefined) {
       const ph = sanitizePhoto(userData.profilePhotoUrl);
@@ -1184,6 +1195,7 @@ function apiCreateNotification(notifData, session) {
     }
     if (session && session.role !== 'admin') {
       notifData.senderRole = 'student';
+      notifData.batchId = 'admin'; // a student's message goes to the admin only, never to the whole batch
       notifData.senderId = session.userId;
       notifData.type = 'student_to_admin';
     }
@@ -1411,6 +1423,8 @@ const FUNCS = {
   apiHealStudentIds, apiFixStudentId, apiVerifyGatewayPayment,
 };
 
+const NOT_APPROVED_OK = new Set(["apiGetMyProfile", "apiLogoutUser", "apiSaveUser", "apiChangePasscode", "apiGetBatches", "apiGetSettings", "apiGetAnnouncement", "apiCreateNotification", "apiGetNotifications"]);
+
 const CLIENT_SECURITY_TOKEN = process.env.CLIENT_SECURITY_TOKEN || 'MondalCoachingSecureToken2026!';
 
 async function handleRpc(requestData) {
@@ -1434,6 +1448,12 @@ async function handleRpc(requestData) {
     session = validateSessionToken(token);
     if (!session) return { success: false, error: 'Unauthorized access: Invalid or expired session token. Please login again.', code: 401, forceLogout: true };
     if (isAdmin && session.role !== 'admin') return { success: false, error: 'Forbidden: Admin access required', code: 403 };
+  }
+  // A student who is not yet approved (pending / rejected / incomplete / inactive) can only see his own profile
+  if (session && session.role !== 'admin' && !isPublic && !NOT_APPROVED_OK.has(action)) {
+    const me = S.findRowById("users", session.userId);
+    const st = me ? String(me.obj.status || '').toLowerCase().trim() : '';
+    if (st !== 'active') return { success: false, error: 'আপনার account এখনো অনুমোদিত হয়নি। Admin অনুমোদন করলে সব দেখতে পাবেন।', code: 403, notApproved: true };
   }
   if (ACTIONS_NEEDING_SESSION.includes(action)) args.push(session);
 

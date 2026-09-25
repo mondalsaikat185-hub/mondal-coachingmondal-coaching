@@ -114,7 +114,7 @@ function ProtectedRoute({
     user.role === "student" &&
     user.status === "pending" &&
     !user.isSimulatedAdmin &&
-    !window.location.hash.includes("/student") &&
+    !/^#\/student\/?$/.test(window.location.hash.split("?")[0]) &&
     !window.location.hash.includes("/setup-profile")
   ) {
     return <Navigate to="/student" />;
@@ -454,8 +454,9 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
     if (!selected.length) { setMsgType("error"); setMsg("অন্তত একটি batch বেছে নিন।"); return; }
     setLoading(true); setMsg(""); setMsgType("success");
     try {
-      const res = await api.registerUser({ ...formData, phone: phoneDigits } as any);
-      if (res.success) {
+      const res: any = await api.registerUser({ ...formData, phone: phoneDigits } as any);
+      // new registration returns the saved student (status pending); an existing phone returns { success, status }
+      if (res && (res.success || res.id || res.status)) {
         if (res.status === 'pending') {
           setMsgType("pending");
           setMsg("✅ আপনার আবেদন জমা পড়েছে! Admin অনুমোদন করলে login করতে পারবেন।\nডিফল্ট passcode = আপনার 10 সংখ্যার ফোন নম্বর।");
@@ -523,19 +524,17 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
             <div><label className={lab}>Address</label><textarea className={field} rows={2} value={formData.address} onChange={e => set('address', e.target.value)} placeholder="Village / Town, PIN" /></div>
             <div>
               <label className={lab}>Select Batch *</label>
-              <div className="grid gap-2">
-                {batchLoading && <div className="text-sm text-zinc-500"><Loader2 className="w-4 h-4 animate-spin inline" /> Loading…</div>}
-                {!batchLoading && batchErr && <div className="text-sm font-semibold text-rose-600 bn">{batchErr}</div>}
-                {batches.map(b => {
-                  const on = selected.includes(b.id);
-                  return (
-                    <button type="button" key={b.id} onClick={() => toggleBatch(b.id)}
-                      className={`flex items-center justify-between text-left px-4 py-3 rounded-2xl border-2 font-bold transition-colors ${on ? 'border-blue-600 bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-200' : 'border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100'}`}>
-                      <span>{b.name}</span><span className={`w-5 h-5 rounded-md grid place-items-center text-xs ${on ? 'bg-blue-600 text-white' : 'border-2 border-zinc-300 dark:border-zinc-600'}`}>{on ? '✓' : ''}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              {batchLoading ? (
+                <div className="text-sm text-zinc-500"><Loader2 className="w-4 h-4 animate-spin inline" /> Loading…</div>
+              ) : batchErr ? (
+                <div className="text-sm font-semibold text-rose-600 bn">{batchErr}</div>
+              ) : (
+                <select className={field} value={selected[0] || ""} onChange={e => set('batchId', e.target.value)}>
+                  <option value="">— Choose your batch —</option>
+                  {batches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              )}
+              <p className="text-[11px] text-zinc-500 mt-1 bn">তালিকাটা সরাসরি app থেকে আসে — Admin নতুন batch বানালে এখানে নিজে থেকেই দেখাবে।</p>
             </div>
             {msg && msgType === 'error' && <p className="text-sm font-semibold text-rose-600 bn">{msg}</p>}
             <div className="grid grid-cols-2 gap-3 mt-1">
@@ -902,7 +901,7 @@ function TopNav() {
   return (
     <nav className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 sticky top-0 z-40">
       <PhotoZoom />
-      {user && user.role === "student" && <StudentBottomNav />}
+      {user && user.role === "student" && user.status === "active" && <StudentBottomNav />}
       {user && (user.role === "student" || user.role === "admin") && <WelcomeSplash name={user.fullName || user.displayName} admin={user.role === "admin"} />}
       {user && user.role === "student" ? (
         <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mc-open-profile"))} className="mc-nofx flex items-center gap-2 shrink-0 min-w-0 text-left" aria-label="My profile">
