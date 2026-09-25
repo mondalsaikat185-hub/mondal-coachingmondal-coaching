@@ -5,7 +5,7 @@ import { greetingFor, firstName } from './greeting';
 // the logo flies in in 3D with sparkles, then "Mondal Coaching wishes Good Morning, <name>".
 const KEY = 'mc_splash_shown';
 
-export function WelcomeSplash({ name }: { name?: string | null }) {
+export function WelcomeSplash({ name, admin = false }: { name?: string | null; admin?: boolean }) {
   const [show, setShow] = useState(() => {
     try { return !sessionStorage.getItem(KEY); } catch (e) { return false; }
   });
@@ -52,9 +52,9 @@ export function WelcomeSplash({ name }: { name?: string | null }) {
         })}
         <div className="logo" aria-hidden="true" />
         <div className="brand">Mondal Coaching</div>
-        <div className="wish">wishes you</div>
+        <div className="wish">{admin ? 'welcomes back the Admin' : 'wishes you'}</div>
         <div className="hi">{g.text}, {firstName(name)} {g.emoji}</div>
-        <div className="line">{g.line}</div>
+        <div className="line">{admin ? 'আজকের ক্লাস, পরীক্ষা আর ফি — সব এক নজরে।' : g.line}</div>
       </div>
       <div className="skip">Tap to continue</div>
     </div>

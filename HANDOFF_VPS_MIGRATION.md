@@ -151,8 +151,17 @@ Never add _dbcopy/ or R*_REPORT.md. Raw output of every command into `R13_REPORT
 
 ---
 ## ROUND R14 — header Share button (replaces student Home), resting colour rings on all tappable items. Frontend only. Code by Claude; do NOT change code.
-Files (add ONLY these): src/App.tsx, src/index.css, src/lib/fx.ts, src/components/ShareApp.tsx, HANDOFF_VPS_MIGRATION.md
+Files (add ONLY these): src/App.tsx, src/index.css, src/lib/fx.ts, src/components/ShareApp.tsx, src/components/admin/AdminHero.tsx, src/components/student/WelcomeSplash.tsx, HANDOFF_VPS_MIGRATION.md
+(Also includes: admin welcome splash + stylish admin dashboard header with to-do counts and student photos.)
 Raw output of every command into `R14_REPORT.md` (not committed). No force-push. No VPS step needed.
 1. `npm run lint` and `npm run build` → both pass.
 2. `git add <files above>`; `git commit -m "feat: colourful Share App in header, resting glow rings for touch"`; `git push origin payments-upi`.
+3. Report commit hash + preview URL. STOP.
+
+---
+## ROUND R15 — stylish Admin home (greeting, to-do counts, student photos) + admin welcome splash. Frontend only. Code by Claude; do NOT change code.
+Files (add ONLY these): src/App.tsx, src/components/admin/AdminHero.tsx, src/components/student/WelcomeSplash.tsx, HANDOFF_VPS_MIGRATION.md
+Raw output into `R15_REPORT.md` (not committed). No force-push. No VPS step.
+1. `npm run lint` and `npm run build` → both pass.
+2. `git add <files above>`; `git commit -m "feat: stylish admin home + admin welcome splash"`; `git push origin payments-upi`.
 3. Report commit hash + preview URL. STOP.

@@ -1174,6 +1174,7 @@ import {
 } from "lucide-react";
 
 function AdminDashboard() {
+  const { user } = useAuth();
   const [absentFlags, setAbsentFlags] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string; missedCount: number }[]>([]);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
   const [selectedAbsentee, setSelectedAbsentee] = useState<{ id: string; name: string; phone: string; batchId: string; batchName: string } | null>(null);
