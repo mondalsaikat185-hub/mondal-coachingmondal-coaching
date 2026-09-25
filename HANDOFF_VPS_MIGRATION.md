@@ -129,3 +129,12 @@ Never add _dbcopy/ or R*_REPORT.md. Write every command's raw output into `R11_R
 3. `git add <files above>`; `git commit -m "fix: exam notification matches exams to notes by title; auto regular series Passage/Cloze/Para Jumbles"`; `git push origin payments-upi`.
 4. `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`.
 5. Wait 20 s. `curl -s https://mc-api2-187-127-191-163.sslip.io/health` (counts not lower, importEnabled false) and `ssh vps "cd /root/smartqueue-stack && docker compose logs --tail=20 mc-api-v2"`. Add commit hash + preview URL to the report. STOP.
+
+---
+## ROUND R12 — PRODUCTION release (Saikat approved preview). Backend already live; this ships the frontend.
+Write every command's raw output into `R12_REPORT.md` (repo root, not committed). No force-push. Do not touch data.
+1. `git fetch origin`; `git checkout main`; `git pull --ff-only origin main`.
+2. `git merge --ff-only origin/payments-upi` (must be fast-forward; if it refuses, STOP and report).
+3. `npm run lint` and `npm run build` → both pass. `cd vps-api-v2 && node test/selftest.js` → ALL TESTS PASSED.
+4. `git push origin main` (Vercel builds production). `git checkout payments-upi`.
+5. Wait for the Vercel production deployment to be Ready (`npx -y vercel ls`), then check the production URL loads and its HTML contains `mc-api2-187-127-191-163.sslip.io`. `curl -s https://mc-api2-187-127-191-163.sslip.io/health` (counts not lower). Report production URL + commit hash. STOP.
