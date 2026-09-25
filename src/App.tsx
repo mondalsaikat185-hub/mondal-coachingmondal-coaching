@@ -411,38 +411,57 @@ function NewJoinerFlowModal({ onClose, onOpenRegister, onForgotPasscode }: { onC
 
 function RegisterModal({ onClose }: { onClose: () => void }) {
   const [formData, setFormData] = useState({
-    name: "", address: "", batchId: "", email: "", phone: "", joinDate: new Date().toISOString().split('T')[0]
+    name: "", address: "", batchId: "", email: "", phone: "", dob: "", profilePhotoUrl: "", joinDate: new Date().toISOString().split('T')[0]
   });
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [msgType, setMsgType] = useState<"success"|"pending"|"error">("success");
   const [batches, setBatches] = useState<any[]>([]);
+  const [photoNote, setPhotoNote] = useState("");
+  const [photoBusy, setPhotoBusy] = useState(false);
 
   useEffect(() => {
-    api.getBatches().then(setBatches).catch(console.error);
+    // test batches are hidden from new students
+    api.getBatches().then(list => setBatches((list || []).filter((b: any) => !/test/i.test(String(b.name || ''))))).catch(console.error);
   }, []);
+
+  const set = (k: string, v: string) => setFormData(f => ({ ...f, [k]: v }));
+  const phoneDigits = formData.phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  const selected = String(formData.batchId).split(',').map(id => id.trim()).filter(Boolean);
+  const toggleBatch = (id: string) => {
+    const next = selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id];
+    set('batchId', next.join(', '));
+  };
+  const pickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f) return;
+    setPhotoBusy(true); setPhotoNote("");
+    try { const url = await compressPhoto(f); set('profilePhotoUrl', url); setPhotoNote(`${Math.round(f.size / 1024)} KB → ${dataUrlKb(url)} KB`); }
+    catch (err: any) { setPhotoNote(err?.message || "ছবি নেওয়া গেল না।"); }
+    finally { setPhotoBusy(false); }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim() || !formData.phone.trim() || !formData.batchId) {
-      window.dispatchEvent(new CustomEvent("show-custom-alert", { detail: "নাম, ফোন নম্বর ও ব্যাচ বাধ্যতামূলক।" })); return;
-    }
+    if (!formData.name.trim()) { setMsgType("error"); setMsg("নাম লিখুন।"); return; }
+    if (!/^[6-9]\d{9}$/.test(phoneDigits)) { setMsgType("error"); setMsg("সঠিক 10 সংখ্যার WhatsApp নম্বর দিন।"); return; }
+    if (!selected.length) { setMsgType("error"); setMsg("অন্তত একটি batch বেছে নিন।"); return; }
     setLoading(true); setMsg(""); setMsgType("success");
     try {
-      const res = await api.registerUser(formData);
+      const res = await api.registerUser({ ...formData, phone: phoneDigits } as any);
       if (res.success) {
         if (res.status === 'pending') {
           setMsgType("pending");
-          setMsg("✅ আপনার আবেদন সফলভাবে জমা পড়েছে! অ্যাডমিন অনুমোদন করলে আপনি লগইন করতে পারবেন। ডিফল্ট পাসকোড হবে আপনার ১০-ডিজিটের ফোন নম্বর।");
+          setMsg("✅ আপনার আবেদন জমা পড়েছে! Admin অনুমোদন করলে login করতে পারবেন।\nডিফল্ট passcode = আপনার 10 সংখ্যার ফোন নম্বর।");
         } else if (res.status === 'active') {
           setMsgType("success");
-          setMsg("🎉 আপনার অ্যাকাউন্ট অনুমোদিত হয়েছে! আপনার ফোন নম্বরটি ডিফল্ট পাসকোড হিসেবে ব্যবহার করে লগইন করুন।");
+          setMsg("🎉 আপনার account আগেই অনুমোদিত। ফোন নম্বরটাই passcode হিসেবে দিয়ে login করুন।");
         } else if (res.status === 'rejected') {
           setMsgType("error");
-          setMsg("❌ আপনার আবেদন প্রত্যাখ্যান করা হয়েছে। বিস্তারিত জানতে অ্যাডমিনের সাথে যোগাযোগ করুন।");
+          setMsg("❌ আপনার আবেদন প্রত্যাখ্যান করা হয়েছে। বিস্তারিত জানতে Admin-এর সাথে যোগাযোগ করুন।");
         } else {
           setMsgType("pending");
-          setMsg(res.message || "আপনার তথ্য জমা নেওয়া হয়েছে। স্ট্যাটাস জানতে 'Check Status' ব্যবহার করুন।");
+          setMsg(res.message || "আপনার তথ্য জমা নেওয়া হয়েছে। 'Check Status' দিয়ে অবস্থা দেখুন।");
         }
       } else {
         setMsgType("error");
@@ -455,64 +474,67 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
     setLoading(false);
   };
 
+  const field = "w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-4 py-3 text-zinc-900 dark:text-zinc-100 font-medium focus:outline-none focus:border-blue-500";
+  const lab = "block text-xs font-bold text-zinc-500 dark:text-zinc-400 mb-1.5";
+  const done = msg && msgType !== "error";
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-zinc-900 border-4 border-zinc-900 dark:border-zinc-100 p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-black uppercase mb-4 text-zinc-900 dark:text-zinc-100">New Joining</h2>
-        {msg ? (
-          <div className="mb-4">
-            <p className={`font-bold text-sm p-4 border-2 whitespace-pre-wrap ${
-              msgType === 'success' ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/50 border-green-600 dark:border-green-400' :
-              msgType === 'pending' ? 'text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/50 border-yellow-500 dark:border-yellow-400' :
-              'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/50 border-red-500 dark:border-red-400'
-            }`}>{msg}</p>
-            <button onClick={onClose} className="mt-4 w-full p-3 font-bold border-2 border-zinc-900 dark:border-zinc-100 uppercase hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100">বন্ধ করুন</button>
+    <div className="fixed inset-0 bg-black/70 z-[100] flex items-end sm:items-center justify-center sm:p-4">
+      <div className="bg-white dark:bg-zinc-900 w-full sm:max-w-md max-h-[94vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl shadow-2xl">
+        <div className="relative p-6 pb-5 text-white rounded-t-3xl" style={{ background: 'radial-gradient(90% 80% at 100% 0%,rgba(255,184,64,.5),transparent 60%),linear-gradient(155deg,#2F58F0,#1A2A86)' }}>
+          <button type="button" onClick={onClose} aria-label="Close" className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/15 grid place-items-center"><X className="w-4 h-4" /></button>
+          <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-[#FFD27A]">Welcome to</div>
+          <h2 className="text-2xl font-extrabold">Mondal Coaching</h2>
+          <p className="text-sm opacity-90 bn mt-1">নতুন ভর্তির ফর্ম — 1 মিনিটে পূরণ করুন।</p>
+        </div>
+        {done ? (
+          <div className="p-6">
+            <p className={`text-sm font-semibold p-4 rounded-2xl whitespace-pre-wrap bn ${msgType === 'success' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200'}`}>{msg}</p>
+            <button onClick={onClose} className="mt-4 w-full py-3 rounded-2xl font-bold text-white bg-gradient-to-b from-blue-500 to-blue-700 shadow-[0_4px_0_0_#1e3a8a]">OK</button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <input type="text" placeholder="Name *" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
-            <input type="tel" placeholder="Phone Number *" required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
-            <input type="email" placeholder="Email *" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
-            <textarea placeholder="Address" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold" />
-            
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-black uppercase text-zinc-700 dark:text-zinc-300">Date of Joining</label>
-              <input type="date" required value={formData.joinDate} onChange={e => setFormData({...formData, joinDate: e.target.value})} className="w-full border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-bold uppercase" />
+          <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 grid place-items-center bg-zinc-100 dark:bg-zinc-800 text-2xl">
+                {formData.profilePhotoUrl ? <img src={formData.profilePhotoUrl} alt="" className="w-full h-full object-cover" /> : "🙂"}
+              </div>
+              <div>
+                <label className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-bold text-sm bg-zinc-100 dark:bg-zinc-800 cursor-pointer">
+                  {photoBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : "📷"} Photo (optional)
+                  <input type="file" accept="image/*" className="hidden" onChange={pickPhoto} />
+                </label>
+                {photoNote && <div className="text-[11px] text-zinc-500 mt-1">{photoNote}</div>}
+              </div>
             </div>
-
-            <div className="flex flex-col gap-1.5 border-2 border-zinc-900 p-3 bg-zinc-50 dark:bg-zinc-800">
-              <label className="text-xs font-black uppercase text-zinc-700 dark:text-zinc-300">Select Batches *</label>
-              <div className="flex flex-col gap-2 mt-1">
+            <div><label className={lab}>Full Name *</label><input className={field} value={formData.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Riya Das" autoComplete="name" /></div>
+            <div><label className={lab}>WhatsApp Number *</label><input className={field} type="tel" inputMode="numeric" value={formData.phone} onChange={e => set('phone', e.target.value)} placeholder="10-digit number" autoComplete="tel" />
+              <p className="text-[11px] text-zinc-500 mt-1 bn">এই নম্বরটাই আপনার login ID, আর প্রথম passcode।</p></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className={lab}>Date of Birth</label><input className={field} type="date" value={formData.dob} onChange={e => set('dob', e.target.value)} /></div>
+              <div><label className={lab}>Joining Date</label><input className={field} type="date" value={formData.joinDate} onChange={e => set('joinDate', e.target.value)} /></div>
+            </div>
+            <div><label className={lab}>Email (optional)</label><input className={field} type="email" value={formData.email} onChange={e => set('email', e.target.value)} placeholder="name@gmail.com" autoComplete="email" /></div>
+            <div><label className={lab}>Address</label><textarea className={field} rows={2} value={formData.address} onChange={e => set('address', e.target.value)} placeholder="Village / Town, PIN" /></div>
+            <div>
+              <label className={lab}>Select Batch *</label>
+              <div className="grid gap-2">
+                {batches.length === 0 && <div className="text-sm text-zinc-500"><Loader2 className="w-4 h-4 animate-spin inline" /> Loading…</div>}
                 {batches.map(b => {
-                  const isChecked = String(formData.batchId).split(',').map(id => id.trim()).includes(b.id);
+                  const on = selected.includes(b.id);
                   return (
-                    <label key={b.id} className="flex items-center gap-2 font-bold cursor-pointer text-zinc-900 dark:text-zinc-100">
-                      <input 
-                        type="checkbox" 
-                        checked={isChecked} 
-                        onChange={(e) => {
-                          const currentBatches = String(formData.batchId).split(',').map(id => id.trim()).filter(Boolean);
-                          if (e.target.checked) {
-                            currentBatches.push(b.id);
-                          } else {
-                            const idx = currentBatches.indexOf(b.id);
-                            if (idx > -1) currentBatches.splice(idx, 1);
-                          }
-                          setFormData({...formData, batchId: currentBatches.join(', ')});
-                        }}
-                        className="w-4 h-4 accent-zinc-900 dark:accent-zinc-100"
-                      />
-                      {b.name} - {b.class}
-                    </label>
+                    <button type="button" key={b.id} onClick={() => toggleBatch(b.id)}
+                      className={`flex items-center justify-between text-left px-4 py-3 rounded-2xl border-2 font-bold transition-colors ${on ? 'border-blue-600 bg-blue-50 text-blue-800 dark:bg-blue-950/40 dark:text-blue-200' : 'border-zinc-200 dark:border-zinc-700 text-zinc-800 dark:text-zinc-100'}`}>
+                      <span>{b.name}</span><span className={`w-5 h-5 rounded-md grid place-items-center text-xs ${on ? 'bg-blue-600 text-white' : 'border-2 border-zinc-300 dark:border-zinc-600'}`}>{on ? '✓' : ''}</span>
+                    </button>
                   );
                 })}
               </div>
             </div>
-            
-            <div className="flex justify-between items-center mt-2 gap-4">
-              <button type="button" onClick={onClose} className="flex-1 p-3 font-bold border-2 border-zinc-900 uppercase hover:bg-zinc-100 text-zinc-900 dark:text-zinc-100">Cancel</button>
-              <button type="submit" disabled={loading} className="flex-1 p-3 font-bold border-2 border-transparent bg-emerald-400 text-black uppercase hover:-translate-y-0.5 transition-transform shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] disabled:opacity-50">
-                {loading ? "Submitting..." : "Submit"}
+            {msg && msgType === 'error' && <p className="text-sm font-semibold text-rose-600 bn">{msg}</p>}
+            <div className="grid grid-cols-2 gap-3 mt-1">
+              <button type="button" onClick={onClose} className="py-3 rounded-2xl font-bold bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100">Cancel</button>
+              <button type="submit" disabled={loading || photoBusy} className="py-3 rounded-2xl font-bold text-white bg-gradient-to-b from-emerald-500 to-emerald-700 shadow-[0_4px_0_0_#064e3b] disabled:opacity-50">
+                {loading ? "Submitting…" : "Submit"}
               </button>
             </div>
           </form>
@@ -640,6 +662,7 @@ function Login() {
         </form>
 
         <div className="mt-6 flex flex-col items-center">
+          <div className="w-full flex justify-center mb-4"><ShareAppButton label className="inline-flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm text-zinc-700 dark:text-zinc-200 bg-zinc-100 dark:bg-zinc-800" /></div>
           <p className="text-xs font-bold text-zinc-600 dark:text-zinc-400 mb-2">Are you a new student?</p>
           <button
             type="button"
@@ -655,7 +678,6 @@ function Login() {
           <ul className="list-disc list-inside space-y-1.5 text-left max-w-[320px] mx-auto text-[11px] font-medium leading-relaxed">
             <li>ছাত্রদের ডিফল্ট পাসকোড হলো তাদের <span className="underline decoration-yellow-500 decoration-2">১০-ডিজিটের ফোন নম্বর</span>।</li>
             <li>যদি আপনার ফোন নম্বর নিবন্ধিত না থাকে, তবে আপনার শিক্ষকের সাথে যোগাযোগ করে রেজিস্ট্রেশন সম্পন্ন করুন।</li>
-            <li>অ্যাডমিন লগইন করতে ডিফল্ট ফোন ও পাসকোড ব্যবহার করুন।</li>
           </ul>
         </div>
       </div>
@@ -664,7 +686,12 @@ function Login() {
 }
 
 import { NotificationsPanel } from "./components/NotificationsPanel";
-import { ExtraKnowledgeCard } from "./components/ExtraKnowledgeCard";
+import { StudentHome } from "./components/student/StudentHome";
+import { StudentBottomNav } from "./components/student/StudentBottomNav";
+import { WelcomeSplash } from "./components/student/WelcomeSplash";
+import { ShareAppButton } from "./components/ShareApp";
+import { PhotoZoom } from "./components/PhotoZoom";
+import { compressPhoto, dataUrlKb } from "./lib/photo";
 
 function TopNav() {
   const { theme, setTheme } = useTheme();
@@ -714,6 +741,23 @@ function TopNav() {
   const [editAddress, setEditAddress] = useState("");
   const [editName, setEditName] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [editDob, setEditDob] = useState("");
+  const [editPhoto, setEditPhoto] = useState("");
+  const [photoMsg, setPhotoMsg] = useState("");
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const onPickPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    setPhotoBusy(true); setPhotoMsg("");
+    try {
+      const url = await compressPhoto(f);
+      setEditPhoto(url);
+      setPhotoMsg(`ছবি ছোট করা হয়েছে: ${Math.round(f.size / 1024)} KB → ${dataUrlKb(url)} KB`);
+    } catch (err: any) {
+      setPhotoMsg(err?.message || "ছবি নেওয়া গেল না।");
+    } finally { setPhotoBusy(false); }
+  };
   // Change Passcode states
   const [showChangePasscode, setShowChangePasscode] = useState(false);
   const [cpCurrent, setCpCurrent] = useState("");
@@ -767,9 +811,20 @@ function TopNav() {
     return () => clearInterval(pollInterval);
   }, [user?.uid, user?.role, (user as any)?.batchId]);
 
+  useEffect(() => {
+    const openProfile = () => handleEditProfileOpen();
+    const openNotifs = () => setShowNotifications(true);
+    window.addEventListener("mc-open-profile", openProfile);
+    window.addEventListener("mc-open-notifications", openNotifs);
+    return () => { window.removeEventListener("mc-open-profile", openProfile); window.removeEventListener("mc-open-notifications", openNotifs); };
+  });
+
   const handleEditProfileOpen = () => {
     setEditName(user?.fullName || user?.displayName || "");
     setEditAddress(user?.address || "");
+    setEditDob((user as any)?.dob || "");
+    setEditPhoto((user as any)?.profilePhotoUrl || "");
+    setPhotoMsg("");
     setShowDropdown(false);
     setShowEditProfile(true);
     // Reset change passcode form
@@ -808,11 +863,15 @@ function TopNav() {
         id: user.uid,
         name: editName,
         phone: user.phone || '', // BUG FIX: user.phoneNumber → user.phone (AppUser-এ 'phoneNumber' নেই, 'phone' আছে)
-        address: editAddress
-      });
+        address: editAddress,
+        dob: editDob,
+        profilePhotoUrl: editPhoto
+      } as any);
       updateLocalUser({
         fullName: editName,
-        address: editAddress
+        address: editAddress,
+        dob: editDob,
+        profilePhotoUrl: editPhoto
       } as any);
       setShowEditProfile(false);
       window.dispatchEvent(
@@ -833,8 +892,20 @@ function TopNav() {
   };
 
   return (
-    <nav className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b-2 border-zinc-900 dark:border-zinc-100 p-4 sticky top-0 z-40">
-      <div className="font-black italic uppercase text-xs sm:text-base shrink-0">Tuition Portal</div>
+    <nav className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 sticky top-0 z-40">
+      <PhotoZoom />
+      {user && user.role === "student" && <StudentBottomNav />}
+      {user && user.role === "student" && <WelcomeSplash name={user.fullName || user.displayName} />}
+      {user && user.role === "student" ? (
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mc-open-profile"))} className="flex items-center gap-2 shrink-0 min-w-0 text-left" aria-label="My profile">
+          <span className="w-9 h-9 rounded-xl overflow-hidden grid place-items-center text-white font-extrabold bg-gradient-to-b from-amber-400 to-amber-600 shadow-[0_3px_0_0_#b45309] shrink-0">
+            {(user as any).profilePhotoUrl ? <img src={(user as any).profilePhotoUrl} alt="" className="w-full h-full object-cover" /> : String(user.fullName || user.displayName || "S").charAt(0)}
+          </span>
+          <span className="leading-tight min-w-0"><span className="block text-[10px] font-semibold text-zinc-500">Mondal Coaching</span><span className="block font-extrabold text-sm truncate max-w-[40vw]">{user.fullName || user.displayName || "Student"}</span></span>
+        </button>
+      ) : (
+        <div className="flex items-center gap-2 shrink-0"><img src="/pwa-192x192.png" alt="" className="w-8 h-8 rounded-xl shadow-[0_3px_0_0_rgba(0,0,0,.15)]" /><span className="font-extrabold text-sm sm:text-base tracking-tight">Mondal Coaching</span></div>
+      )}
       <div className="flex items-center gap-4">
         {user && (
           <div className="text-xs font-mono hidden sm:flex items-center gap-2">
@@ -866,6 +937,7 @@ function TopNav() {
             <Home className="w-5 h-5" strokeWidth={2.75} />
           </Link>
         )}
+        <ShareAppButton />
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="p-2 border-2 border-zinc-900 dark:border-zinc-100 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
@@ -993,6 +1065,19 @@ function TopNav() {
 
             {!showChangePasscode ? (
               <form onSubmit={handleSaveProfile} className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-20 h-20 rounded-3xl overflow-hidden shrink-0 grid place-items-center text-white text-2xl font-extrabold bg-gradient-to-b from-amber-400 to-amber-600 shadow-[0_5px_0_0_#b45309]">
+                    {editPhoto ? <img src={editPhoto} alt="Profile" className="w-full h-full object-cover" /> : (editName || "S").charAt(0)}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <label className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl font-bold text-sm text-white bg-gradient-to-b from-blue-500 to-blue-700 shadow-[0_4px_0_0_#1e3a8a] cursor-pointer">
+                      {photoBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : "📷"} {editPhoto ? "Change Photo" : "Add Photo"}
+                      <input type="file" accept="image/*" className="hidden" onChange={onPickPhoto} disabled={savingProfile || photoBusy} />
+                    </label>
+                    {editPhoto && <button type="button" onClick={() => { setEditPhoto(""); setPhotoMsg(""); }} className="text-xs font-bold text-red-600 text-left">Remove photo</button>}
+                  </div>
+                </div>
+                {photoMsg && <p className="text-xs font-semibold text-zinc-500">{photoMsg}</p>}
                 <div>
                   <label className="block text-xs font-bold uppercase mb-1 text-zinc-500">Full Name</label>
                   <input required type="text" value={editName}
@@ -1007,8 +1092,16 @@ function TopNav() {
                     className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-3 bg-transparent focus:outline-none focus:border-zinc-500 dark:focus:border-zinc-400 font-medium font-mono text-sm resize-none"
                     placeholder="Enter your full address" disabled={savingProfile} />
                 </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase mb-1 text-zinc-500">Date of Birth</label>
+                  <input type="date" value={editDob ? String(editDob).slice(0, 10) : ""}
+                    onChange={(e) => setEditDob(e.target.value)}
+                    className="w-full border-2 border-zinc-900 dark:border-zinc-100 p-3 bg-transparent focus:outline-none"
+                    disabled={savingProfile} />
+                </div>
+                <p className="text-[11px] text-zinc-500 bn">ফোন নম্বর, batch ও ফি শুধু Admin বদলাতে পারেন।</p>
                 <div className="pt-4 flex justify-end">
-                  <button type="submit" disabled={savingProfile}
+                  <button type="submit" disabled={savingProfile || photoBusy}
                     className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-black uppercase py-3 px-6 hover:-translate-y-0.5 transition-transform border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] flex items-center gap-2 disabled:opacity-50">
                     {savingProfile && <Loader2 className="w-4 h-4 animate-spin" />}
                     Save Profile
@@ -1775,7 +1868,6 @@ function StudentDashboard() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full relative">
-      <ExtraKnowledgeCard />
       {showForceNudge && (
         <div className="fixed inset-0 bg-red-900/90 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-zinc-900 border-8 border-red-600 dark:border-red-500 w-full max-w-md p-8 text-center transform transition-all scale-100 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
@@ -1910,251 +2002,12 @@ function StudentDashboard() {
         </div>
       )}
 
-      <div className="flex justify-between items-center mb-6 mt-8">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-black italic uppercase leading-none mb-2">
-            Student Dashboard
-          </h2>
-          <p className="text-zinc-500 text-sm font-medium">
-            Welcome back, {user?.fullName || user?.displayName || "Student"}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 auto-rows-min flex-grow">
-        {/* My Profile Card */}
-        <div className="md:col-span-12 bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] flex flex-col md:flex-row gap-6 items-center md:items-start">
-          <div className="flex-grow w-full">
-            <h3 className="font-black text-xl uppercase mb-4 border-b-2 border-zinc-200 dark:border-zinc-800 pb-2">
-              My Profile Details
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="font-bold text-zinc-500 uppercase text-xs block">
-                  Full Name:
-                </span>{" "}
-                <div className="font-bold">{user?.fullName || "N/A"}</div>
-              </div>
-              <div>
-                <span className="font-bold text-zinc-500 uppercase text-xs block">
-                  Phone:
-                </span>{" "}
-                <div className="font-bold">{user?.phone || "N/A"}</div>
-              </div>
-              <div className="sm:col-span-2">
-                <span className="font-bold text-zinc-500 uppercase text-xs block">
-                  Address:
-                </span>{" "}
-                <div className="font-bold whitespace-pre-wrap">
-                  {user?.address || "N/A"}
-                </div>
-              </div>
-              <div>
-                <span className="font-bold text-zinc-500 uppercase text-xs block">
-                  Email:
-                </span>{" "}
-                <div className="font-bold">{user?.email}</div>
-              </div>
-              <div>
-                <span className="font-bold text-zinc-500 uppercase text-xs block">
-                  Joined Date:
-                </span>{" "}
-                <div className="font-bold">{formatDateOnlySafe(user?.joinDate)}</div>
-              </div>
-              <div className="sm:col-span-2">
-                <span className="font-bold text-zinc-500 uppercase text-xs block">
-                  Attendance Warning:
-                </span>{" "}
-                <div className="font-bold">
-                  {absentCount > 0 ? (
-                    <span className={absentCount >= 3 ? "text-red-500 font-black" : "text-yellow-600"}>
-                      {absentCount === 3
-                        ? "⚠️ সর্বশেষ ৩টি exam-এ অনুপস্থিত! (streak reset করতে Admin-কে জানান)"
-                        : `সর্বশেষ ৩টি লাইভ পরীক্ষার মধ্যে ${absentCount}টিতে অনুপস্থিত।`}
-                    </span>
-                  ) : (
-                    <span className="text-emerald-500">Perfect recently. Keep it up!</span>
-                  )}
-                </div>
-              </div>
-            </div>
-            <p className="text-[10px] uppercase font-bold text-red-500 mt-4 border border-red-200 bg-red-50 p-2 dark:bg-red-950/20 dark:border-red-900">
-              Note: Profile details are fixed. Contact the admin to update them.
-            </p>
-          </div>
-        </div>
-
-        {/* Active Exams Card */}
-        <div className="md:col-span-8 bg-zinc-900 dark:bg-zinc-100 text-zinc-100 dark:text-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(161,161,170,1)] dark:shadow-[6px_6px_0px_0px_rgba(82,82,91,1)]">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h3 className="font-black text-xl uppercase mb-1">
-                Recent Exams
-              </h3>
-              <p className="text-xs font-bold text-zinc-400 dark:text-zinc-600 uppercase">
-                Latest assigned to you
-              </p>
-            </div>
-            <div className="bg-zinc-800 dark:bg-zinc-200 p-2 border-2 border-zinc-700 dark:border-zinc-300">
-              <FileText className="w-6 h-6" />
-            </div>
-          </div>
-
-          <div className="mb-6 space-y-3">
-            {exams.length === 0 ? (
-              <div className="text-sm font-medium text-zinc-400 dark:text-zinc-600 italic">
-                No exams are currently active for your batch.
-              </div>
-            ) : (
-              exams.map((exam, index) => {
-                const timestamp = (exam as any).createdAt;
-                const d = safeToDate(timestamp);
-                const dateStr = d
-                  ? d.toLocaleDateString("en-IN", {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                    })
-                  : "";
-                return (
-                  <div
-                    key={exam.id}
-                    className="flex justify-between items-center bg-zinc-800 dark:bg-zinc-200 p-3 border border-zinc-700 dark:border-zinc-300 gap-4"
-                  >
-                    <div className="flex-grow">
-                      <div className="font-bold flex items-center gap-2">
-                        {exam.title}
-                        <span className="text-[9px] bg-zinc-700 dark:bg-zinc-300 px-1 py-0.5 rounded-sm uppercase">
-                          {exam.examType || "Exam"}
-                        </span>
-                      </div>
-                      <div className="text-xs text-zinc-400 dark:text-zinc-500">
-                        Added: {dateStr}
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1 items-end min-w-[80px]">
-                      <Link
-                        to="/student/library"
-                        className="text-[10px] font-bold uppercase underline hover:text-emerald-500 text-emerald-600 dark:text-emerald-400"
-                      >
-                        Open Exam
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <Link
-            to="/student/library"
-            className="inline-block bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white font-bold uppercase text-xs px-4 py-2 hover:-translate-y-0.5 transition-transform shadow-[4px_4px_0px_0px_rgba(212,212,216,1)] dark:shadow-[4px_4px_0px_0px_rgba(63,63,70,1)] border-2 border-transparent"
-          >
-            Browse All Exams in Library
-          </Link>
-        </div>
-
-        {/* Notifications / Payment Banner */}
-        <div className="md:col-span-4 bg-yellow-300 dark:bg-yellow-600 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] text-zinc-900 flex flex-col justify-between">
-          <div>
-            <h3 className="font-black text-xl uppercase mb-1">Payments</h3>
-            <p className="text-xs font-bold text-yellow-800 dark:text-yellow-950 uppercase">
-              Account Status
-            </p>
-          </div>
-          <div className="mt-4 p-4 bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100">
-            <div className="text-xs font-bold uppercase text-zinc-500 mb-1">
-              Status
-            </div>
-            <div className={`font-bold uppercase mb-2 ${paymentStatus.color}`}>
-              {paymentStatus.label}
-            </div>
-
-            {user && Number((user as any).pendingMonths) > 0 && (
-              <div className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 mb-3 border-t border-dashed border-zinc-200 dark:border-zinc-800 pt-2">
-                <span className="uppercase text-[9px] text-zinc-400 block font-bold">Due Months / বকেয়া মাসসমূহ</span>
-                <span className="underline">{getDueMonths((user as any).pendingMonths, payments)}</span>
-              </div>
-            )}
-
-            {paymentStatus.status === "rejected" && paymentStatus.remarks && (
-              <div className="text-[11px] text-red-600 dark:text-red-400 font-extrabold mb-3 p-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded">
-                Reason: {paymentStatus.remarks}
-              </div>
-            )}
-
-            <Link
-              to="/student/payments"
-              className="inline-block bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-bold uppercase text-xs px-4 py-2 hover:-translate-y-0.5 transition-transform border-2 border-transparent shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] w-full text-center"
-            >
-              Make Payment
-            </Link>
-          </div>
-        </div>
-
-        {/* Notes Card */}
-        <div className="md:col-span-12 bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-6 shadow-[6px_6px_0px_0px_rgba(24,24,27,1)] dark:shadow-[6px_6px_0px_0px_rgba(244,244,245,1)] mt-4">
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h3 className="font-black text-xl uppercase mb-1">
-                Recent Library Additions
-              </h3>
-              <p className="text-xs font-bold text-zinc-500 uppercase">
-                Latest PDF Notes & Handouts
-              </p>
-            </div>
-            <div className="bg-orange-100 dark:bg-orange-900 text-orange-700 dark:text-orange-300 p-2 border-2 border-orange-700 dark:border-orange-300">
-              <BookOpen className="w-6 h-6" />
-            </div>
-          </div>
-
-          <div className="mb-6 flex flex-wrap gap-4">
-            {notes.length === 0 ? (
-              <div className="text-sm font-medium text-zinc-600 dark:text-zinc-400 italic">
-                No active notes available right now.
-              </div>
-            ) : (
-              notes.map((note, index) => {
-                const timestamp = (note as any).createdAt;
-                const d = safeToDate(timestamp);
-                const dateStr = d
-                  ? d.toLocaleDateString("en-IN", {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                    })
-                  : "";
-                return (
-                  <Link
-                    to="/student/library"
-                    key={note.id}
-                    className="bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 p-3 hover:-translate-y-1 transition-transform min-w-[200px] flex flex-col justify-between"
-                  >
-                    <div className="font-bold text-orange-900 dark:text-orange-50">
-                      {note.title}
-                    </div>
-                    <div className="flex justify-between items-end mt-2">
-                      <div className="text-[10px] text-zinc-500 font-bold uppercase">
-                        {dateStr}
-                      </div>
-                      <div className="text-[10px] text-orange-600 dark:text-orange-400 uppercase font-bold">
-                        Open In Library
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })
-            )}
-          </div>
-
-          <Link
-            to="/student/library"
-            className="inline-block bg-orange-500 text-white font-bold uppercase text-xs px-4 py-2 hover:-translate-y-0.5 transition-transform shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] border-2 border-zinc-900 dark:border-zinc-100"
-          >
-            Browse Library
-          </Link>
-        </div>
-      </div>
+      <StudentHome
+        user={user}
+        absentCount={absentCount}
+        paymentStatus={paymentStatus}
+        dueMonthsText={user && Number((user as any).pendingMonths) > 0 ? getDueMonths((user as any).pendingMonths, payments) : ''}
+      />
     </div>
   );
 }

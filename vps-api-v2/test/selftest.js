@@ -152,6 +152,34 @@ const PUB = 'MondalCoachingSecureToken2026!';
     console.log('exam notification tests OK');
   }
 
+  // ---------- profile photo, register whitelist, last-exam summary, delete cleanup ----------
+  {
+    const small = 'data:image/webp;base64,' + 'A'.repeat(2000);
+    r = await call('apiLoginUser', ['9999999901', 'newpass1']); const st3 = r.data.data.sessionToken;
+    r = await call('apiSaveUser', [{ id: 'stu1', profilePhotoUrl: small, phone: '1111111111', role: 'admin', monthlyFee: 1 }], st3);
+    assert.equal(r.success, true, r.error);
+    let u = S.findRowById('users', 'stu1').obj;
+    assert.equal(u.profilePhotoUrl, small); assert.equal(u.role, 'student'); assert.equal(u.phone, '9999999901');
+    r = await call('apiSaveUser', [{ id: 'stu1', profilePhotoUrl: 'data:image/webp;base64,' + 'A'.repeat(250000) }], st3); assert.equal(r.success, false);
+    r = await call('apiSaveUser', [{ id: 'stu1', profilePhotoUrl: 'javascript:alert(1)' }], st3); assert.equal(r.success, false);
+    assert.equal(S.findRowById('users', 'stu1').obj.profilePhotoUrl, small);
+    r = await call('apiRegisterUser', [{ name: 'New', phone: '9876500001', batchId: 'b1', role: 'admin', status: 'active', monthlyFee: 0, profilePhotoUrl: small }]);
+    assert.equal(r.success, true, r.error);
+    const nu = S.readSheet('users').find(x => x.phone === '9876500001');
+    assert.equal(nu.role, 'student'); assert.equal(nu.status, 'pending'); assert.equal(Number(nu.monthlyFee), 500); assert.equal(nu.profilePhotoUrl, small);
+    S.saveRow('library', { id: 'exL', title: 'Last exam title', type: 'exam' });
+    r = await call('apiSubmitExamResult', [{ id: 'resL', examId: 'exL', score: 7, totalQuestions: 10, correctAnswers: 8, wrongAnswers: 2, skippedAnswers: 0, submittedAt: '2026-09-26T04:00:00.000Z' }], st3);
+    assert.equal(r.success, true);
+    const le = JSON.parse(S.findRowById('users', 'stu1').obj.lastExam);
+    assert.equal(le.title, 'Last exam title'); assert.equal(le.correct, 8);
+    r = await call('apiGetMyProfile', [], st3); assert.ok(r.data.data.lastExam);
+    S.saveRow('notifications', { id: 'msgNew', senderId: nu.id, type: 'student_to_admin', title: 'hi' });
+    r = await call('apiLoginUser', ['9000000001', 'adminpass']); const ad3 = r.data.data.sessionToken;
+    r = await call('apiDeleteUser', [nu.id], ad3); assert.equal(r.success, true);
+    assert.equal(S.findRowById('users', nu.id), null); assert.equal(S.findRowById('notifications', 'msgNew'), null);
+    console.log('profile photo / register / last exam tests OK');
+  }
+
   // transaction rollback: failing write leaves no partial data
   const before = S.counts();
   try { S.tx(() => { S.saveRow('payments', { x: 1 }); throw new Error('boom'); }); } catch (e) {}

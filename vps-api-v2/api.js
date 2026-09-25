@@ -45,6 +45,17 @@ function cleanUserResponse(user) {
   return clone;
 }
 
+// Profile photo: small data:image (WebP/JPEG/PNG) made on the phone, or an old https link.
+const PHOTO_MAX_CHARS = 200000;
+function sanitizePhoto(v) {
+  if (v === undefined) return undefined;
+  const s = String(v || '').trim();
+  if (!s) return '';
+  if (/^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(s) && s.length <= PHOTO_MAX_CHARS) return s;
+  if (/^https:\/\/[^\s"'<>]{1,500}$/.test(s)) return s;
+  return null; // rejected
+}
+
 function cleanPhone(p) {
   if (p === undefined || p === null) return "";
   let s = String(p).trim();
@@ -233,6 +244,11 @@ function apiSaveUser(userData, session) {
       userData = filtered;
       if (existingUser) userData.id = existingUser.id;
     }
+    if (userData.profilePhotoUrl !== undefined) {
+      const ph = sanitizePhoto(userData.profilePhotoUrl);
+      if (ph === null) return { success: false, error: "ছবিটা নেওয়া গেল না (খুব বড় বা ভুল ফরম্যাট)। আবার চেষ্টা করুন।" };
+      userData.profilePhotoUrl = ph;
+    }
 
     if (existingUser) {
       const safe = {};
@@ -273,6 +289,15 @@ function apiRegisterUser(userData) {
     if (!userData || !userData.phone) return { success: false, error: "ফোন নম্বর দেওয়া হয়নি।" };
     if (!userData.name) return { success: false, error: "নাম দেওয়া হয়নি।" };
     if (!userData.batchId) return { success: false, error: "ব্যাচ নির্বাচন করা হয়নি।" };
+    // public form: keep only the fields a new student may fill in
+    const pick = {};
+    for (const k of ["name", "phone", "email", "address", "batchId", "joinDate", "dob", "profilePhotoUrl"]) if (userData[k] !== undefined) pick[k] = String(userData[k]).slice(0, k === "profilePhotoUrl" ? PHOTO_MAX_CHARS : 500);
+    userData = pick;
+    if (userData.profilePhotoUrl !== undefined) {
+      const ph = sanitizePhoto(userData.profilePhotoUrl);
+      if (ph === null) return { success: false, error: "ছবিটা নেওয়া গেল না। ছবি ছাড়া আবার জমা দিন।" };
+      userData.profilePhotoUrl = ph;
+    }
     const users = readSheet("users");
     const cleanedPhone = cleanPhone(userData.phone);
     const existingUser = users.find(u => cleanPhone(u.phone) === cleanedPhone);
@@ -313,7 +338,9 @@ function apiDeleteUser(userId) {
     deleteMultipleRows("attendance", "studentId", userId);
     deleteMultipleRows("examResults", "studentId", userId);
     removeUserFromExamSessions(userId);
-    const success = deleteRow("users", userId);
+    // the student's own messages go too (exam notifications stay: they schedule the whole batch)
+    S.deleteWhere("notifications", n => String(n.senderId || '') === String(userId) && String(n.type || '') !== 'exam_request');
+    const success = deleteRow("users", userId); // photo + last-exam summary live in this row
     bumpUserTokenVersionAndNotifyVps(userId, { deleted: true });
     return { success };
   } catch (err) { return { success: false, error: String(err) }; }
@@ -1227,7 +1254,19 @@ function apiSubmitExamResult(resultData, session) {
       resultData.id = String(rid).trim();
       if (S.findRowById("examResults", resultData.id)) return { success: true, data: resultData, duplicate: true };
     }
-    return { success: true, data: saveRow("examResults", resultData) };
+    const saved = saveRow("examResults", resultData);
+    // keep a small "last exam" summary on the student, so it survives old results being cleaned up
+    try {
+      const ex = S.findRowById("library", resultData.examId);
+      const summary = {
+        examId: String(resultData.examId || ''), title: ex ? String(ex.obj.title || '') : '',
+        score: Number(resultData.score || 0), totalQuestions: Number(resultData.totalQuestions || 0),
+        correct: Number(resultData.correctAnswers || 0), wrong: Number(resultData.wrongAnswers || 0), skipped: Number(resultData.skippedAnswers || 0),
+        submittedAt: String(resultData.submittedAt || S.nowIso()),
+      };
+      if (S.findRowById("users", session.userId)) updateRow("users", session.userId, { lastExam: JSON.stringify(summary) });
+    } catch (e) {}
+    return { success: true, data: saved };
   } catch (err) { return { success: false, error: String(err) }; }
 }
 

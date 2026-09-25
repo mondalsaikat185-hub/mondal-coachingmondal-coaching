@@ -6,7 +6,10 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { AuthProvider } from './components/AuthProvider';
 import { setupAlertPolyfill } from './lib/alert-polyfill';
 import { startAutoUpdate } from './lib/autoUpdate';
+import { installFx } from './lib/fx';
 import { ErrorBoundary } from './components/ErrorBoundary';
+
+installFx();
 
 // Force unregister service workers and clear cache to permanently resolve aggressive PWA mobile caching
 try {

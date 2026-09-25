@@ -36,6 +36,15 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [batches, setBatches] = useState<any[]>([]);
+  const [photoOf, setPhotoOf] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+    api.getUsers().then((list: any[]) => {
+      const m: Record<string, string> = {};
+      (list || []).forEach(u => { if (u && u.profilePhotoUrl) m[u.id] = u.profilePhotoUrl; });
+      setPhotoOf(m);
+    }).catch(() => {});
+  }, [user?.uid, user?.role]);
 
   // Form states
   const [title, setTitle] = useState('');
@@ -313,6 +322,8 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                              {isUnread && <span className="absolute -top-1.5 -right-1.5 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-red-600 pb-0.5"></span></span>}
 
                              <div className="flex justify-between items-start">
+                                <div className="flex items-start gap-2">
+                                   {user.role === 'admin' && photoOf[notif.senderId] && <img src={photoOf[notif.senderId]} alt="" className="w-9 h-9 rounded-xl object-cover shrink-0" />}
                                 <div>
                                    <h4 className={`text-sm ${isUnread ? 'font-black' : 'font-bold'}`}>{notif.title || 'Notification'}</h4>
                                    {notif.type === 'exam_request' && (
@@ -332,6 +343,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                                        })()}
                                       </span>
                                    </div>
+                                </div>
                                 </div>
                                 {user.role === 'admin' && (
                                    <div className="flex items-center gap-1">

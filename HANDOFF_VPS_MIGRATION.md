@@ -138,3 +138,13 @@ Write every command's raw output into `R12_REPORT.md` (repo root, not committed)
 3. `npm run lint` and `npm run build` → both pass. `cd vps-api-v2 && node test/selftest.js` → ALL TESTS PASSED.
 4. `git push origin main` (Vercel builds production). `git checkout payments-upi`.
 5. Wait for the Vercel production deployment to be Ready (`npx -y vercel ls`), then check the production URL loads and its HTML contains `mc-api2-187-127-191-163.sslip.io`. `curl -s https://mc-api2-187-127-191-163.sslip.io/health` (counts not lower). Report production URL + commit hash. STOP.
+
+---
+## ROUND R13 — Redesign v1 (new look, bottom nav, welcome splash, Share App QR, profile photo WebP, last-exam card, new joining form). Code by Claude; do NOT change code.
+Files (add ONLY these): src/App.tsx, src/index.css, src/main.tsx, src/lib/fx.ts, src/lib/photo.ts, src/components/ShareApp.tsx, src/components/PhotoZoom.tsx, src/components/student/StudentHome.tsx, src/components/student/StudentBottomNav.tsx, src/components/student/WelcomeSplash.tsx, src/components/student/greeting.ts, src/components/NotificationsPanel.tsx, src/pages/Pages.tsx, src/pages/StudentLibrary.tsx, vps-api-v2/api.js, vps-api-v2/test/selftest.js, HANDOFF_VPS_MIGRATION.md
+Never add _dbcopy/ or R*_REPORT.md. Raw output of every command into `R13_REPORT.md` (repo root, not committed). No force-push. Do not touch production data.
+1. `cd vps-api-v2 && node test/selftest.js` → must show "exam notification tests OK", "profile photo / register / last exam tests OK", "ALL TESTS PASSED".
+2. Root: `npm run lint` and `npm run build` → both pass.
+3. `git checkout payments-upi`; `git add <files above>`; `git commit -m "feat: redesign v1 — new look, bottom nav, welcome splash, share QR, WebP profile photo, last exam card"`; `git push origin payments-upi`.
+4. Backend (backward compatible): `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`; wait 20 s; `/health` (counts not lower, importEnabled false) + `docker compose logs --tail=20 mc-api-v2`.
+5. Report commit hash + preview URL for that commit. STOP. (main/production only after Saikat approves.)

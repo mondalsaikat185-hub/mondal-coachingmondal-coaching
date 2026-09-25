@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Check, X, Loader2, Trash2, Plus, Search } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
+import { zoomPhoto } from '../components/PhotoZoom';
 import { api } from '../lib/api';
 import { AppUser, useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
@@ -898,9 +899,9 @@ export function AdminStudents() {
                     <tr key={sId} className="border-b border-zinc-200 dark:border-zinc-800">
                       <td className="p-2">
                         {student.profilePhotoUrl ? (
-                          <a href={student.profilePhotoUrl} target="_blank" rel="noopener noreferrer">
-                             <img src={student.profilePhotoUrl} alt="Profile" className="w-10 h-10 object-cover border border-zinc-300" />
-                          </a>
+                          <button type="button" onClick={() => zoomPhoto(student.profilePhotoUrl, student.name)} aria-label="View photo">
+                             <img src={student.profilePhotoUrl} alt="Profile" className="w-11 h-11 rounded-xl object-cover border border-zinc-300" />
+                          </button>
                         ) : (
                           <div className="w-10 h-10 bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400">N/A</div>
                         )}
@@ -1454,6 +1455,7 @@ export function AdminPayments() {
           id: p.id,
           studentId: p.studentId,
           studentName: student ? student.name : 'Unknown Student',
+          studentPhoto: student ? ((student as any).profilePhotoUrl || '') : '',
           studentEmail: student ? student.email : '',
           amount: p.amount,
           month: p.month,
@@ -1948,6 +1950,7 @@ export function AdminPayments() {
                         }}
                         className="w-4 h-4 accent-emerald-600"
                       />
+                      {(p as any).studentPhoto ? <img src={(p as any).studentPhoto} alt="" className="w-8 h-8 rounded-xl object-cover shrink-0" /> : null}
                       <span className="text-xs font-bold uppercase text-zinc-700 dark:text-zinc-300">{p.studentName || p.studentEmail}</span>
                    </label>
                    {p.paymentMode && (

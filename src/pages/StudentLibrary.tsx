@@ -161,7 +161,13 @@ export function StudentLibrary() {
   const downloadLockRef = useRef(false);
 
   const [weeksToShow, setWeeksToShow] = useState(2);
-  const [libraryMode, setLibraryMode] = useState<'EXAM' | 'NOTE' | null>(null);
+  const kindParam = searchParams.get('kind');
+  const [libraryMode, setLibraryMode] = useState<'EXAM' | 'NOTE' | null>(kindParam === 'exam' ? 'EXAM' : kindParam === 'note' ? 'NOTE' : null);
+  // Bottom-nav "Library" / "Exams" tabs switch the mode through ?kind=
+  useEffect(() => {
+    if (kindParam === 'exam') setLibraryMode('EXAM');
+    else if (kindParam === 'note') setLibraryMode('NOTE');
+  }, [kindParam]);
 
   const processLibraryData = (allBatches: any[], libraryItems: LibraryItem[]) => {
     const studentBatchIds = String(user?.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
