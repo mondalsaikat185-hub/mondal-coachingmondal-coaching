@@ -889,40 +889,76 @@ function activeExamReqs(batchId) {
   return readSheet('notifications').filter(n => isExamReq(n) && String(n.batchId) === String(batchId) && n.status !== 'duplicate' && n.status !== 'error');
 }
 
-// Unscheduled recent exams for a batch: exams shared to the batch, or sitting in the
-// same folder as a note shared to the batch. Newest class day first.
-function examCandidates(batch, nowMs) {
+// Regular series given every class day, in this order. Title must be exactly "<name> <number>".
+const EXAM_SERIES = [
+  { key: 'passage', label: 'Passage / Comprehension', re: /^\s*passage\s*(\d+)\s*$/i },
+  { key: 'cloze', label: 'Cloze Test', re: /^\s*cloze\s*test\s*(\d+)\s*$/i },
+  { key: 'parajumbles', label: 'Para Jumbles', re: /^\s*para\s*jumbles?\s*(\d+)\s*$/i },
+];
+function seriesOf(title) {
+  for (const s of EXAM_SERIES) { const m = String(title || '').match(s.re); if (m) return { key: s.key, n: Number(m[1]) }; }
+  return null;
+}
+function normTitle(s) { return String(s || '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]/gu, ''); }
+function isActiveItem(it) { return it && it.isActive !== false && it.isActive !== 'false'; }
+
+// Next set of each regular series for this batch: (highest set already shared/requested) + 1.
+function seriesNext(batch, lib) {
   const assigned = parseMap(batch.assignedItemsMap), scheduled = parseMap(batch.scheduledStartTimeMap);
-  const lib = readSheet('library');
-  const byId = {}; for (const it of lib) byId[String(it.id)] = it;
-  const examsByParent = {};
+  const used = new Set(Object.keys(assigned));
+  for (const n of activeExamReqs(batch.id)) for (const id of parseIdList(n.examIds)) used.add(id);
+  const maxN = {}, pool = {};
   for (const it of lib) {
-    if (String(it.type) !== 'exam' || it.isActive === false || it.isActive === 'false') continue;
-    const p = String(it.parentId || '');
-    if (!p) continue;
-    (examsByParent[p] = examsByParent[p] || []).push(it);
+    if (String(it.type) !== 'exam' || !isActiveItem(it)) continue;
+    const s = seriesOf(it.title);
+    if (!s) continue;
+    (pool[s.key] = pool[s.key] || []).push({ n: s.n, it });
+    if (used.has(String(it.id))) maxN[s.key] = Math.max(maxN[s.key] || 0, s.n);
   }
+  const out = [];
+  for (const s of EXAM_SERIES) {
+    const next = (pool[s.key] || [])
+      .filter(x => x.n > (maxN[s.key] || 0) && !used.has(String(x.it.id)) && !scheduled[String(x.it.id)])
+      .sort((a, b) => a.n - b.n)[0];
+    if (next) out.push({ id: String(next.it.id), title: next.it.title || '', kind: s.key, label: s.label, n: next.n });
+  }
+  return out;
+}
+
+// Unscheduled recent exams for a batch: exams shared to the batch without a start time,
+// plus exams whose title matches a note shared to the batch (notes and exams live in
+// different folders, so we match by title). Newest class day first. Regular series excluded.
+function examCandidates(batch, nowMs, libIn) {
+  const assigned = parseMap(batch.assignedItemsMap), scheduled = parseMap(batch.scheduledStartTimeMap);
+  const lib = libIn || readSheet('library');
+  const byId = {}; for (const it of lib) byId[String(it.id)] = it;
+  const exams = lib.filter(it => String(it.type) === 'exam' && isActiveItem(it) && !seriesOf(it.title));
+  const examNorm = exams.map(e => ({ e, k: normTitle(e.title) })).filter(x => x.k.length >= 4);
   const taken = new Set();
   for (const n of activeExamReqs(batch.id)) for (const id of parseIdList(n.examIds)) taken.add(id);
   const best = {};
-  const consider = (exam, whenIso) => {
+  const consider = (exam, whenIso, fromNote) => {
     const id = String(exam.id);
     if (scheduled[id] || taken.has(id)) return;
     const ms = new Date(whenIso || exam.createdAt || 0).getTime();
     if (isNaN(ms)) return;
-    if (!best[id] || ms > best[id].ms) best[id] = { ms, exam };
+    if (!best[id] || ms > best[id].ms) best[id] = { ms, exam, fromNote: fromNote || '' };
   };
   for (const id of Object.keys(assigned)) {
     const it = byId[id];
-    if (!it) continue;
+    if (!it || !isActiveItem(it)) continue;
     const t = String(it.type || '');
-    if (t === 'exam') consider(it, assigned[id]);
-    else if (it.isFolder === true || it.isFolder === 'true' || t === 'folder') (examsByParent[id] || []).forEach(e => consider(e, e.createdAt));
-    else if (it.parentId) (examsByParent[String(it.parentId)] || []).forEach(e => consider(e, assigned[id]));
+    if (t === 'exam') { if (!seriesOf(it.title)) consider(it, assigned[id]); continue; }
+    if (t === 'folder' || it.isFolder === true || it.isFolder === 'true') continue;
+    const nk = normTitle(it.title);
+    if (nk.length < 4) continue;
+    for (const x of examNorm) {
+      if (x.k === nk || x.k.startsWith(nk) || nk.startsWith(x.k)) consider(x.e, assigned[id], it.title || '');
+    }
   }
   const minDate = istDateStr(nowMs - EXAM_REQ_LOOKBACK_DAYS * 86400000);
   return Object.values(best)
-    .map(x => ({ id: String(x.exam.id), title: x.exam.title || '', examType: x.exam.examType || '', folder: (byId[String(x.exam.parentId)] || {}).title || '', classDate: istDateStr(x.ms), ms: x.ms }))
+    .map(x => ({ id: String(x.exam.id), title: x.exam.title || '', examType: x.exam.examType || '', folder: (byId[String(x.exam.parentId)] || {}).title || '', note: x.fromNote, classDate: istDateStr(x.ms), ms: x.ms }))
     .filter(x => x.classDate >= minDate)
     .sort((a, b) => (b.classDate.localeCompare(a.classDate)) || (b.ms - a.ms) || a.title.localeCompare(b.title))
     .map(x => { delete x.ms; return x; });
@@ -952,6 +988,7 @@ function apiGetExamRequestOptions(batchId, dateIso, session) {
         classDay: slot.classDay, examStartTime: slot.examStartTime,
         defaultDate: nextClassDate(slot.classDay, now), date,
         exams: examCandidates(batch, now),
+        series: seriesNext(batch, readSheet('library')),
         existing: existing ? { id: existing.id, senderName: existing.senderName || '', examIds: parseIdList(existing.examIds) } : null,
       },
     };
@@ -963,21 +1000,26 @@ function apiCreateExamNotification(req, session) {
     req = req || {};
     const batchId = String(req.batchId || '').trim();
     const examDate = String(req.examDate || '').trim();
-    const examIds = Array.from(new Set(parseIdList(req.examIds).map(s => s.trim()).filter(Boolean)));
+    const picked = Array.from(new Set(parseIdList(req.examIds).map(s => s.trim()).filter(Boolean)));
     const f = S.findRowById('batches', batchId);
     if (!f) return { success: false, error: 'Batch পাওয়া যায়নি' };
     const denied = checkBatchAccess(batchId, session); if (denied) return denied;
     if (!isIsoDate(examDate)) return { success: false, error: 'তারিখ ঠিক নয় (DD/MM/YYYY)' };
     if (examDate < istDateStr(Date.now())) return { success: false, error: 'অতীতের তারিখে exam দেওয়া যাবে না' };
-    if (!examIds.length) return { success: false, error: 'অন্তত একটি exam বেছে নিন' };
-    if (examIds.length > 20) return { success: false, error: 'একবারে সর্বোচ্চ 20টি exam' };
     const batch = f.obj;
     const slot = resolveBatchSlot(batch);
     if (!slot.examStartTime) return { success: false, error: 'এই batch-এর exam সময় সেট করা নেই — Admin → Batches-এ সেট করুন' };
-    const lib = {}; for (const it of readSheet('library')) lib[String(it.id)] = it;
+    const libList = readSheet('library');
+    const lib = {}; for (const it of libList) lib[String(it.id)] = it;
+    // regular series (Passage, Cloze Test, Para Jumbles) are always added by the server, in order
+    const series = seriesNext(batch, libList).map(x => x.id);
+    const seriesSet = new Set(series);
+    const examIds = series.concat(picked.filter(id => !seriesSet.has(id) && !seriesOf((lib[id] || {}).title)));
+    if (!examIds.length) return { success: false, error: 'অন্তত একটি exam বেছে নিন' };
+    if (examIds.length > 25) return { success: false, error: 'একবারে সর্বোচ্চ 25টি exam' };
     for (const id of examIds) if (!lib[id] || String(lib[id].type) !== 'exam') return { success: false, error: 'Exam পাওয়া যায়নি: ' + id };
     if (session.role !== 'admin') {
-      const allowed = new Set(examCandidates(batch, Date.now()).map(x => x.id));
+      const allowed = new Set(examCandidates(batch, Date.now(), libList).map(x => x.id).concat(series));
       const bad = examIds.filter(id => !allowed.has(id));
       if (bad.length) return { success: false, error: 'এই exam আগেই schedule হয়েছে বা এই batch-এর নয়: ' + bad.map(id => lib[id].title).join(', ') };
     }

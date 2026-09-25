@@ -85,11 +85,12 @@ export interface Batch {
   examSlot?: { classDay: string; examStartTime: string }; // resolved by server (setting or name default)
 }
 
-export interface ExamRequestOption { id: string; title: string; examType: string; folder: string; classDate: string }
+export interface ExamRequestOption { id: string; title: string; examType: string; folder: string; note?: string; classDate: string }
 export interface ExamRequestOptions {
   batchId: string; batchName: string; classDay: string; examStartTime: string;
   defaultDate: string; date: string; exams: ExamRequestOption[];
   existing: { id: string; senderName: string; examIds: string[] } | null;
+  series: { id: string; title: string; kind: string; label: string; n: number }[]; // auto-added regular sets (locked)
 }
 
 export interface LibraryItem {

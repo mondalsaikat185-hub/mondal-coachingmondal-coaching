@@ -113,3 +113,19 @@ Write EVERY command's raw output into `R9_REPORT.md` in the repo root (do not co
 4. VPS backup first: `ssh vps "cd /root/smartqueue-stack && docker compose exec -T mc-api-v2 ls /data/backups | tail -3"` (record). Then `scp vps-api-v2/api.js vps-api-v2/server.js vps:/root/smartqueue-stack/mc-api-v2/` and `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`.
 5. Wait 20 s. `curl -s https://mc-api2-187-127-191-163.sslip.io/health` → success true, counts NOT lower than before (users 92, library 1140, payments ≥186 …), importEnabled false. `ssh vps "cd /root/smartqueue-stack && docker compose logs --tail=30 mc-api-v2"` → no errors.
 6. Put in R9_REPORT.md: commit hash, preview URL for that commit, /health output, logs. STOP. Production (merge to main) only after Saikat approves the preview.
+
+---
+## ROUND R10 — READ-ONLY diagnostic (no code change, no deploy, no commit)
+1. `scp vps-api-v2/tools/diag_exam.js vps:/tmp/diag_exam.js`
+2. `ssh vps "cd /root/smartqueue-stack && docker compose cp /tmp/diag_exam.js mc-api-v2:/tmp/diag_exam.js && docker compose exec -T mc-api-v2 node /tmp/diag_exam.js"`
+3. Write the FULL raw output into `R10_REPORT.md` in the repo root (do not commit). Do not edit anything else. STOP.
+
+---
+## ROUND R11 — exam notification fix (title match) + regular series (Passage / Cloze Test / Para Jumbles). Code by Claude; do NOT change code.
+Files (add ONLY these): vps-api-v2/api.js, vps-api-v2/test/selftest.js, vps-api-v2/tools/diag_exam.js, src/lib/api.ts, src/components/ExamNotificationForm.tsx, HANDOFF_VPS_MIGRATION.md
+Never add _dbcopy/ or R*_REPORT.md. Write every command's raw output into `R11_REPORT.md` (repo root, not committed). No force-push. Do not touch production data.
+1. `cd vps-api-v2 && node test/selftest.js` → "exam notification tests OK" + "ALL TESTS PASSED".
+2. Root: `npm run lint` and `npm run build` → both pass.
+3. `git add <files above>`; `git commit -m "fix: exam notification matches exams to notes by title; auto regular series Passage/Cloze/Para Jumbles"`; `git push origin payments-upi`.
+4. `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`.
+5. Wait 20 s. `curl -s https://mc-api2-187-127-191-163.sslip.io/health` (counts not lower, importEnabled false) and `ssh vps "cd /root/smartqueue-stack && docker compose logs --tail=20 mc-api-v2"`. Add commit hash + preview URL to the report. STOP.
