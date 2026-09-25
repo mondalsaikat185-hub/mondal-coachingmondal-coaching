@@ -14,7 +14,7 @@ function appUrl(): string {
   } catch (e) { return APP_URL; }
 }
 
-export function ShareAppButton({ className = '', label = false }: { className?: string; label?: boolean }) {
+export function ShareAppButton({ className = '', label = false, colorful = false }: { className?: string; label?: boolean; colorful?: boolean }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const url = appUrl();
@@ -31,7 +31,7 @@ export function ShareAppButton({ className = '', label = false }: { className?: 
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} aria-label="Share App" title="Share App"
-        className={className || 'p-2 border-2 border-zinc-900 dark:border-zinc-100 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1'}>
+        className={className || (colorful ? 'mc-share-btn' : 'p-2 border-2 border-zinc-900 dark:border-zinc-100 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1')}>
         <Share2 className="w-4 h-4" />{label && <span className="text-xs font-bold">Share App</span>}
       </button>
       {open && (

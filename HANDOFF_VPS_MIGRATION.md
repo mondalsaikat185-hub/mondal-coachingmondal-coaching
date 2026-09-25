@@ -148,3 +148,11 @@ Never add _dbcopy/ or R*_REPORT.md. Raw output of every command into `R13_REPORT
 3. `git checkout payments-upi`; `git add <files above>`; `git commit -m "feat: redesign v1 — new look, bottom nav, welcome splash, share QR, WebP profile photo, last exam card"`; `git push origin payments-upi`.
 4. Backend (backward compatible): `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`; wait 20 s; `/health` (counts not lower, importEnabled false) + `docker compose logs --tail=20 mc-api-v2`.
 5. Report commit hash + preview URL for that commit. STOP. (main/production only after Saikat approves.)
+
+---
+## ROUND R14 — header Share button (replaces student Home), resting colour rings on all tappable items. Frontend only. Code by Claude; do NOT change code.
+Files (add ONLY these): src/App.tsx, src/index.css, src/lib/fx.ts, src/components/ShareApp.tsx, HANDOFF_VPS_MIGRATION.md
+Raw output of every command into `R14_REPORT.md` (not committed). No force-push. No VPS step needed.
+1. `npm run lint` and `npm run build` → both pass.
+2. `git add <files above>`; `git commit -m "feat: colourful Share App in header, resting glow rings for touch"`; `git push origin payments-upi`.
+3. Report commit hash + preview URL. STOP.

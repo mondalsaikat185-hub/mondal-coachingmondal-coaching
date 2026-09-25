@@ -42,6 +42,15 @@ export function installFx() {
   if (typeof window === 'undefined' || (window as any).__mcFx) return;
   (window as any).__mcFx = true;
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  // mark every tappable item up front so it shows its resting colour ring (important on phones)
+  let queued = false;
+  const scan = () => {
+    queued = false;
+    document.querySelectorAll(CANDIDATE).forEach(n => { if (!(n as HTMLElement).classList.contains('mc-fx')) pick(n); });
+  };
+  const queue = () => { if (!queued) { queued = true; window.setTimeout(scan, 250); } };
+  new MutationObserver(queue).observe(document.body, { childList: true, subtree: true });
+  queue();
   const fine = window.matchMedia && window.matchMedia('(hover: hover)').matches;
   if (fine) {
     document.addEventListener('mouseover', (e) => setHot(pick(e.target)), { passive: true });

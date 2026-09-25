@@ -691,6 +691,7 @@ import { StudentBottomNav } from "./components/student/StudentBottomNav";
 import { WelcomeSplash } from "./components/student/WelcomeSplash";
 import { ShareAppButton } from "./components/ShareApp";
 import { PhotoZoom } from "./components/PhotoZoom";
+import { AdminHero } from "./components/admin/AdminHero";
 import { compressPhoto, dataUrlKb } from "./lib/photo";
 
 function TopNav() {
@@ -895,7 +896,7 @@ function TopNav() {
     <nav className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 sticky top-0 z-40">
       <PhotoZoom />
       {user && user.role === "student" && <StudentBottomNav />}
-      {user && user.role === "student" && <WelcomeSplash name={user.fullName || user.displayName} />}
+      {user && (user.role === "student" || user.role === "admin") && <WelcomeSplash name={user.fullName || user.displayName} admin={user.role === "admin"} />}
       {user && user.role === "student" ? (
         <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mc-open-profile"))} className="flex items-center gap-2 shrink-0 min-w-0 text-left" aria-label="My profile">
           <span className="w-9 h-9 rounded-xl overflow-hidden grid place-items-center text-white font-extrabold bg-gradient-to-b from-amber-400 to-amber-600 shadow-[0_3px_0_0_#b45309] shrink-0">
@@ -917,16 +918,6 @@ function TopNav() {
             </span>
           </div>
         )}
-        {user && user.role === "student" && (
-          <Link
-            to="/"
-            aria-label="Home / হোম"
-            title="Home / হোম"
-            className="w-10 h-10 rounded-full flex items-center justify-center text-white bg-gradient-to-b from-orange-400 to-orange-600 border-2 border-orange-800 shadow-[0_4px_0_0_#7c2d12,0_6px_10px_rgba(0,0,0,0.35)] hover:from-orange-300 hover:to-orange-500 active:translate-y-1 active:shadow-[0_1px_0_0_#7c2d12] active:from-emerald-400 active:to-emerald-600 active:border-emerald-800 transition-all"
-          >
-            <Home className="w-5 h-5" strokeWidth={2.75} />
-          </Link>
-        )}
         {user && user.role === "admin" && (
           <Link
             to="/admin"
@@ -937,7 +928,7 @@ function TopNav() {
             <Home className="w-5 h-5" strokeWidth={2.75} />
           </Link>
         )}
-        <ShareAppButton />
+        <ShareAppButton colorful />
         <button
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="p-2 border-2 border-zinc-900 dark:border-zinc-100 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
@@ -1355,16 +1346,7 @@ function AdminDashboard() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-black italic uppercase leading-none mb-2">
-            Admin Dashboard
-          </h2>
-          <p className="text-zinc-500 text-sm font-medium">
-            Manage your tuition center
-          </p>
-        </div>
-      </div>
+      <AdminHero user={user} />
 
       {absentFlags.length > 0 && (
         <div className="mb-6 bg-red-50 dark:bg-red-950/30 border-4 border-red-500 p-4">

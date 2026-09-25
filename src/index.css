@@ -93,18 +93,38 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.01em; text
   z-index: 30;
 }
 .mc-fx.mc-hot.mc-small { transform: translateY(-2px) scale(1.06); }
+/* Resting state: every tappable card/button/option carries a hair-thin colour ring with a faint glow,
+   so phones (no hover) still show what can be pressed. Pressing lifts it and the light spreads. */
 .mc-fx::after {
-  content: ""; position: absolute; inset: -1.5px; border-radius: inherit; padding: 1.5px;
-  pointer-events: none; opacity: 0; z-index: 2;
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px;
+  pointer-events: none; z-index: 2; opacity: .55;
   background: conic-gradient(from var(--mc-a), #FFB840, #FF5A5F, #B45BFF, #5B7FFF, #2BC48C, #FFB840);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-  filter: drop-shadow(0 0 3px rgba(255,184,64,.9)) drop-shadow(0 0 6px rgba(255,90,95,.4));
-  transition: opacity .3s ease;
-  animation: mc-spin 3.5s linear infinite;
+  filter: drop-shadow(0 0 2px rgba(255,184,64,.45));
+  transition: opacity .3s ease, inset .3s ease, padding .3s ease, filter .3s ease;
+  animation: mc-spin 6s linear infinite; animation-play-state: paused;
 }
-.mc-fx.mc-hot::after { opacity: 1; }
+.dark .mc-fx::after { opacity: .7; }
+.mc-fx.mc-hot::after {
+  opacity: 1; inset: -2px; padding: 2px; animation-duration: 2.8s; animation-play-state: running;
+  filter: drop-shadow(0 0 4px rgba(255,184,64,.95)) drop-shadow(0 0 10px rgba(255,90,95,.55)) drop-shadow(0 0 16px rgba(91,127,255,.4));
+}
+.mc-fx.mc-hot { box-shadow: var(--mc-shadow-hot), 0 0 22px -4px rgba(255,160,60,.55), 0 0 30px -8px rgba(91,127,255,.45) !important; }
+
+/* Colourful always-visible Share App button in the header */
+.mc-share-btn {
+  position: relative; width: 40px; height: 40px; border-radius: 9999px; display: grid; place-items: center; color: #fff; border: 0;
+  background: conic-gradient(from 200deg, #FF5A5F, #FFB840, #2BC48C, #5B7FFF, #B45BFF, #FF5A5F);
+  box-shadow: 0 4px 0 rgba(90,30,120,.45), 0 0 14px 2px rgba(255,140,90,.55);
+  animation: mc-share-pulse 2.4s ease-in-out infinite;
+}
+.mc-share-btn svg { filter: drop-shadow(0 1px 1px rgba(0,0,0,.35)); }
+@keyframes mc-share-pulse {
+  0%, 100% { box-shadow: 0 4px 0 rgba(90,30,120,.45), 0 0 14px 2px rgba(255,140,90,.55); }
+  50% { box-shadow: 0 4px 0 rgba(90,30,120,.45), 0 0 4px 0 rgba(255,140,90,.2); }
+}
 .mc-ripple {
   position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
   pointer-events: none; z-index: 3;
