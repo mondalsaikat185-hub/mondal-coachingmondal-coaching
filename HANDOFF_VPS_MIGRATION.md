@@ -96,3 +96,8 @@ Changes: consecutive rule starts September 2026 (client+server); UTR optional (i
 2. `git add src/App.tsx src/pages/Pages.tsx vps-api-v2/api.js HANDOFF_VPS_MIGRATION.md && git commit -m "feat: optional UTR, Sept-2026 rule, month order, 3D payment buttons, home button" && git push origin payments-upi`
 3. VPS: `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js` then `cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2`. curl /health → counts must be same as before or higher (never lower), importEnabled false.
 4. Report preview URL of the new commit + /health output. STOP (production merge only after Saikat checks the preview).
+
+## ROUND R8 — login lock after 10 wrong tries (was 5). Server only.
+1. `cd vps-api-v2 && node test/selftest.js` → ALL TESTS PASSED.
+2. Commit vps-api-v2/api.js + test + this file to payments-upi, push.
+3. `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `docker compose up -d --build mc-api-v2`; curl /health (counts not lower). Report.

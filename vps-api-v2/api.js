@@ -443,7 +443,7 @@ function apiLoginUser(phone, passcode) {
     const isLocked = cache.get(lockKey);
     if (isLocked) {
       const remainingMin = Math.ceil((Number(isLocked) - Date.now()) / 60000);
-      return { success: false, error: "অ্যাকাউন্ট সাময়িকভাবে লক করা হয়েছে। " + (remainingMin > 0 ? remainingMin : 15) + " মিনিট পর পুনরায় চেষ্টা করুন। (Account locked due to 5 failed attempts)", code: 429 };
+      return { success: false, error: "অ্যাকাউন্ট সাময়িকভাবে লক করা হয়েছে। " + (remainingMin > 0 ? remainingMin : 15) + " মিনিট পর পুনরায় চেষ্টা করুন। (Account locked due to 10 failed attempts)", code: 429 };
     }
     const user = readSheet("users").find(u => cleanPhone(u.phone) === cleanedPhone);
     if (!user) return { success: false, error: "ফোন নম্বরটি নিবন্ধিত নয় (Phone number not registered)" };
@@ -451,13 +451,13 @@ function apiLoginUser(phone, passcode) {
     const hadSalt = Boolean(user.salt && String(user.salt).trim() !== "");
     if (!passcodeMatches(user, input)) {
       const failCount = Number(cache.get(failKey) || 0) + 1;
-      if (failCount >= 5) {
+      if (failCount >= 10) {
         cache.remove(failKey);
         cache.put(lockKey, String(Date.now() + 15 * 60 * 1000), 900);
-        return { success: false, error: "ভুল পাসকোড! ৫ বার ভুল করার কারণে অ্যাকাউন্ট ১৫ মিনিটের জন্য লক করা হয়েছে। (Account locked for 15 minutes)", code: 429 };
+        return { success: false, error: "ভুল পাসকোড! ১০ বার ভুল করার কারণে অ্যাকাউন্ট ১৫ মিনিটের জন্য লক করা হয়েছে। (Account locked for 15 minutes)", code: 429 };
       }
       cache.put(failKey, String(failCount), 900);
-      return { success: false, error: "ভুল পাসকোড! আর " + (5 - failCount) + " বার চেষ্টা করতে পারবেন। (Invalid passcode)", remainingAttempts: 5 - failCount };
+      return { success: false, error: "ভুল পাসকোড! আর " + (10 - failCount) + " বার চেষ্টা করতে পারবেন। (Invalid passcode)", remainingAttempts: 10 - failCount };
     }
     cache.remove(failKey); cache.remove(lockKey);
     if (!hadSalt && input) {

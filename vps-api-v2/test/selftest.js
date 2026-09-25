@@ -19,7 +19,7 @@ const PUB = 'MondalCoachingSecureToken2026!';
 
   const call = (action, args, token) => handleRpc({ action, args, token: token || PUB });
   let r = await call('apiLoginUser', ['9000000001', 'wrong']);
-  assert.equal(r.success, false); assert.ok(r.remainingAttempts === 4);
+  assert.equal(r.success, false); assert.ok(r.remainingAttempts === 9);
   r = await call('apiLoginUser', ['9000000001', 'adminpass']);
   const adminTok = r.data.data.sessionToken; assert.ok(adminTok && !r.data.data.passcode);
   r = await call('apiLoginUser', ['9999999901', '9999999901']);
