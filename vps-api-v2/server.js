@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const S = require('./store');
-const { handleRpc, purgeExpiredSessions } = require('./api');
+const { handleRpc, purgeExpiredSessions, startExamScheduler } = require('./api');
 
 const PORT = Number(process.env.PORT || 4100);
 const SYNC_SECRET = (process.env.HMAC_SYNC_SECRET || '').trim();
@@ -119,6 +119,9 @@ function runBackups() {
 }
 setTimeout(runBackups, 30 * 1000).unref();
 setInterval(runBackups, 60 * 60 * 1000).unref();
+
+// Exam notification scheduler (writes batches.scheduledStartTimeMap), every 5 min
+startExamScheduler(5 * 60 * 1000);
 
 // Signed download of the latest backup (for off-server copies to the owner's PC)
 app.get('/backup/latest', (req, res) => {

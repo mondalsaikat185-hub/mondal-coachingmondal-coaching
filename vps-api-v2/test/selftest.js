@@ -68,6 +68,83 @@ const PUB = 'MondalCoachingSecureToken2026!';
   r = await call('apiGetMyProfile', [], stuTok); assert.equal(r.code, 401);
   r = await call('apiLoginUser', ['9999999901', 'newpass1']); assert.equal(r.data.success, true);
 
+  // ---------- exam notifications (Add Notification for Exam) ----------
+  {
+    const I = _internal;
+    assert.deepEqual(I.resolveBatchSlot({ name: 'Shonibar Sakal' }), { classDay: '6', examStartTime: '09:05' });
+    assert.deepEqual(I.resolveBatchSlot({ name: 'Shonibar Bikal' }), { classDay: '6', examStartTime: '14:05' });
+    assert.deepEqual(I.resolveBatchSlot({ name: 'Sunday Morning' }), { classDay: '0', examStartTime: '08:05' });
+    assert.deepEqual(I.resolveBatchSlot({ name: 'Sunday Bikal' }), { classDay: '0', examStartTime: '14:05' });
+    assert.deepEqual(I.resolveBatchSlot({ name: 'Shonibar Sakal', classDay: '0', examStartTime: '10:30' }), { classDay: '0', examStartTime: '10:30' });
+    assert.deepEqual(I.resolveBatchSlot({ name: 'Test Batch' }), { classDay: '', examStartTime: '' });
+    assert.equal(I.nextClassDate('6', Date.parse('2026-09-25T06:00:00Z')), '2026-09-26'); // Friday -> tomorrow
+    assert.equal(I.nextClassDate('6', Date.parse('2026-09-25T19:00:00Z')), '2026-10-03'); // Sat 00:30 IST -> next week
+    assert.equal(I.nextClassDate('0', Date.parse('2026-09-26T04:30:00Z')), '2026-09-27');
+    assert.equal(I.examStartIso('2026-10-03', '09:05'), '2026-10-03T03:35:00.000Z');
+
+    const day1 = new Date(Date.now() - 86400000).toISOString();
+    S.saveRow('library', { id: 'f1', title: 'Bio', type: 'folder', isFolder: 'true' });
+    S.saveRow('library', { id: 'note1', title: 'Tissue note', type: 'note', parentId: 'f1' });
+    S.saveRow('library', { id: 'ex1', title: 'Tissue exam', type: 'exam', parentId: 'f1' });
+    S.saveRow('library', { id: 'ex2', title: 'Direct exam', type: 'exam', parentId: 'f9' });
+    S.saveRow('library', { id: 'ex3', title: 'Old scheduled', type: 'exam', parentId: 'f1' });
+    S.saveRow('batches', { id: 'B2x', name: 'Shonibar Sakal', assignedItemsMap: { note1: day1, ex2: day1, ex3: day1 }, scheduledStartTimeMap: { ex3: '2026-01-01T00:00:00.000Z' } });
+    S.saveRow('batches', { id: 'b3', name: 'Sunday Morning', assignedItemsMap: {}, scheduledStartTimeMap: {} });
+    S.updateRow('users', 'stu1', { batchId: 'b1, B2x' });
+    r = await call('apiLoginUser', ['9999999901', 'newpass1']); const st2 = r.data.data.sessionToken;
+    r = await call('apiLoginUser', ['9000000001', 'adminpass']); const ad2 = r.data.data.sessionToken;
+
+    r = await call('apiGetExamRequestOptions', ['B2x', ''], st2);
+    assert.equal(r.success, true, r.error);
+    assert.deepEqual(r.data.data.exams.map(x => x.id).sort(), ['ex1', 'ex2']);
+    const D = r.data.data.defaultDate; assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(D)); assert.equal(new Date(D + 'T00:00:00Z').getUTCDay(), 6);
+    assert.equal(r.data.data.examStartTime, '09:05'); assert.equal(r.data.data.existing, null);
+    r = await call('apiGetExamRequestOptions', ['b3', ''], st2); assert.equal(r.code, 403);
+    r = await call('apiCreateExamNotification', [{ batchId: 'b3', examDate: D, examIds: ['ex1'] }], st2); assert.equal(r.code, 403);
+    r = await call('apiCreateExamNotification', [{ batchId: 'B2x', examDate: D, examIds: ['ex3'] }], st2); assert.equal(r.success, false);
+    r = await call('apiCreateExamNotification', [{ batchId: 'B2x', examDate: '2020-01-01', examIds: ['ex1'] }], st2); assert.equal(r.success, false);
+    r = await call('apiCreateExamNotification', [{ batchId: 'B2x', examDate: '2026-02-31', examIds: ['ex1'] }], st2); assert.equal(r.success, false);
+    r = await call('apiCreateExamNotification', [{ batchId: 'B2x', examDate: D, examIds: [] }], st2); assert.equal(r.success, false);
+    r = await call('apiCreateExamNotification', [{ batchId: 'B2x', examDate: D, examIds: ['ex1', 'ex2'] }], st2);
+    assert.equal(r.success, true, r.error); assert.equal(r.data.duplicate, false);
+    const reqId = r.data.data.id; assert.equal(r.data.data.status, 'scheduled');
+    const start = I.examStartIso(D, '09:05');
+    r = await call('apiGetBatches', [], ad2);
+    let bb = r.data.data.find(b => b.id === 'B2x');
+    assert.equal(bb.scheduledStartTimeMap.ex1, start); assert.equal(bb.scheduledStartTimeMap.ex2, start);
+    assert.ok(bb.assignedItemsMap.ex1); assert.equal(bb.scheduledStartTimeMap.ex3, '2026-01-01T00:00:00.000Z');
+    assert.deepEqual(bb.examSlot, { classDay: '6', examStartTime: '09:05' });
+    r = await call('apiGetExamRequestOptions', ['B2x', D], st2); assert.equal(r.data.data.exams.length, 0); assert.equal(r.data.data.existing.id, reqId);
+    r = await call('apiCreateExamNotification', [{ batchId: 'B2x', examDate: D, examIds: ['ex1'] }], ad2);
+    assert.equal(r.data.duplicate, true); assert.equal(r.data.data.status, 'duplicate'); const dupId = r.data.data.id;
+
+    // student sees batch notification (mixed-case batch id), mark-as-read does not duplicate rows
+    r = await call('apiGetNotifications', [], st2); assert.ok(r.data.data.some(n => n.id === reqId));
+    const nBefore = S.counts().notifications;
+    r = await call('apiCreateNotification', [{ id: reqId, readers: ['stu1'] }], st2); assert.equal(r.success, true);
+    assert.equal(S.counts().notifications, nBefore);
+    assert.ok(JSON.parse(S.findRowById('notifications', reqId).obj.readers).includes('stu1'));
+    assert.equal(S.findRowById('notifications', reqId).obj.type, 'exam_request');
+    r = await call('apiDeleteNotification', [reqId], st2); assert.equal(r.code, 403);
+    r = await call('apiCreateNotification', [{ id: reqId, title: 'Edited', type: 'admin_to_batch' }], ad2);
+    assert.equal(S.counts().notifications, nBefore);
+    assert.equal(S.findRowById('notifications', reqId).obj.type, 'exam_request'); assert.equal(S.findRowById('notifications', reqId).obj.title, 'Edited');
+
+    // admin delete before exam opens -> schedule undone, added share removed, old share kept
+    r = await call('apiDeleteNotification', [reqId], ad2); assert.equal(r.success, true);
+    r = await call('apiDeleteNotification', [dupId], ad2); assert.equal(r.success, true);
+    r = await call('apiGetBatches', [], ad2); bb = r.data.data.find(b => b.id === 'B2x');
+    assert.equal(bb.scheduledStartTimeMap.ex1, undefined); assert.equal(bb.assignedItemsMap.ex1, undefined);
+    assert.equal(bb.scheduledStartTimeMap.ex2, undefined); assert.ok(bb.assignedItemsMap.ex2);
+
+    // background scheduler picks up pending rows; bad batch -> error, not crash
+    S.saveRow('notifications', { type: 'exam_request', batchId: 'B2x', examDate: D, examIds: '["ex2"]', status: 'pending' });
+    S.saveRow('notifications', { type: 'exam_request', batchId: 'nope', examDate: D, examIds: '["ex2"]', status: 'pending' });
+    const res = S.tx(() => I.runExamScheduler(Date.now())); assert.deepEqual(res, { done: 1, failed: 1 });
+    assert.equal(JSON.parse(S.findRowById('batches', 'B2x').obj.scheduledStartTimeMap).ex2, start);
+    console.log('exam notification tests OK');
+  }
+
   // transaction rollback: failing write leaves no partial data
   const before = S.counts();
   try { S.tx(() => { S.saveRow('payments', { x: 1 }); throw new Error('boom'); }); } catch (e) {}

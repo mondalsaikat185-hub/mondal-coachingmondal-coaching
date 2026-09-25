@@ -664,6 +664,7 @@ function Login() {
 }
 
 import { NotificationsPanel } from "./components/NotificationsPanel";
+import { ExtraKnowledgeCard } from "./components/ExtraKnowledgeCard";
 
 function TopNav() {
   const { theme, setTheme } = useTheme();
@@ -1774,6 +1775,7 @@ function StudentDashboard() {
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full relative">
+      <ExtraKnowledgeCard />
       {showForceNudge && (
         <div className="fixed inset-0 bg-red-900/90 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white dark:bg-zinc-900 border-8 border-red-600 dark:border-red-500 w-full max-w-md p-8 text-center transform transition-all scale-100 shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">

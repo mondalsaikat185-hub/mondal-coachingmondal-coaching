@@ -101,3 +101,15 @@ Changes: consecutive rule starts September 2026 (client+server); UTR optional (i
 1. `cd vps-api-v2 && node test/selftest.js` → ALL TESTS PASSED.
 2. Commit vps-api-v2/api.js + test + this file to payments-upi, push.
 3. `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `docker compose up -d --build mc-api-v2`; curl /health (counts not lower). Report.
+
+---
+## ROUND R9 — "Add Notification for Exam" + Extra Knowledge card (code written by Claude; do NOT change code)
+Files (add ONLY these): vps-api-v2/api.js, vps-api-v2/server.js, vps-api-v2/test/selftest.js, src/lib/api.ts, src/components/NotificationsPanel.tsx, src/components/ExamNotificationForm.tsx, src/components/ExtraKnowledgeCard.tsx, src/pages/Pages.tsx, src/App.tsx, HANDOFF_VPS_MIGRATION.md
+What: new RPC apiGetExamRequestOptions + apiCreateExamNotification; exam scheduler inside mc-api-v2 (setInterval 5 min) writes batches.scheduledStartTimeMap; batch settings classDay/examStartTime (Admin → Batches); notification edit/mark-read now updates in place (no duplicate rows); students see batch notifications (mixed-case batch id fix); student home gets glowing "Extra Knowledge" card (sanvitools.in Study Hub + YouTube @SanviTools).
+Write EVERY command's raw output into `R9_REPORT.md` in the repo root (do not commit it). Never print tokens/passwords. No force-push. Do not touch production data.
+1. `cd vps-api-v2 && node test/selftest.js` → must show "exam notification tests OK" and "ALL TESTS PASSED".
+2. Root: `npm run lint` and `npm run build` → both pass.
+3. `git add <files above>`; `git commit -m "feat: exam notification (structured) + in-process scheduler + extra knowledge card"`; `git push origin payments-upi`.
+4. VPS backup first: `ssh vps "cd /root/smartqueue-stack && docker compose exec -T mc-api-v2 ls /data/backups | tail -3"` (record). Then `scp vps-api-v2/api.js vps-api-v2/server.js vps:/root/smartqueue-stack/mc-api-v2/` and `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`.
+5. Wait 20 s. `curl -s https://mc-api2-187-127-191-163.sslip.io/health` → success true, counts NOT lower than before (users 92, library 1140, payments ≥186 …), importEnabled false. `ssh vps "cd /root/smartqueue-stack && docker compose logs --tail=30 mc-api-v2"` → no errors.
+6. Put in R9_REPORT.md: commit hash, preview URL for that commit, /health output, logs. STOP. Production (merge to main) only after Saikat approves the preview.

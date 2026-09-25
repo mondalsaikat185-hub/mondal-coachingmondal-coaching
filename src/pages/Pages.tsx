@@ -1113,7 +1113,12 @@ export interface Batch {
   name: string;
   schedule: string;
   createdAt?: any;
+  classDay?: string;
+  examStartTime?: string;
+  examSlot?: { classDay: string; examStartTime: string };
 }
+
+const BATCH_DAY_NAMES: Record<string, string> = { '0': 'রবিবার', '1': 'সোমবার', '2': 'মঙ্গলবার', '3': 'বুধবার', '4': 'বৃহস্পতিবার', '5': 'শুক্রবার', '6': 'শনিবার' };
 
 export function AdminBatches() {
   const [batches, setBatches] = useState<Batch[]>([]);
@@ -1125,6 +1130,8 @@ export function AdminBatches() {
   const [editingBatch, setEditingBatch] = useState<Batch | null>(null);
   const [editName, setEditName] = useState('');
   const [editSchedule, setEditSchedule] = useState('');
+  const [editClassDay, setEditClassDay] = useState('');
+  const [editExamTime, setEditExamTime] = useState('');
 
   const fetchBatches = async () => {
     try {
@@ -1133,7 +1140,10 @@ export function AdminBatches() {
         id: b.id,
         name: b.name,
         schedule: (b as any).schedule || '',
-        createdAt: b.createdAt
+        createdAt: b.createdAt,
+        classDay: (b as any).classDay !== undefined && (b as any).classDay !== null ? String((b as any).classDay) : '',
+        examStartTime: (b as any).examStartTime || '',
+        examSlot: (b as any).examSlot
       }));
       setBatches(data);
     } catch (error) {
@@ -1173,7 +1183,9 @@ export function AdminBatches() {
       await api.saveBatch({
         id: editingBatch.id,
         name: editName.trim(),
-        schedule: editSchedule.trim()
+        schedule: editSchedule.trim(),
+        classDay: editClassDay,
+        examStartTime: editExamTime
       } as any);
       globalBatchesCache = null;
       await fetchBatches();
@@ -1252,13 +1264,14 @@ export function AdminBatches() {
                 <tr className="border-b-2 border-zinc-900 dark:border-zinc-100">
                   <th className="p-2 font-bold uppercase text-xs">Name</th>
                   <th className="p-2 font-bold uppercase text-xs">Schedule</th>
+                  <th className="p-2 font-bold uppercase text-xs">Exam slot</th>
                   <th className="p-2 font-bold uppercase text-xs text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {batches.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="p-4 text-center text-zinc-500 font-medium">No batches found.</td>
+                    <td colSpan={4} className="p-4 text-center text-zinc-500 font-medium">No batches found.</td>
                   </tr>
                 )}
                 {batches.map((batch) => (
@@ -1266,11 +1279,18 @@ export function AdminBatches() {
                     <tr className="border-b border-zinc-200 dark:border-zinc-800">
                       <td className="p-2 font-bold">{batch.name}</td>
                       <td className="p-2 text-sm">{batch.schedule}</td>
+                      <td className="p-2 text-xs font-bold whitespace-nowrap">
+                        {batch.examSlot && batch.examSlot.examStartTime
+                          ? `${BATCH_DAY_NAMES[batch.examSlot.classDay] || '—'} ${batch.examSlot.examStartTime}${!batch.examStartTime ? ' (auto)' : ''}`
+                          : <span className="text-red-600">সেট নেই</span>}
+                      </td>
                       <td className="p-2 flex justify-end gap-2 items-center">
                          <button onClick={() => {
                              setEditingBatch(batch);
                              setEditName(batch.name);
                              setEditSchedule(batch.schedule);
+                             setEditClassDay(batch.classDay || '');
+                             setEditExamTime(batch.examStartTime || '');
                           }} className="p-1 px-3 bg-blue-100 text-blue-700 border border-blue-200 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-700 font-bold uppercase text-[10px]">
                              Edit
                           </button>
@@ -1281,9 +1301,16 @@ export function AdminBatches() {
                     </tr>
                     {editingBatch?.id === batch.id && (
                       <tr className="border-b-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20">
-                        <td colSpan={3} className="p-4 flex flex-col sm:flex-row gap-4 items-center">
+                        <td colSpan={4} className="p-4 flex flex-col sm:flex-row gap-4 items-center">
                           <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm w-full bg-white dark:bg-zinc-800" placeholder="Name" />
                           <input type="text" value={editSchedule} onChange={e => setEditSchedule(e.target.value)} className="border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm w-full bg-white dark:bg-zinc-800" placeholder="Schedule" />
+                          <select value={editClassDay} onChange={e => setEditClassDay(e.target.value)} className="border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm w-full bg-white dark:bg-zinc-800" title="Exam day (class day)">
+                            <option value="">Exam day: auto (নাম থেকে)</option>
+                            <option value="6">শনিবার (Saturday)</option>
+                            <option value="0">রবিবার (Sunday)</option>
+                            <option value="1">সোমবার</option><option value="2">মঙ্গলবার</option><option value="3">বুধবার</option><option value="4">বৃহস্পতিবার</option><option value="5">শুক্রবার</option>
+                          </select>
+                          <input type="time" value={editExamTime} onChange={e => setEditExamTime(e.target.value)} className="border-2 border-zinc-900 dark:border-zinc-100 p-2 text-sm w-full bg-white dark:bg-zinc-800" title="Exam start time (খালি = auto)" />
                           <div className="flex gap-2 shrink-0">
                             <button onClick={handleEditSave} disabled={loading} className="bg-blue-600 text-white px-4 py-2 font-bold uppercase text-xs">Save</button>
                             <button onClick={() => setEditingBatch(null)} disabled={loading} className="bg-zinc-200 text-zinc-900 px-4 py-2 font-bold uppercase text-xs">Cancel</button>

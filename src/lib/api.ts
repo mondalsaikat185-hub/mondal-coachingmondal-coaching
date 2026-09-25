@@ -80,6 +80,16 @@ export interface Batch {
   assignedItemsMap: Record<string, string>; // itemId -> assignedAtISO
   scheduledStartTimeMap?: Record<string, string>; // itemId -> scheduledStartTimeISO
   createdAt: string;
+  classDay?: string; // '0' Sunday … '6' Saturday (batch setting for exam notifications)
+  examStartTime?: string; // 'HH:MM' IST
+  examSlot?: { classDay: string; examStartTime: string }; // resolved by server (setting or name default)
+}
+
+export interface ExamRequestOption { id: string; title: string; examType: string; folder: string; classDate: string }
+export interface ExamRequestOptions {
+  batchId: string; batchName: string; classDay: string; examStartTime: string;
+  defaultDate: string; date: string; exams: ExamRequestOption[];
+  existing: { id: string; senderName: string; examIds: string[] } | null;
 }
 
 export interface LibraryItem {
@@ -1555,6 +1565,16 @@ export const api = {
   },
 
   clearNotificationsCache: () => { globalApiCache.notifications = null; },
+
+  // --- Exam notification (structured: batch + date + exam ids) ---
+  getExamRequestOptions: async (batchId: string, dateIso: string): Promise<ExamRequestOptions> => {
+    return runGasMethod<ExamRequestOptions>("apiGetExamRequestOptions", batchId, dateIso || '');
+  },
+  createExamNotification: async (req: { batchId: string; examDate: string; examIds: string[] }): Promise<any> => {
+    globalApiCache.notifications = null;
+    globalApiCache.batches = null;
+    return runGasMethod<any>("apiCreateExamNotification", req);
+  },
 
   deleteNotification: async (notifId: string): Promise<boolean> => {
     globalApiCache.notifications = null;
