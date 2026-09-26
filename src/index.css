@@ -108,6 +108,10 @@ h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.01em; text
 }
 /* colours keep circulating around the border (only for items on screen, to save battery) */
 .mc-fx.mc-vis::after { animation-play-state: running; }
+/* weak phones: still rings (no circulating animation) */
+.mc-lite .mc-fx.mc-vis::after { animation-play-state: paused; }
+.mc-lite .mc-fx.mc-hot::after { animation-play-state: running; }
+.mc-fx:not(.absolute):not(.fixed):not(.sticky) { position: relative; }
 .dark .mc-fx::after { opacity: .75; }
 .mc-fx.mc-hot::after {
   opacity: 1; inset: -2px; padding: 2px; animation-duration: 2.8s; animation-play-state: running;

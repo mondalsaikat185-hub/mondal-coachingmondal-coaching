@@ -954,7 +954,7 @@ function seriesOf(title) {
   for (const s of EXAM_SERIES) { const m = String(title || '').match(s.re); if (m) return { key: s.key, n: Number(m[1]) }; }
   return null;
 }
-function normTitle(s) { return String(s || '').normalize('NFC').toLowerCase().replace(/[^\p{L}\p{M}\p{N}]/gu, ''); }
+function normTitle(s) { return String(s || '').normalize('NFC').toLowerCase().replace(/\b(from|to|set|part|mock|test)\b/gi, ' ').replace(/[^\p{L}\p{M}\p{N}]/gu, ''); }
 function isActiveItem(it) { return it && it.isActive !== false && it.isActive !== 'false'; }
 
 // Next set of each regular series for this batch: (highest set already shared/requested) + 1.
@@ -1005,10 +1005,12 @@ function examCandidates(batch, nowMs, libIn) {
     const t = String(it.type || '');
     if (t === 'exam') { if (!seriesOf(it.title)) consider(it, assigned[id]); continue; }
     if (t === 'folder' || it.isFolder === true || it.isFolder === 'true') continue;
+    // short note names like "151-175" are read together with their folder ("Idioms 600 151-175")
     const nk = normTitle(it.title);
+    const pk = normTitle(((byId[String(it.parentId)] || {}).title || '') + ' ' + (it.title || ''));
     if (nk.length < 4) continue;
     for (const x of examNorm) {
-      if (x.k === nk || x.k.startsWith(nk) || nk.startsWith(x.k)) consider(x.e, assigned[id], it.title || '');
+      if (x.k === nk || x.k.startsWith(nk) || nk.startsWith(x.k) || x.k === pk || x.k.startsWith(pk)) consider(x.e, assigned[id], it.title || '');
     }
   }
   const minDate = istDateStr(nowMs - EXAM_REQ_LOOKBACK_DAYS * 86400000);

@@ -698,6 +698,7 @@ import { WelcomeSplash } from "./components/student/WelcomeSplash";
 import { ShareAppButton } from "./components/ShareApp";
 import { PhotoZoom } from "./components/PhotoZoom";
 import { AdminHero } from "./components/admin/AdminHero";
+import { AdminBottomNav } from "./components/admin/AdminBottomNav";
 import { compressPhoto, dataUrlKb } from "./lib/photo";
 
 function TopNav() {
@@ -902,6 +903,7 @@ function TopNav() {
     <nav className="flex justify-between items-center bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-4 py-3 sticky top-0 z-40">
       <PhotoZoom />
       {user && user.role === "student" && user.status === "active" && <StudentBottomNav />}
+      {user && user.role === "admin" && <AdminBottomNav />}
       {user && (user.role === "student" || user.role === "admin") && <WelcomeSplash name={user.fullName || user.displayName} admin={user.role === "admin"} />}
       {user && user.role === "student" ? (
         <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mc-open-profile"))} className="mc-nofx flex items-center gap-2 shrink-0 min-w-0 text-left" aria-label="My profile">

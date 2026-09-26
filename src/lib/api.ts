@@ -243,13 +243,25 @@ export function cleanPhone(p: any): string {
     while (attempt < retries) {
       try {
         const activeToken = getSessionToken() || SECURITY_TOKEN;
-        const fetchResponse = await fetch(BACKEND_V2_URL ? `${BACKEND_V2_URL}/rpc` : GAS_WEB_APP_URL, {
-          method: "POST",
-          body: JSON.stringify({ action: methodName, args: args, token: activeToken }),
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          }
-        });
+        // A stuck mobile connection must not spin for ever: give up after a limit and retry.
+        const bigCall = /Upload|Submit|SaveLibraryItem|PaymentRequest/.test(methodName);
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = ctrl ? setTimeout(() => ctrl.abort(), bigCall ? 45000 : 15000) : null;
+        let fetchResponse: Response;
+        try {
+          fetchResponse = await fetch(BACKEND_V2_URL ? `${BACKEND_V2_URL}/rpc` : GAS_WEB_APP_URL, {
+            method: "POST",
+            body: JSON.stringify({ action: methodName, args: args, token: activeToken }),
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8"
+            },
+            signal: ctrl ? ctrl.signal : undefined,
+          });
+        } catch (netErr: any) {
+          throw new Error(netErr && netErr.name === 'AbortError' ? 'সার্ভার থেকে উত্তর আসতে দেরি হচ্ছে (timeout)। আবার চেষ্টা করা হচ্ছে…' : (netErr?.message || 'Network error'));
+        } finally {
+          if (timer) clearTimeout(timer);
+        }
 
         let json;
         try {

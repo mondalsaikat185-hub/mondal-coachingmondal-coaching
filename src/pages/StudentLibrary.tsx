@@ -1246,7 +1246,7 @@ export function StudentLibrary() {
   );
 }
 
-function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChunked, onDownloadUrl, downloadingId, scheduledStartTimeMap }: { key?: React.Key, item: LibraryItem, onPreview: () => void, formatDate: (ts: any) => string, showPath?: boolean, items?: LibraryItem[], onDownloadChunked?: () => void, onDownloadUrl?: () => void, downloadingId?: string | null, scheduledStartTimeMap?: Record<string, string> }) {
+function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChunked, onDownloadUrl, downloadingId, scheduledStartTimeMap }: { key?: React.Key, item: LibraryItem, onPreview: () => void | Promise<void>, formatDate: (ts: any) => string, showPath?: boolean, items?: LibraryItem[], onDownloadChunked?: () => void, onDownloadUrl?: () => void, downloadingId?: string | null, scheduledStartTimeMap?: Record<string, string> }) {
    const { user } = useAuth();
    // "Take Exam" gives instant feedback and ignores repeated taps while the exam is loading.
    const [opening, setOpening] = useState(false);
@@ -1345,11 +1345,13 @@ function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChun
               <button
                 onClick={() => {
                   if (opening) return;
-                  if (!isLocked) { setOpening(true); setTimeout(() => setOpening(false), 6000); }
-                  onPreview();
+                  if (isLocked) { onPreview(); return; }
+                  setOpening(true);
+                  // stays "opening" until the exam has actually opened (or failed), so a second tap is not needed
+                  Promise.resolve(onPreview()).finally(() => setOpening(false));
                 }}
                 disabled={opening}
-                className={`${opening ? 'opacity-70 ' : ''}flex items-center gap-1 hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] px-4 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold text-xs whitespace-nowrap ${isLocked ? 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-500' : 'bg-blue-100 text-blue-900'}`}
+                className={`${opening ? 'opacity-60 grayscale scale-[0.97] cursor-wait ' : ''}flex items-center gap-1 hover:-translate-y-0.5 transition-transform shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] px-4 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold text-xs whitespace-nowrap ${isLocked ? 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-400 border-red-500' : 'bg-blue-100 text-blue-900'}`}
               >
                  {isLocked ? '🔒 Locked' : opening ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookOpen className="w-3.5 h-3.5" />} 
                  {isLocked ? 'Locked' : opening ? 'খুলছে…' : 'Take Exam'}

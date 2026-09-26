@@ -186,3 +186,14 @@ Raw output into `R17_REPORT.md` (not committed). No force-push. Do not touch pro
 3. `git add <files above>`; `git commit -m "fix: new student journey (register result, re-apply, not-approved gate, private messages), batch dropdown"`; `git push origin payments-upi`.
 4. Backend: `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`; wait 20 s; `/health` (counts not lower, importEnabled false); logs --tail=20.
 5. Report commit hash + preview URL. STOP.
+
+---
+## ROUND R18 — speed fixes (lighter effects, request timeout), exam button stays "opening" until ready, admin bottom bar with Home, better note→exam matching. Code by Claude; do NOT change code.
+Files (add ONLY these): src/App.tsx, src/index.css, src/lib/fx.ts, src/lib/api.ts, src/pages/StudentLibrary.tsx, src/components/admin/AdminBottomNav.tsx, vps-api-v2/api.js, vps-api-v2/test/selftest.js, HANDOFF_VPS_MIGRATION.md
+Raw output into `R18_REPORT.md` (not committed). No force-push. Do not touch production data.
+1. `cd vps-api-v2 && node test/selftest.js` → 3 lines "... tests OK" + "ALL TESTS PASSED".
+2. Root: `npm run lint` and `npm run build` → both pass.
+3. `git add <files above>`; `git commit -m "perf: lighter effects + request timeout; exam button busy state; admin bottom nav; note-exam matching"`; `git push origin payments-upi`.
+4. Backend: `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`; wait 20 s; `/health` (counts not lower, importEnabled false); logs --tail=20.
+5. Fresh read-only data copy for Claude: find newest `/data/backups/hourly-*.db` in mc-api-v2, `docker compose cp` it to VPS /tmp, `scp` it over `_dbcopy/mc2_snapshot.db` (overwrite), then remove the /tmp copy on VPS. Do not commit it.
+6. Report commit hash + preview URL. STOP.
