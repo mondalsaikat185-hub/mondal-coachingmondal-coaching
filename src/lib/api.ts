@@ -14,6 +14,7 @@ import {
   isExamPendingSync,
   ExamOutboxItem
 } from './cache';
+import { idbGet, idbSet, idbDel } from './idb';
 
 declare const google: any;
 
@@ -91,6 +92,7 @@ export interface ExamRequestOptions {
   defaultDate: string; date: string; exams: ExamRequestOption[];
   existing: { id: string; senderName: string; examIds: string[] } | null;
   series: { id: string; title: string; kind: string; label: string; n: number }[]; // auto-added regular sets (locked)
+  missingExams?: { id: string; title: string; folder: string; classDate: string }[]; // shared notes whose exam is not in the library yet
 }
 
 export interface LibraryItem {
@@ -650,15 +652,20 @@ function saveMockDB(db: MockDB) {
 const makeId = () => "id_" + Math.random().toString(36).substr(2, 9) + "_" + Date.now().toString(36);
 
 // =========================================================================
-// Library Item LocalStorage Caching Helpers (24-Hour TTL)
+// Library Item IndexedDB + Memory Caching Helpers (Zero-Quota Limit, Instant 0ms)
 // =========================================================================
 const CACHE_24H_MS = 24 * 60 * 60 * 1000;
+const memoryExamCache = new Map<string, { data: LibraryItem; version: string; time: number }>();
+
+function getKnownItemVersion(itemId: string): string {
+  const libraryList = globalApiCache.library?.data;
+  const meta = libraryList?.find(i => i.id === itemId);
+  return meta?.updatedAt || meta?.createdAt || '';
+}
 
 function getLibraryItemCacheKey(itemId: string, itemTimestamp?: string): string {
   if (!itemTimestamp) {
-    const libraryList = globalApiCache.library?.data;
-    const meta = libraryList?.find(i => i.id === itemId);
-    itemTimestamp = meta?.updatedAt || meta?.createdAt || 'v1';
+    itemTimestamp = getKnownItemVersion(itemId) || 'v1';
   }
   return `mc_lib_${itemId}_${itemTimestamp}`;
 }
@@ -683,6 +690,41 @@ function getCachedLibraryItemDetails(itemId: string): LibraryItem | null {
   }
 }
 
+async function getCachedLibraryItemDetailsAsync(itemId: string): Promise<LibraryItem | null> {
+  const knownVer = getKnownItemVersion(itemId);
+  // 1. Check in-memory cache (0ms instant)
+  const mem = memoryExamCache.get(itemId);
+  if (mem && mem.data) {
+    if (!knownVer || mem.version === knownVer) {
+      return mem.data;
+    }
+  }
+
+  // 2. Check IndexedDB persistent cache (1-2ms, no quota limits)
+  try {
+    const idbEntry = await idbGet<{ data: LibraryItem; version: string; time: number }>(`mc_exam_${itemId}`);
+    if (idbEntry && idbEntry.data) {
+      if (!knownVer || idbEntry.version === knownVer) {
+        memoryExamCache.set(itemId, idbEntry);
+        return idbEntry.data;
+      }
+    }
+  } catch (e) {}
+
+  // 3. Fallback to localStorage legacy entry if any
+  try {
+    const legacy = getCachedLibraryItemDetails(itemId);
+    if (legacy) {
+      const ver = legacy.updatedAt || legacy.createdAt || '';
+      memoryExamCache.set(itemId, { data: legacy, version: ver, time: Date.now() });
+      idbSet(`mc_exam_${itemId}`, { data: legacy, version: ver, time: Date.now() });
+      return legacy;
+    }
+  } catch (e) {}
+
+  return null;
+}
+
 function setCachedLibraryItemDetails(itemId: string, data: LibraryItem): void {
   try {
     const key = getLibraryItemCacheKey(itemId, data.updatedAt || data.createdAt);
@@ -693,6 +735,17 @@ function setCachedLibraryItemDetails(itemId: string, data: LibraryItem): void {
   } catch (e) {
     // Fail silently if localStorage quota is exceeded or storage is disabled
   }
+}
+
+async function setCachedLibraryItemDetailsAsync(itemId: string, data: LibraryItem): Promise<void> {
+  const version = data.updatedAt || data.createdAt || 'v1';
+  const entry = { data, version, time: Date.now() };
+  memoryExamCache.set(itemId, entry);
+  try {
+    await idbSet(`mc_exam_${itemId}`, entry);
+  } catch (e) {}
+  // Also try localStorage as best-effort
+  setCachedLibraryItemDetails(itemId, data);
 }
 
 function removeLibraryItemCache(itemId: string): void {
@@ -706,6 +759,14 @@ function removeLibraryItemCache(itemId: string): void {
   } catch (e) {
     // Fail silently
   }
+}
+
+async function removeLibraryItemCacheAsync(itemId: string): Promise<void> {
+  memoryExamCache.delete(itemId);
+  try {
+    await idbDel(`mc_exam_${itemId}`);
+  } catch (e) {}
+  removeLibraryItemCache(itemId);
 }
 
 // =========================================================================
@@ -1112,6 +1173,16 @@ export const api = {
       if (globalApiCache.library && Date.now() - globalApiCache.library.time < CACHE_TTL) {
         return dropDeleted(globalApiCache.library.data);
       }
+      const idbKey = `mc_lib_${userId || 'all'}`;
+      if (!globalApiCache.library) {
+        try {
+          const idbData = await idbGet<LibraryItem[]>(idbKey);
+          if (idbData && Array.isArray(idbData) && idbData.length > 0) {
+            globalApiCache.library = { data: idbData, time: Date.now() - (CACHE_TTL - 30000) };
+          }
+        } catch (e) {}
+      }
+
       let data: LibraryItem[] | null = null;
       let source = "GAS";
 
@@ -1127,6 +1198,7 @@ export const api = {
       console.log(`[API] getLibrary loaded from ${source} (${data.length} items)`);
 
       globalApiCache.library = { data, time: Date.now() };
+      try { idbSet(idbKey, data); } catch (e) {}
       if (userId) {
         setLocalSwr(userId, 'library', data);
       }
@@ -1137,7 +1209,7 @@ export const api = {
   },
   getLibraryItemDetails: async (itemId: string): Promise<LibraryItem> => {
     if (USE_REAL_API) {
-      const cached = getCachedLibraryItemDetails(itemId);
+      const cached = await getCachedLibraryItemDetailsAsync(itemId);
       if (cached) {
         return cached;
       }
@@ -1155,7 +1227,7 @@ export const api = {
       console.log(`[API] getLibraryItemDetails (${itemId}) loaded from ${source}`);
 
       if (item) {
-        setCachedLibraryItemDetails(itemId, item);
+        await setCachedLibraryItemDetailsAsync(itemId, item);
       }
       return item;
     } else {
@@ -1169,12 +1241,12 @@ export const api = {
   saveLibraryItem: async (item: Partial<LibraryItem>): Promise<LibraryItem> => {
     globalApiCache.library = null;
     if (item.id) {
-      removeLibraryItemCache(item.id);
+      await removeLibraryItemCacheAsync(item.id);
     }
     if (USE_REAL_API) {
       const res = await runGasMethod<LibraryItem>("apiSaveLibraryItem", item);
       if (res && res.id) {
-        removeLibraryItemCache(res.id);
+        await removeLibraryItemCacheAsync(res.id);
       }
       return res;
     } else {
@@ -1200,9 +1272,9 @@ export const api = {
 
   updateLibrarySequences: async (updates: { id: string, sequence: number }[]): Promise<void> => {
     globalApiCache.library = null;
-    updates.forEach(u => {
-      if (u.id) removeLibraryItemCache(u.id);
-    });
+    for (const u of updates) {
+      if (u.id) await removeLibraryItemCacheAsync(u.id);
+    }
     if (USE_REAL_API) {
       await runGasMethod<void>("apiUpdateLibrarySequences", updates);
     } else {
@@ -1217,7 +1289,7 @@ export const api = {
 
   deleteLibraryItem: async (itemId: string): Promise<boolean> => {
     globalApiCache.library = null;
-    removeLibraryItemCache(itemId);
+    await removeLibraryItemCacheAsync(itemId);
     if (USE_REAL_API) {
       const ok = await runGasMethod<boolean>("apiDeleteLibraryItem", itemId);
       markDeleted([itemId]);
@@ -1591,6 +1663,10 @@ export const api = {
   // --- Exam notification (structured: batch + date + exam ids) ---
   getExamRequestOptions: async (batchId: string, dateIso: string): Promise<ExamRequestOptions> => {
     return runGasMethod<ExamRequestOptions>("apiGetExamRequestOptions", batchId, dateIso || '');
+  },
+  getMissingExams: async (): Promise<{ batchId: string; batchName: string; id: string; title: string; folder: string; classDate: string }[]> => {
+    const list = await runGasMethod<any[]>("apiGetMissingExams");
+    return Array.isArray(list) ? list : [];
   },
   createExamNotification: async (req: { batchId: string; examDate: string; examIds: string[] }): Promise<any> => {
     globalApiCache.notifications = null;

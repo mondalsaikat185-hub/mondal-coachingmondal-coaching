@@ -701,9 +701,20 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
            <p className="font-bold text-zinc-400 text-sm leading-relaxed">
              আপনি ইতিমধ্যে এই পরীক্ষাটি সম্পন্ন করেছেন। আপনার প্রাপ্ত ফলাফল শিক্ষক প্যানেলে সেভ করা রয়েছে।
            </p>
-           <button onClick={onBack} className="w-full py-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs uppercase tracking-widest font-bold rounded-xl transition-all border-none cursor-pointer">
-             Return to Library
-           </button>
+           <div className="flex flex-col gap-3">
+             <button 
+               onClick={() => setScreen('RESULT')} 
+               className="w-full py-3.5 bg-yellow-500 hover:bg-yellow-400 text-zinc-950 text-xs uppercase tracking-widest font-black rounded-xl transition-all border-none cursor-pointer shadow-md"
+             >
+               📖 প্রশ্ন ও সমাধান পর্যালোচনা করুন (Review Solutions)
+             </button>
+             <button 
+               onClick={onBack} 
+               className="w-full py-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs uppercase tracking-widest font-bold rounded-xl transition-all border-none cursor-pointer"
+             >
+               ফোল্ডারে ফিরে যান (Return to Library)
+             </button>
+           </div>
          </div>
        </div>
      );

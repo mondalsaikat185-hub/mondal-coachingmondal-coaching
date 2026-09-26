@@ -7,6 +7,7 @@ import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { verifyAndJoinSession, joinSessionWithoutCode } from '../lib/exam-session-utils';
 import { useSearchParams } from 'react-router-dom';
 import { safeToDate } from '../lib/utils';
+import { idbGet, idbSet } from '../lib/idb';
 const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL;
 const FILE_API_KEY = import.meta.env.VITE_FILE_API_KEY;
 
@@ -241,9 +242,15 @@ export function StudentLibrary() {
       return;
     }
 
-    // 1. STALE: Check local SWR cache first for instant render
+    // 1. STALE: Check local SWR cache or IndexedDB first for instant render
     const cachedBatches = api.getLocalSwr<any[]>(user.uid, 'batches');
-    const cachedLibrary = api.getLocalSwr<LibraryItem[]>(user.uid, 'library');
+    let cachedLibrary = api.getLocalSwr<LibraryItem[]>(user.uid, 'library');
+    if (!cachedLibrary || cachedLibrary.length === 0) {
+      try {
+        const idbLib = await idbGet<LibraryItem[]>(`mc_lib_${user.uid}`);
+        if (idbLib && idbLib.length > 0) cachedLibrary = idbLib;
+      } catch (e) {}
+    }
     if (cachedBatches && cachedLibrary && cachedBatches.length > 0 && cachedLibrary.length > 0) {
       processLibraryData(cachedBatches, cachedLibrary);
       setLoading(false);
@@ -261,6 +268,7 @@ export function StudentLibrary() {
         api.getLibrary(user.uid)
       ]);
       processLibraryData(allBatches, libraryItems);
+      try { idbSet(`mc_lib_${user.uid}`, libraryItems); } catch (e) {}
     } catch (err) {
       console.error("Error loading library for student:", err);
     } finally {
@@ -642,18 +650,19 @@ export function StudentLibrary() {
             }
          }
 
-         // Fetch exam sessions (ALWAYS fresh from server with forceRefresh = true)
-         // and exam details in PARALLEL at item click
-         const sessionsPromise = api.getExamSessions(true);
-         const detailsPromise = api.getLibraryItemDetails(item.id);
+         // Fetch exam sessions (cached if fresh) and exam details in PARALLEL at item click
+         let fullDetails = preloadedDetailsRef.current.get(item.id);
+         const detailsPromise = fullDetails ? Promise.resolve(fullDetails) : api.getLibraryItemDetails(item.id);
+         const sessionsPromise = api.getExamSessions(false);
 
-         const [sessions, fullDetails] = await Promise.all([
-            sessionsPromise,
-            detailsPromise.catch(e => { console.error('Prefetch details error:', e); return null; })
+         const [detailsResult, sessions] = await Promise.all([
+            detailsPromise.catch(e => { console.error('Prefetch details error:', e); return null; }),
+            sessionsPromise.catch(() => [])
          ]);
 
-         if (fullDetails) {
-            preloadedDetailsRef.current.set(item.id, fullDetails);
+         if (detailsResult) {
+            fullDetails = detailsResult;
+            preloadedDetailsRef.current.set(item.id, detailsResult);
          }
 
          const studentBatchIds = String((user as any).batchId).split(',').map((id: string) => id.trim()).filter(Boolean);

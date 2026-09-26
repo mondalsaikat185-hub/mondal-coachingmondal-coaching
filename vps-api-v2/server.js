@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const S = require('./store');
-const { handleRpc, purgeExpiredSessions, startExamScheduler } = require('./api');
+const { handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches } = require('./api');
 
 const PORT = Number(process.env.PORT || 4100);
 const SYNC_SECRET = (process.env.HMAC_SYNC_SECRET || '').trim();
@@ -94,6 +94,7 @@ app.post('/import', express.raw({ type: '*/*', limit: '60mb' }), (req, res) => {
     if (mismatch.length) return res.status(409).json({ success: false, error: 'Row count mismatch, nothing saved', mismatch });
     try { S.backupTo(path.join(BACKUP_DIR, 'pre-import-' + Date.now() + '.db')); } catch (e) {}
     S.replaceSheets(staging.sheets, staging.headers, staging.props);
+    try { invalidateAllCaches(); } catch (e) {}
     const counts = S.counts();
     staging.sheets = {}; staging.headers = {}; staging.props = null;
     return res.json({ success: true, counts });

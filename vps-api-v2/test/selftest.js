@@ -151,8 +151,27 @@ const PUB = 'MondalCoachingSecureToken2026!';
     // background scheduler picks up pending rows; bad batch -> error, not crash
     S.saveRow('notifications', { type: 'exam_request', batchId: 'B2x', examDate: D, examIds: '["ex2"]', status: 'pending' });
     S.saveRow('notifications', { type: 'exam_request', batchId: 'nope', examDate: D, examIds: '["ex2"]', status: 'pending' });
-    const res = S.tx(() => I.runExamScheduler(Date.now())); assert.deepEqual(res, { done: 1, failed: 1 });
+    const res = S.tx(() => I.runExamScheduler(Date.now())); assert.deepEqual(res, { done: 1, failed: 1, late: 0 });
     assert.equal(JSON.parse(S.findRowById('batches', 'B2x').obj.scheduledStartTimeMap).ex2, start);
+    // note shared but its exam not uploaded yet -> reported, then picked up automatically once uploaded
+    S.saveRow('library', { id: 'noteMus', title: 'স্ট্যাটিক জিকে: বাদ্যযন্ত্র (Musical Instruments)', type: 'note', parentId: 'fStatic' });
+    S.saveRow('batches', { id: 'bMus', name: 'Shonibar Bikal', assignedItemsMap: { noteMus: new Date().toISOString() }, scheduledStartTimeMap: {} });
+    S.updateRow('users', 'stu1', { batchId: 'b1, B2x, bMus' });
+    r = await call('apiLoginUser', ['9999999901', 'newpass1']); const st9 = r.data.data.sessionToken;
+    r = await call('apiGetExamRequestOptions', ['bMus', ''], st9);
+    assert.deepEqual(r.data.data.missingExams.map(m => m.id), ['noteMus']);
+    const DM = r.data.data.defaultDate;
+    r = await call('apiCreateExamNotification', [{ batchId: 'bMus', examDate: DM, examIds: [] }], st9);
+    assert.equal(r.success, true, r.error);
+    const musReq = r.data.data.id;
+    assert.deepEqual(JSON.parse(S.findRowById('notifications', musReq).obj.missingExams), ['স্ট্যাটিক জিকে: বাদ্যযন্ত্র (Musical Instruments)']);
+    assert.ok(/Exam এখনো তৈরি হয়নি/.test(S.findRowById('notifications', musReq).obj.message));
+    r = await call('apiSaveLibraryItem', [{ title: 'স্ট্যাটিক জিকে: বাদ্যযন্ত্র (Musical Instruments) - Mock', type: 'exam' }], ad2);
+    assert.equal(r.success, true, r.error); const exMusId = r.data.data.id;
+    const musB = S.findRowById('batches', 'bMus').obj;
+    assert.equal(JSON.parse(musB.scheduledStartTimeMap)[exMusId], I.examStartIso(DM, '14:05'));
+    const musN = S.findRowById('notifications', musReq).obj;
+    assert.ok(JSON.parse(musN.examIds).includes(exMusId)); assert.deepEqual(JSON.parse(musN.missingExams), []);
     console.log('exam notification tests OK');
   }
 

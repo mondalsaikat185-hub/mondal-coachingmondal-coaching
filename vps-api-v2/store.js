@@ -17,6 +17,8 @@ const db = new DatabaseSync(path.join(DATA_DIR, 'mc2.db'));
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA synchronous = FULL;');
 db.exec('PRAGMA busy_timeout = 5000;');
+db.exec('PRAGMA cache_size = -32000;');
+db.exec('PRAGMA temp_store = MEMORY;');
 db.exec(`
   CREATE TABLE IF NOT EXISTS rows (
     rk INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,28 +63,45 @@ function uuid() { return crypto.randomUUID(); }
 function nowIso() { return new Date().toISOString(); }
 
 // ---------- headers (keeps "every row has every column" like a sheet) ----------
+const headerCache = new Map();
+
 function getHeaders(sheet) {
+  if (headerCache.has(sheet)) return headerCache.get(sheet);
   const r = st.hdrGet.get(sheet);
   if (!r) return [];
-  try { return JSON.parse(r.cols); } catch (e) { return []; }
+  try {
+    const cols = JSON.parse(r.cols);
+    headerCache.set(sheet, cols);
+    return cols;
+  } catch (e) { return []; }
 }
 function addHeaders(sheet, keys) {
-  const cols = getHeaders(sheet);
+  const cols = getHeaders(sheet).slice();
   let changed = false;
   for (const k of keys) {
     if (cols.indexOf(k) === -1) { cols.push(k); changed = true; }
   }
-  if (changed) st.hdrSet.run(sheet, JSON.stringify(cols));
+  if (changed) {
+    st.hdrSet.run(sheet, JSON.stringify(cols));
+    headerCache.set(sheet, cols);
+  }
   return cols;
 }
 function ensureSheetHeaders(sheet, required) { addHeaders(sheet, required); }
 
-function fill(sheet, obj) {
-  const cols = getHeaders(sheet);
+function fillWithCols(cols, obj) {
+  const colsLen = cols.length;
   const out = {};
-  for (const c of cols) out[c] = (obj[c] !== undefined && obj[c] !== null) ? obj[c] : '';
+  for (let c = 0; c < colsLen; c++) {
+    const k = cols[c];
+    out[k] = (obj[k] !== undefined && obj[k] !== null) ? obj[k] : '';
+  }
   for (const k of Object.keys(obj)) if (!(k in out)) out[k] = obj[k];
   return out;
+}
+
+function fill(sheet, obj) {
+  return fillWithCols(getHeaders(sheet), obj);
 }
 
 // Like saveRow: objects are stored as JSON strings
@@ -100,11 +119,12 @@ function serializeValues(obj) {
 // ---------- generic sheet API ----------
 function readSheet(sheet) {
   const list = st.rowsBySheet.all(sheet);
+  const cols = getHeaders(sheet);
   const res = new Array(list.length);
   for (let i = 0; i < list.length; i++) {
     let o;
     try { o = JSON.parse(list[i].data); } catch (e) { o = {}; }
-    res[i] = fill(sheet, o);
+    res[i] = fillWithCols(cols, o);
   }
   return res;
 }
@@ -216,6 +236,7 @@ function audit(action, userId, ok) {
 
 // ---------- import (replace whole sheets atomically) ----------
 function replaceSheets(sheetsMap, headersMap, propsMap) {
+  headerCache.clear();
   tx(() => {
     for (const sheet of Object.keys(sheetsMap)) {
       db.prepare('DELETE FROM rows WHERE sheet = ?').run(sheet);

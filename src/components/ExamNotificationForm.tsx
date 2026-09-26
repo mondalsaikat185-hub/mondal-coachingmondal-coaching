@@ -158,6 +158,16 @@ export function ExamNotificationForm({ user, batches, onClose, onPosted }: Props
             </div>
           )}
 
+          {batchId && dateValid && opts?.missingExams && opts.missingExams.length > 0 && (
+            <div className="rounded-2xl border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 p-3">
+              <div className="text-xs font-black text-amber-800 dark:text-amber-300">⚠️ এই note-গুলোর exam এখনো তৈরি হয়নি</div>
+              <ul className="mt-1 text-sm font-semibold text-amber-900 dark:text-amber-200 list-disc pl-5">
+                {opts.missingExams.map(m => <li key={m.id}>{m.title}</li>)}
+              </ul>
+              <div className="text-[11px] text-amber-800/80 dark:text-amber-300/80 mt-1">পোস্ট করলে এগুলোর নাম Admin-এর কাছে আলাদা করে চলে যাবে।</div>
+            </div>
+          )}
+
           {batchId && dateValid && (
             <div className="flex flex-col gap-2">
               <label className="text-xs font-black uppercase">নতুন পড়ার Exams (বেছে নিন)</label>

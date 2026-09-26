@@ -25,7 +25,48 @@ function readSheet(name) {
   else if (name === 'payments') S.ensureSheetHeaders('payments', ["id", "studentId", "month", "amount", "status", "transactionId", "paidDate", "proofImage", "paymentMode", "remarks", "createdAt"]);
   return S.readSheet(name);
 }
-const saveRow = S.saveRow, updateRow = S.updateRow, deleteRow = S.deleteRow, deleteMultipleRows = S.deleteMultipleRows;
+let cachedBatches = null;
+let cachedBatchesTime = 0;
+function invalidateBatchesCache() { cachedBatches = null; cachedBatchesTime = 0; }
+
+let cachedLibrarySummaries = null;
+let cachedLibrarySummariesTime = 0;
+const examDetailsCache = new Map();
+function invalidateLibraryCache(itemId) {
+  cachedLibrarySummaries = null;
+  cachedLibrarySummariesTime = 0;
+  if (itemId) examDetailsCache.delete(String(itemId).trim());
+  else examDetailsCache.clear();
+}
+
+let cachedExamSessions = null;
+let cachedExamSessionsTime = 0;
+function invalidateExamSessionsCache() { cachedExamSessions = null; cachedExamSessionsTime = 0; }
+
+function saveRow(sheet, dataObj) {
+  if (sheet === 'batches') invalidateBatchesCache();
+  else if (sheet === 'library') invalidateLibraryCache();
+  else if (sheet === 'examSessions') invalidateExamSessionsCache();
+  return S.saveRow(sheet, dataObj);
+}
+function updateRow(sheet, id, updateObj) {
+  if (sheet === 'batches') invalidateBatchesCache();
+  else if (sheet === 'library') invalidateLibraryCache(id);
+  else if (sheet === 'examSessions') invalidateExamSessionsCache();
+  return S.updateRow(sheet, id, updateObj);
+}
+function deleteRow(sheet, id) {
+  if (sheet === 'batches') invalidateBatchesCache();
+  else if (sheet === 'library') invalidateLibraryCache(id);
+  else if (sheet === 'examSessions') invalidateExamSessionsCache();
+  return S.deleteRow(sheet, id);
+}
+function deleteMultipleRows(sheet, col, val) {
+  if (sheet === 'batches') invalidateBatchesCache();
+  else if (sheet === 'library') invalidateLibraryCache();
+  else if (sheet === 'examSessions') invalidateExamSessionsCache();
+  return S.deleteMultipleRows(sheet, col, val);
+}
 function markSnapshotDirty() {}
 
 // ---------------- crypto helpers ----------------
@@ -533,6 +574,10 @@ function parseMap(v) { if (!v) return {}; if (typeof v === 'object') return v; t
 
 function apiGetBatches() {
   try {
+    const now = Date.now();
+    if (cachedBatches && (now - cachedBatchesTime < 60000)) {
+      return { success: true, data: cachedBatches };
+    }
     S.ensureSheetHeaders("batches", BATCH_HEADERS);
     const list = readSheet("batches");
     list.forEach(item => {
@@ -540,6 +585,8 @@ function apiGetBatches() {
       item.scheduledStartTimeMap = parseMap(item.scheduledStartTimeMap);
       item.examSlot = resolveBatchSlot(item);
     });
+    cachedBatches = list;
+    cachedBatchesTime = now;
     return { success: true, data: list };
   } catch (err) { return { success: false, error: String(err) }; }
 }
@@ -556,6 +603,7 @@ function apiGetPublicBatches() {
 
 function apiSaveBatch(batchData) {
   try {
+    invalidateBatchesCache();
     if (batchData.id) {
       const id = batchData.id; delete batchData.id;
       return { success: true, data: updateRow("batches", id, batchData) };
@@ -566,6 +614,8 @@ function apiSaveBatch(batchData) {
 
 function apiDeleteBatch(batchId) {
   try {
+    invalidateBatchesCache();
+    invalidateExamSessionsCache();
     const users = readSheet("users");
     users.forEach(u => {
       if (u.batchId) {
@@ -621,20 +671,44 @@ function libSummary(item) {
 }
 
 function apiGetLibrary() {
-  try { return { success: true, data: readSheet("library").map(libSummary) }; }
-  catch (err) { return { success: false, error: String(err) }; }
+  try {
+    const now = Date.now();
+    if (cachedLibrarySummaries && (now - cachedLibrarySummariesTime < 120000)) {
+      return { success: true, data: cachedLibrarySummaries };
+    }
+    const list = readSheet("library").map(libSummary);
+    cachedLibrarySummaries = list;
+    cachedLibrarySummariesTime = now;
+    return { success: true, data: list };
+  } catch (err) { return { success: false, error: String(err) }; }
 }
 
 function apiGetLibraryItemDetails(itemId) {
   try {
-    const found = S.findRowById("library", itemId);
+    const key = String(itemId).trim();
+    const cached = examDetailsCache.get(key);
+    if (cached && (Date.now() - cached.time < 300000)) {
+      return { success: true, data: cached.data };
+    }
+    const found = S.findRowById("library", key);
     if (!found) return { success: false, error: "Item not found" };
     const item = Object.assign({}, found.obj);
-    for (const h of S.getHeaders("library")) if (item[h] === undefined) item[h] = "";
+    const cols = S.getHeaders("library");
+    for (let i = 0; i < cols.length; i++) {
+      const h = cols[i];
+      if (item[h] === undefined) item[h] = "";
+    }
     item.isFolder = item.isFolder === true || item.isFolder === "true";
     item.isEncrypted = item.isEncrypted === true || item.isEncrypted === "true";
     item.isChunked = item.isChunked === true || item.isChunked === "true";
     if (item.chunkCount) item.chunkCount = Number(item.chunkCount);
+
+    if (examDetailsCache.size >= 100) {
+      const first = examDetailsCache.keys().next().value;
+      examDetailsCache.delete(first);
+    }
+    examDetailsCache.set(key, { data: item, time: Date.now() });
+
     return { success: true, data: item };
   } catch (err) { return { success: false, error: String(err) }; }
 }
@@ -643,21 +717,28 @@ function apiSaveLibraryItem(itemData) {
   try {
     if (itemData.id) {
       const id = itemData.id; delete itemData.id;
+      invalidateLibraryCache(id);
       return { success: true, data: updateRow("library", id, itemData) };
     }
-    return { success: true, data: saveRow("library", itemData) };
+    invalidateLibraryCache();
+    const saved = saveRow("library", itemData);
+    // a newly uploaded exam may complete an exam notification that was waiting for it
+    if (String(saved.type) === 'exam') { try { runExamScheduler(Date.now()); } catch (e) {} }
+    return { success: true, data: saved };
   } catch (err) { return { success: false, error: String(err) }; }
 }
 
 function apiUpdateLibrarySequences(updates) {
   try {
     if (!Array.isArray(updates) || updates.length === 0) return { success: true };
+    invalidateLibraryCache();
     updates.forEach(it => { if (it.id && typeof it.sequence !== 'undefined') updateRow("library", it.id, { sequence: it.sequence }); });
     return { success: true };
   } catch (err) { return { success: false, error: String(err) }; }
 }
 
 function removeItemsFromBatches(itemIds) {
+  invalidateBatchesCache();
   const set = new Set(itemIds.map(String));
   S.ensureSheetHeaders("batches", BATCH_HEADERS);
   S.mapRows("batches", (b) => {
@@ -677,6 +758,8 @@ function removeItemsFromBatches(itemIds) {
 
 function apiDeleteLibraryItem(itemId) {
   try {
+    invalidateLibraryCache(itemId);
+    invalidateExamSessionsCache();
     const success = deleteRow("library", itemId);
     removeItemsFromBatches([itemId]);
     deleteMultipleRows("examSessions", "examId", itemId);
@@ -688,6 +771,8 @@ function apiDeleteLibraryItem(itemId) {
 function apiDeleteMultipleLibraryItems(itemIds) {
   try {
     if (!Array.isArray(itemIds) || itemIds.length === 0) return { success: true, count: 0 };
+    invalidateLibraryCache();
+    invalidateExamSessionsCache();
     const set = new Set(itemIds.map(String));
     const count = S.deleteWhere("library", o => set.has(String(o.id)));
     removeItemsFromBatches(itemIds);
@@ -701,6 +786,8 @@ function apiDeleteMultipleLibraryItems(itemIds) {
 
 function apiShareLibraryItem(itemId, batchIdsMap, scheduledStartTimeMap) {
   try {
+    invalidateBatchesCache();
+    invalidateLibraryCache(itemId);
     S.ensureSheetHeaders("batches", BATCH_HEADERS);
     scheduledStartTimeMap = scheduledStartTimeMap || {};
     batchIdsMap = batchIdsMap || {};
@@ -983,7 +1070,7 @@ function seriesNext(batch, lib) {
 // Unscheduled recent exams for a batch: exams shared to the batch without a start time,
 // plus exams whose title matches a note shared to the batch (notes and exams live in
 // different folders, so we match by title). Newest class day first. Regular series excluded.
-function examCandidates(batch, nowMs, libIn) {
+function examCandidates(batch, nowMs, libIn, out) {
   const assigned = parseMap(batch.assignedItemsMap), scheduled = parseMap(batch.scheduledStartTimeMap);
   const lib = libIn || readSheet('library');
   const byId = {}; for (const it of lib) byId[String(it.id)] = it;
@@ -1009,16 +1096,44 @@ function examCandidates(batch, nowMs, libIn) {
     const nk = normTitle(it.title);
     const pk = normTitle(((byId[String(it.parentId)] || {}).title || '') + ' ' + (it.title || ''));
     if (nk.length < 4) continue;
+    let matched = false;
     for (const x of examNorm) {
-      if (x.k === nk || x.k.startsWith(nk) || nk.startsWith(x.k) || x.k === pk || x.k.startsWith(pk)) consider(x.e, assigned[id], it.title || '');
+      if (x.k === nk || x.k.startsWith(nk) || nk.startsWith(x.k) || x.k === pk || x.k.startsWith(pk)) { matched = true; consider(x.e, assigned[id], it.title || ''); }
+    }
+    // a shared note whose exam does not exist in the library yet (e.g. never uploaded) — reported, not silently dropped
+    if (!matched && out && Array.isArray(out.missing)) {
+      const folderTitle = String((byId[String(it.parentId)] || {}).title || '');
+      const inSheets = /sheet/i.test(folderTitle) || /sheet/i.test(String((byId[String((byId[String(it.parentId)] || {}).parentId)] || {}).title || ''));
+      if (!inSheets) out.missing.push({ id: String(it.id), title: it.title || '', folder: folderTitle, sharedAt: String(assigned[id] || '') });
     }
   }
   const minDate = istDateStr(nowMs - EXAM_REQ_LOOKBACK_DAYS * 86400000);
+  if (out && Array.isArray(out.missing)) {
+    out.missing = out.missing
+      .filter(m => { const t = new Date(m.sharedAt).getTime(); return !isNaN(t) && istDateStr(t) >= istDateStr(nowMs - 14 * 86400000); })
+      .sort((a, b) => b.sharedAt.localeCompare(a.sharedAt))
+      .map(m => ({ id: m.id, title: m.title, folder: m.folder, classDate: istDateStr(new Date(m.sharedAt).getTime()) }));
+  }
   return Object.values(best)
     .map(x => ({ id: String(x.exam.id), title: x.exam.title || '', examType: x.exam.examType || '', folder: (byId[String(x.exam.parentId)] || {}).title || '', note: x.fromNote, classDate: istDateStr(x.ms), ms: x.ms }))
     .filter(x => x.classDate >= minDate)
     .sort((a, b) => (b.classDate.localeCompare(a.classDate)) || (b.ms - a.ms) || a.title.localeCompare(b.title))
     .map(x => { delete x.ms; return x; });
+}
+
+// Admin: notes shared to each batch in the last 14 days that have no exam in the library yet
+function apiGetMissingExams() {
+  try {
+    const lib = readSheet('library');
+    const out = [];
+    for (const b of readSheet('batches')) {
+      if (/test/i.test(String(b.name || ''))) continue;
+      const o = { missing: [] };
+      examCandidates(b, Date.now(), lib, o);
+      for (const m of o.missing) out.push(Object.assign({ batchId: String(b.id), batchName: b.name || '' }, m));
+    }
+    return { success: true, data: out };
+  } catch (err) { return { success: false, error: String(err) }; }
 }
 
 function checkBatchAccess(batchId, session) {
@@ -1036,6 +1151,7 @@ function apiGetExamRequestOptions(batchId, dateIso, session) {
     const batch = f.obj;
     const slot = resolveBatchSlot(batch);
     const now = Date.now();
+    const outM = { missing: [] };
     const date = isIsoDate(dateIso) ? dateIso : nextClassDate(slot.classDay, now);
     const existing = date ? activeExamReqs(batchId).find(n => String(n.examDate) === date) : null;
     return {
@@ -1044,7 +1160,8 @@ function apiGetExamRequestOptions(batchId, dateIso, session) {
         batchId: String(batchId), batchName: batch.name || '',
         classDay: slot.classDay, examStartTime: slot.examStartTime,
         defaultDate: nextClassDate(slot.classDay, now), date,
-        exams: examCandidates(batch, now),
+        exams: examCandidates(batch, now, null, outM),
+        missingExams: outM.missing,
         series: seriesNext(batch, readSheet('library')),
         existing: existing ? { id: existing.id, senderName: existing.senderName || '', examIds: parseIdList(existing.examIds) } : null,
       },
@@ -1085,10 +1202,15 @@ function apiCreateExamNotification(req, session) {
     try { const u = S.findRowById('users', session.userId); if (u) senderName = u.obj.name || senderName; } catch (e) {}
     const [y, m, d] = examDate.split('-');
     const titles = examIds.map(id => lib[id].title || id);
+    const outM = { missing: [] };
+    examCandidates(batch, Date.now(), libList, outM);
+    const missingTitles = outM.missing.map(m => m.title);
     const row = {
       type: 'exam_request',
       title: 'Exam: ' + d + '/' + m + '/' + y,
-      message: (batch.name || '') + ' — ' + d + '/' + m + '/' + y + ' ' + slot.examStartTime + '\n' + titles.map((t, i) => (i + 1) + '. ' + t).join('\n'),
+      message: (batch.name || '') + ' — ' + d + '/' + m + '/' + y + ' ' + slot.examStartTime + '\n' + titles.map((t, i) => (i + 1) + '. ' + t).join('\n')
+        + (missingTitles.length ? '\n\n⚠️ Exam এখনো তৈরি হয়নি (Admin দেখবেন):\n' + missingTitles.map(t => '• ' + t).join('\n') : ''),
+      missingExams: JSON.stringify(missingTitles),
       batchId, batchName: batch.name || '',
       senderId: session.userId, senderRole: session.role === 'admin' ? 'admin' : 'student', senderName,
       examDate, examIds: JSON.stringify(examIds), examTitles: JSON.stringify(titles),
@@ -1128,7 +1250,34 @@ function runExamScheduler(nowMs) {
     updateRow('notifications', n.id, { status: 'scheduled', startIso, scheduledAt: new Date(nowMs).toISOString(), addedAssign: JSON.stringify(added), scheduleError: '' });
     done++;
   }
-  return { done, failed };
+  // Late exams: a note was shared but its exam was not in the library when students posted.
+  // As soon as the admin uploads that exam, add it to the (not yet started) request automatically.
+  let late = 0;
+  const reqs = readSheet('notifications').filter(n => isExamReq(n) && n.status === 'scheduled' && n.startIso && new Date(n.startIso).getTime() > nowMs && parseIdList(n.missingExams).length);
+  if (reqs.length) {
+    const exams = readSheet('library').filter(it => String(it.type) === 'exam' && isActiveItem(it) && !seriesOf(it.title)).map(e => ({ e, k: normTitle(e.title) }));
+    for (const n of reqs) {
+      const missing = parseIdList(n.missingExams);
+      const f = S.findRowById('batches', n.batchId);
+      if (!f) continue;
+      const assigned = parseMap(f.obj.assignedItemsMap), scheduled = parseMap(f.obj.scheduledStartTimeMap);
+      const ids = parseIdList(n.examIds), titles = parseIdList(n.examTitles), added = parseIdList(n.addedAssign);
+      const still = [];
+      for (const title of missing) {
+        const nk = normTitle(title);
+        const hit = nk.length >= 4 && exams.find(x => (x.k === nk || x.k.startsWith(nk) || nk.startsWith(x.k)) && !scheduled[String(x.e.id)]);
+        if (!hit) { still.push(title); continue; }
+        const id = String(hit.e.id);
+        if (!assigned[id]) { assigned[id] = new Date(nowMs).toISOString(); added.push(id); }
+        scheduled[id] = n.startIso;
+        ids.push(id); titles.push(hit.e.title || id); late++;
+      }
+      if (still.length === missing.length) continue;
+      updateRow('batches', f.obj.id, { assignedItemsMap: JSON.stringify(assigned), scheduledStartTimeMap: JSON.stringify(scheduled) });
+      updateRow('notifications', n.id, { examIds: JSON.stringify(ids), examTitles: JSON.stringify(titles), addedAssign: JSON.stringify(added), missingExams: JSON.stringify(still) });
+    }
+  }
+  return { done, failed, late };
 }
 
 // Admin deletes an exam request: undo its schedule only if the exam has not opened yet.
@@ -1147,7 +1296,7 @@ function undoExamRequest(n, nowMs) {
 }
 
 function startExamScheduler(intervalMs) {
-  const tick = () => { try { const r = S.tx(() => runExamScheduler(Date.now())); if (r.done || r.failed) console.log('[exam-scheduler]', JSON.stringify(r)); } catch (e) { console.error('[exam-scheduler]', e); } };
+  const tick = () => { try { const r = S.tx(() => runExamScheduler(Date.now())); if (r.done || r.failed || r.late) console.log('[exam-scheduler]', JSON.stringify(r)); } catch (e) { console.error('[exam-scheduler]', e); } };
   setTimeout(tick, 10 * 1000).unref();
   return setInterval(tick, intervalMs || 5 * 60 * 1000).unref();
 }
@@ -1225,6 +1374,10 @@ function apiDeleteNotification(notifId, session) {
 // =========================================================================
 function apiGetExamSessions() {
   try {
+    const now = Date.now();
+    if (cachedExamSessions && (now - cachedExamSessionsTime < 30000)) {
+      return { success: true, data: cachedExamSessions };
+    }
     const list = readSheet("examSessions");
     list.forEach(item => {
       item.isActive = item.isActive === true || item.isActive === "true";
@@ -1232,12 +1385,15 @@ function apiGetExamSessions() {
       try { item.participantUids = JSON.parse(item.participantUids || "[]"); } catch (e) { item.participantUids = []; }
       if (!Array.isArray(item.participantUids)) item.participantUids = [];
     });
+    cachedExamSessions = list;
+    cachedExamSessionsTime = now;
     return { success: true, data: list };
   } catch (err) { return { success: false, error: String(err) }; }
 }
 
 function apiCreateExamSession(sessionData) {
   try {
+    invalidateExamSessionsCache();
     sessionData = sessionData || {};
     sessionData.isActive = true;
     sessionData.participantUids = sessionData.participantUids || [];
@@ -1246,12 +1402,16 @@ function apiCreateExamSession(sessionData) {
 }
 
 function apiEndExamSession(sessionId) {
-  try { return { success: true, data: updateRow("examSessions", sessionId, { isActive: false }) }; }
+  try {
+    invalidateExamSessionsCache();
+    return { success: true, data: updateRow("examSessions", sessionId, { isActive: false }) };
+  }
   catch (err) { return { success: false, error: String(err) }; }
 }
 
 function apiJoinExamSession(sessionId, userId, studentName, studentPhone, enteredCode) {
   try {
+    invalidateExamSessionsCache();
     const res = apiGetExamSessions();
     if (!res.success) return res;
     const session = res.data.find(s => s.id === sessionId);
@@ -1404,10 +1564,10 @@ function apiFixStudentId(oldId, newId) {
 // DISPATCH (same allowlists as Code.gs doPost)
 // =========================================================================
 const PUBLIC_ACTIONS = ["apiGetPublicBatches", "apiLoginUser", "apiRegisterUser", "apiCheckApplicationStatus", "apiSendOTP", "apiVerifyOTPAndReset"];
-const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment"];
+const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiGetMissingExams"];
 const USER_ACTIONS = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetLibrary", "apiGetBatches", "apiGetExamSessions", "apiGetAnnouncement", "apiGetExamRequestOptions", "apiCreateExamNotification"];
 const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification"];
-const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions", "apiGetPublicBatches"]);
+const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions", "apiGetPublicBatches", "apiGetMissingExams"]);
 
 const FUNCS = {
   apiLoginUser, apiRegisterUser, apiCheckApplicationStatus, apiSendOTP, apiVerifyOTPAndReset,
@@ -1420,7 +1580,7 @@ const FUNCS = {
   apiChangePasscode, apiLogoutUser, apiSaveUser, apiJoinExamSession, apiSubmitExamResult, apiSubmitPaymentRequest,
   apiGetStudentDashboardData, apiHasSubmitted, apiCreateNotification, apiDeleteNotification, apiGetNotifications,
   apiGetMyProfile, apiGetLibrary, apiGetBatches, apiGetExamSessions, apiGetAnnouncement,
-  apiGetExamRequestOptions, apiCreateExamNotification, apiGetPublicBatches,
+  apiGetExamRequestOptions, apiCreateExamNotification, apiGetPublicBatches, apiGetMissingExams,
   // not allow-listed (same as GAS) but kept for parity
   apiHealStudentIds, apiFixStudentId, apiVerifyGatewayPayment,
 };
@@ -1471,4 +1631,10 @@ async function handleRpc(requestData) {
   return { success: true, data: result };
 }
 
-module.exports = { handleRpc, purgeExpiredSessions, startExamScheduler, FUNCS, validateSessionToken, _internal: { hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso } };
+function invalidateAllCaches() {
+  invalidateBatchesCache();
+  invalidateLibraryCache();
+  invalidateExamSessionsCache();
+}
+
+module.exports = { handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches, FUNCS, validateSessionToken, _internal: { hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso } };

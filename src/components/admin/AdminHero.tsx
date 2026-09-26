@@ -10,12 +10,14 @@ export function AdminHero({ user }: { user: any }) {
   const [users, setUsers] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
   const [batches, setBatches] = useState<any[]>([]);
+  const [missing, setMissing] = useState<any[]>([]);
   const [now] = useState(() => Date.now());
   useEffect(() => {
     let alive = true;
     api.getUsers().then(u => { if (alive) setUsers(u || []); }).catch(() => {});
     api.getPayments().then(p => { if (alive) setPayments(p || []); }).catch(() => {});
     api.getBatches(user?.uid).then(b => { if (alive) setBatches(b || []); }).catch(() => {});
+    api.getMissingExams().then(m => { if (alive) setMissing(m || []); }).catch(() => {});
     return () => { alive = false; };
   }, [user?.uid]);
 
@@ -77,6 +79,16 @@ export function AdminHero({ user }: { user: any }) {
           </Link>
         ))}
       </div>
+
+      {missing.length > 0 && (
+        <Link to="/admin/library" className="mc-lift block rounded-3xl p-4 border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800">
+          <div className="font-extrabold text-amber-900 dark:text-amber-200">⚠️ Notes shared, but exam not created yet ({missing.length})</div>
+          <ul className="mt-2 text-sm text-amber-900 dark:text-amber-200 space-y-1">
+            {missing.slice(0, 8).map((m: any) => <li key={m.batchId + m.id}><b>{m.batchName}</b> · {m.title}</li>)}
+          </ul>
+          <div className="text-xs mt-2 text-amber-800/80 dark:text-amber-300/80">এগুলোর exam library-তে তুললে ছাত্রদের Exam Notification-এ নিজে থেকে চলে আসবে।</div>
+        </Link>
+      )}
 
       {photos.length > 0 && (
         <div>
