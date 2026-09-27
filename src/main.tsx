@@ -11,38 +11,24 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 installFx();
 
-// Force unregister service workers and clear cache to permanently resolve aggressive PWA mobile caching
+// Quietly unregister legacy service workers and clear old caches in background (no jarring reloads)
 try {
-  if ('serviceWorker' in navigator) {
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then((registrations) => {
-      if (registrations.length > 0) {
-        let promises: Promise<boolean>[] = [];
-        for (const registration of registrations) {
-          promises.push(registration.unregister());
-        }
-        Promise.all(promises).then((results) => {
-          if (results.some(Boolean)) {
-            console.log("[PWA] Service Workers unregistered successfully.");
-            if (typeof caches !== 'undefined') {
-              caches.keys().then((keys) => {
-                let cachePromises: Promise<boolean>[] = [];
-                for (const key of keys) {
-                  cachePromises.push(caches.delete(key));
-                }
-                Promise.all(cachePromises).then(() => {
-                  window.location.reload();
-                });
-              });
-            } else {
-              window.location.reload();
-            }
-          }
-        });
+      for (const registration of registrations) {
+        registration.unregister().catch(() => {});
       }
-    });
+    }).catch(() => {});
+  }
+  if (typeof caches !== 'undefined') {
+    caches.keys().then((keys) => {
+      for (const key of keys) {
+        caches.delete(key).catch(() => {});
+      }
+    }).catch(() => {});
   }
 } catch (e) {
-  console.error("Auto SW unregister failed:", e);
+  // silent
 }
 
 setupAlertPolyfill();

@@ -710,9 +710,9 @@ function TopNav() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Auto PWA Cache Buster on Startup
+  // Auto PWA Cache Buster on Startup: quietly unregister legacy SWs and clear old caches without jarring reload
   useEffect(() => {
-    const CURRENT_VERSION = "v1.6.0";
+    const CURRENT_VERSION = "v2.0.0";
     const savedVersion = localStorage.getItem("app_version");
     if (savedVersion !== CURRENT_VERSION) {
       const runAutoBuster = async () => {
@@ -732,9 +732,7 @@ function TopNav() {
             }
           } catch (_) {}
         }
-        // (Do NOT log the user out on a version change — login is kept.)
         localStorage.setItem("app_version", CURRENT_VERSION);
-        window.location.reload();
       };
       runAutoBuster();
     }
@@ -2233,7 +2231,6 @@ function GlobalAlert() {
   );
 }
 
-import { ReloadPrompt } from "./components/ReloadPrompt";
 import { fullResetKeepLogin } from "./lib/autoUpdate";
 import { confirmAsync } from './lib/confirmDialog';
 import { InstallPrompt } from "./components/InstallPrompt";
@@ -2241,7 +2238,6 @@ import { InstallPrompt } from "./components/InstallPrompt";
 export default function App() {
   return (
     <Router>
-      <ReloadPrompt />
       <InstallPrompt />
       <GlobalAlert />
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans flex flex-col">
