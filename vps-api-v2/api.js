@@ -646,12 +646,14 @@ function apiDeleteBatch(batchId) {
 // LIBRARY
 // =========================================================================
 function libSummary(item) {
+  const isFolder = item.isFolder === true || item.isFolder === "true" || item.type === "folder";
+  const itemType = isFolder ? "folder" : (item.type === "exam" ? "exam" : "note");
   return {
     id: item.id || "",
     title: item.title || "",
-    type: item.type || "folder",
+    type: itemType,
     parentId: item.parentId || null,
-    isFolder: item.isFolder === true || item.isFolder === "true",
+    isFolder: isFolder,
     isEncrypted: item.isEncrypted === true || item.isEncrypted === "true",
     isChunked: item.isChunked === true || item.isChunked === "true",
     chunkCount: item.chunkCount ? Number(item.chunkCount) : 0,
@@ -687,7 +689,7 @@ function apiGetLibraryItemDetails(itemId) {
   try {
     const key = String(itemId).trim();
     const cached = examDetailsCache.get(key);
-    if (cached && (Date.now() - cached.time < 300000)) {
+    if (cached && (Date.now() - cached.time < 1800000)) {
       return { success: true, data: cached.data };
     }
     const found = S.findRowById("library", key);
@@ -698,12 +700,14 @@ function apiGetLibraryItemDetails(itemId) {
       const h = cols[i];
       if (item[h] === undefined) item[h] = "";
     }
-    item.isFolder = item.isFolder === true || item.isFolder === "true";
+    const isFolder = item.isFolder === true || item.isFolder === "true" || item.type === "folder";
+    item.isFolder = isFolder;
+    item.type = isFolder ? "folder" : (item.type === "exam" ? "exam" : "note");
     item.isEncrypted = item.isEncrypted === true || item.isEncrypted === "true";
     item.isChunked = item.isChunked === true || item.isChunked === "true";
     if (item.chunkCount) item.chunkCount = Number(item.chunkCount);
 
-    if (examDetailsCache.size >= 100) {
+    if (examDetailsCache.size >= 1000) {
       const first = examDetailsCache.keys().next().value;
       examDetailsCache.delete(first);
     }
@@ -715,6 +719,12 @@ function apiGetLibraryItemDetails(itemId) {
 
 function apiSaveLibraryItem(itemData) {
   try {
+    if (itemData) {
+      const isFolder = itemData.isFolder === true || itemData.isFolder === "true" || itemData.type === "folder";
+      itemData.isFolder = isFolder;
+      if (isFolder) itemData.type = "folder";
+      else if (itemData.type !== "exam") itemData.type = "note";
+    }
     if (itemData.id) {
       const id = itemData.id; delete itemData.id;
       invalidateLibraryCache(id);

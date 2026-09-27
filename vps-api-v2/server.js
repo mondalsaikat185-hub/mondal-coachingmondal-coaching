@@ -1,6 +1,7 @@
 'use strict';
 // mc-api v2: the whole app backend on the VPS (replaces Google Apps Script).
 const express = require('express');
+const compression = require('compression');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -15,6 +16,7 @@ if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true, mode
 
 const app = express();
 app.disable('x-powered-by');
+app.use(compression({ threshold: 512 }));
 
 // ---------- CORS (only our Vercel app + local dev) ----------
 const ORIGIN_RE = /^https:\/\/mondal-coachingmondal-coaching(-[a-z0-9-]+)?\.vercel\.app$/i;

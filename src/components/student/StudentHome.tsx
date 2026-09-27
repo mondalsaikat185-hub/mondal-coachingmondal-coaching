@@ -66,7 +66,7 @@ export function StudentHome({ user, absentCount, paymentStatus, dueMonthsText }:
     return { at: new Date(best), items: ids.map(id => byId[id]).filter(Boolean) };
   }, [myBatches, byId, now]);
 
-  // Newest material shared to the student's batches (by the day it was shared)
+  // Newest study material notes shared to the student's batches (by the day it was shared)
   const fresh = useMemo(() => {
     const seen: Record<string, number> = {};
     myBatches.forEach(b => {
@@ -75,7 +75,7 @@ export function StudentHome({ user, absentCount, paymentStatus, dueMonthsText }:
     });
     return Object.keys(seen)
       .map(id => ({ item: byId[id], at: seen[id] }))
-      .filter(x => x.item && !x.item.isFolder && x.item.type !== 'folder')
+      .filter(x => x.item && !x.item.isFolder && x.item.type !== 'folder' && x.item.type !== 'exam')
       .sort((a, b) => b.at - a.at)
       .slice(0, 10);
   }, [myBatches, byId]);
@@ -203,12 +203,11 @@ export function StudentHome({ user, absentCount, paymentStatus, dueMonthsText }:
         ) : (
           <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory px-2 -mx-2 pt-4 pb-5">
             {fresh.map(({ item, at }) => {
-              const isExam = item.type === 'exam';
-              const to = isExam ? '/student/library?kind=exam' : `/student/library?kind=note&preview=${encodeURIComponent(item.id)}`;
+              const to = `/student/library?kind=note&preview=${encodeURIComponent(item.id)}`;
               return (
                 <Link key={item.id} to={to} className="mc-lift snap-start shrink-0 w-[72%] sm:w-[240px] p-4 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-[0_10px_24px_-12px_rgba(19,28,51,.3)]">
-                  <div className={`text-[11px] font-extrabold uppercase tracking-wider flex items-center gap-1 ${isExam ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'}`}>
-                    {isExam ? <FileText className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}{isExam ? 'Exam' : 'Note'}
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                    <BookOpen className="w-3.5 h-3.5" />Note
                   </div>
                   <div className="mt-1.5 font-bold leading-snug line-clamp-2 bn">{item.title}</div>
                   <div className="text-xs text-zinc-500 mt-1">{fmtShort(new Date(at).toISOString())}</div>

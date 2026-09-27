@@ -15,10 +15,11 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o
 
 const db = new DatabaseSync(path.join(DATA_DIR, 'mc2.db'));
 db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA synchronous = FULL;');
+db.exec('PRAGMA synchronous = NORMAL;');
 db.exec('PRAGMA busy_timeout = 5000;');
-db.exec('PRAGMA cache_size = -32000;');
+db.exec('PRAGMA cache_size = -64000;');
 db.exec('PRAGMA temp_store = MEMORY;');
+db.exec('PRAGMA mmap_size = 268435456;');
 db.exec(`
   CREATE TABLE IF NOT EXISTS rows (
     rk INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,6 +28,7 @@ db.exec(`
     data TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_rows_sheet_id ON rows(sheet, id);
+  CREATE INDEX IF NOT EXISTS idx_rows_sheet_rk ON rows(sheet, rk);
   CREATE TABLE IF NOT EXISTS headers (
     sheet TEXT PRIMARY KEY,
     cols TEXT NOT NULL

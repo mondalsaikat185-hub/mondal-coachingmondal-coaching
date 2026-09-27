@@ -79,6 +79,21 @@ function CountdownTimer({ targetDate, onComplete }: { targetDate: Date; onComple
   );
 }
 
+export const isFolderItem = (i: any): boolean => {
+  if (!i) return false;
+  return i.isFolder === true || i.isFolder === 'true' || i.type === 'folder';
+};
+
+export const isExamItem = (i: any): boolean => {
+  if (!i || isFolderItem(i)) return false;
+  return i.type === 'exam';
+};
+
+export const isNoteItem = (i: any): boolean => {
+  if (!i || isFolderItem(i)) return false;
+  return i.type === 'note' || (i.type !== 'exam' && !isFolderItem(i));
+};
+
 export function StudentLibrary() {
   const { user } = useAuth();
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -95,6 +110,40 @@ export function StudentLibrary() {
   const [previewItem, setPreviewItemState] = useState<LibraryItem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const preloadedDetailsRef = useRef<Map<string, LibraryItem>>(new Map());
+
+  // Background prefetch visible exams into memory & IndexedDB so clicking ANY exam is 0ms instant!
+  useEffect(() => {
+    if (!items || items.length === 0) return;
+    const examItems = items.filter(i => isExamItem(i)).slice(0, 15);
+    let cancelled = false;
+
+    const preloadNext = async (index: number) => {
+      if (cancelled || index >= examItems.length) return;
+      const it = examItems[index];
+      if (it && it.id && !preloadedDetailsRef.current.has(it.id)) {
+        try {
+          const details = await api.getLibraryItemDetails(it.id);
+          if (details && !cancelled) {
+            preloadedDetailsRef.current.set(it.id, details);
+          }
+        } catch (e) {
+          // ignore background prefetch error
+        }
+      }
+      if (!cancelled) {
+        setTimeout(() => preloadNext(index + 1), 150);
+      }
+    };
+
+    const timer = setTimeout(() => {
+      preloadNext(0);
+    }, 600);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [items]);
 
   useEffect(() => {
     if (basePreviewItem) {
@@ -815,20 +864,21 @@ export function StudentLibrary() {
          childrenMap.get(pId)!.push(item);
      }
 
-     const checkVis = (folderId: string): { exam: boolean, note: boolean } => {
+     const checkVis = (folderId: string, visited = new Set<string>()): { exam: boolean, note: boolean } => {
          if (memo.has(folderId)) return memo.get(folderId)!;
-         memo.set(folderId, { exam: false, note: false }); 
+         if (visited.has(folderId)) return { exam: false, note: false };
+         visited.add(folderId);
 
          const children = childrenMap.get(folderId) || [];
          let hasExam = false;
          let hasNote = false;
          
          for (const child of children) {
-             if (!child.isFolder) {
-                 if (child.type === 'exam') hasExam = true;
-                 else hasNote = true;
+             if (!isFolderItem(child)) {
+                 if (isExamItem(child)) hasExam = true;
+                 if (isNoteItem(child)) hasNote = true;
              } else {
-                 const childVis = checkVis(child.id);
+                 const childVis = checkVis(child.id, visited);
                  if (childVis.exam) hasExam = true;
                  if (childVis.note) hasNote = true;
              }
@@ -840,32 +890,33 @@ export function StudentLibrary() {
      };
 
      for (const item of items) {
-         if (item.isFolder) checkVis(item.id);
+         if (isFolderItem(item)) checkVis(item.id);
      }
      return memo;
   }, [items]);
 
   const isFolderVisible = (folder: LibraryItem, mode: 'EXAM' | 'NOTE'): boolean => {
       const vis = folderVisibility.get(folder.id);
-      const hasMatchingContent = vis ? (mode === 'EXAM' ? vis.exam : vis.note) : false;
-      
-      if (!hasMatchingContent) {
-          const t = String(folder?.title || '').toLowerCase();
-          if (mode === 'EXAM' && (t.includes('exam') || t.includes('test'))) return true;
-          if (mode === 'NOTE' && !(t.includes('exam') || t.includes('test'))) return true;
-          return false;
+      if (vis) {
+          return mode === 'EXAM' ? vis.exam : vis.note;
       }
-      return true;
+      return false;
   };
 
-  const currentItems = items.filter(i => 
-    searchQuery 
-     ? String(i?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) && (libraryMode === 'NOTE' ? i?.type !== 'exam' : i?.type === 'exam')
-     : (i?.parentId || null) === currentFolderId && (
-          (i?.isFolder && isFolderVisible(i, libraryMode as 'EXAM' | 'NOTE')) || 
-          (!i?.isFolder && (libraryMode === 'NOTE' ? i?.type !== 'exam' : i?.type === 'exam'))
-       )
-  );
+  const currentItems = items.filter(i => {
+    if (searchQuery) {
+      const match = String(i?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase());
+      if (!match) return false;
+      if (isFolderItem(i)) return isFolderVisible(i, (libraryMode || 'NOTE') as 'EXAM' | 'NOTE');
+      return libraryMode === 'EXAM' ? isExamItem(i) : isNoteItem(i);
+    }
+    const inFolder = (i?.parentId || null) === currentFolderId;
+    if (!inFolder) return false;
+    if (isFolderItem(i)) {
+      return isFolderVisible(i, (libraryMode || 'NOTE') as 'EXAM' | 'NOTE');
+    }
+    return libraryMode === 'EXAM' ? isExamItem(i) : isNoteItem(i);
+  });
   
   const getMs = (t: any) => {
     if (!t) return 0;
@@ -874,12 +925,12 @@ export function StudentLibrary() {
     return new Date(t).getTime() || 0;
   };
   
-  const folders = currentItems.filter(i => i?.isFolder).sort((a,b) => String(a?.title || '').localeCompare(String(b?.title || '')));
-  const files = currentItems.filter(i => !i?.isFolder).sort((a,b) => getMs(b?.createdAt) - getMs(a?.createdAt));
+  const folders = currentItems.filter(i => isFolderItem(i)).sort((a,b) => String(a?.title || '').localeCompare(String(b?.title || '')));
+  const files = currentItems.filter(i => !isFolderItem(i)).sort((a,b) => getMs(b?.createdAt) - getMs(a?.createdAt));
 
   const allFilesSorted = searchQuery 
     ? files 
-    : items.filter(i => !i?.isFolder && (libraryMode === 'NOTE' ? i?.type !== 'exam' : i?.type === 'exam')).sort((a,b) => getMs(b?.createdAt) - getMs(a?.createdAt));
+    : items.filter(i => !isFolderItem(i) && (libraryMode === 'EXAM' ? isExamItem(i) : isNoteItem(i))).sort((a,b) => getMs(b?.createdAt) - getMs(a?.createdAt));
   const formatDate = (timestamp: any) => {
      if (!timestamp) return 'No date';
      const d = safeToDate(timestamp);
@@ -902,6 +953,7 @@ export function StudentLibrary() {
          setCurrentFolderId(folder?.parentId || null);
       } else {
          setLibraryMode(null);
+         setSearchParams(prev => { prev.delete('kind'); prev.delete('folder'); return prev; });
       }
   };
 
@@ -979,12 +1031,12 @@ export function StudentLibrary() {
              <h1 className="text-3xl font-black mb-8 uppercase text-zinc-900 dark:text-zinc-100">Welcome to Library</h1>
              <p className="text-zinc-600 dark:text-zinc-400 font-bold mb-10">What would you like to access today?</p>
              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-2xl px-4">
-                 <button onClick={() => { setCurrentFolderId(null); setLibraryMode('NOTE'); }} className="flex flex-col items-center gap-4 bg-zinc-50 dark:bg-zinc-900/50 border-4 border-zinc-900 dark:border-zinc-100 p-8 hover:-translate-y-2 transition-transform shadow-[8px_8px_0px_0px_rgba(24,24,27,1)] dark:shadow-[8px_8px_0px_0px_rgba(244,244,245,1)] group">
+                 <button onClick={() => { setCurrentFolderId(null); setLibraryMode('NOTE'); setSearchParams(prev => { prev.set('kind', 'note'); prev.delete('folder'); return prev; }); }} className="flex flex-col items-center gap-4 bg-zinc-50 dark:bg-zinc-900/50 border-4 border-zinc-900 dark:border-zinc-100 p-8 hover:-translate-y-2 transition-transform shadow-[8px_8px_0px_0px_rgba(24,24,27,1)] dark:shadow-[8px_8px_0px_0px_rgba(244,244,245,1)] group">
                     <div className="bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 p-6 rounded-full group-hover:scale-110 transition-transform"><BookOpen className="w-10 h-10" /></div>
                     <h2 className="text-2xl font-black uppercase text-zinc-900 dark:text-zinc-100">Study Materials</h2>
                     <p className="text-zinc-700 dark:text-zinc-400 font-medium">Access PDF notes, assignments & study guides</p>
                  </button>
-                 <button onClick={() => { setCurrentFolderId(null); setLibraryMode('EXAM'); }} className="flex flex-col items-center gap-4 bg-blue-50 dark:bg-blue-900/20 border-4 border-blue-600 p-8 hover:-translate-y-2 transition-transform shadow-[8px_8px_0px_0px_rgba(37,99,235,1)] group">
+                 <button onClick={() => { setCurrentFolderId(null); setLibraryMode('EXAM'); setSearchParams(prev => { prev.set('kind', 'exam'); prev.delete('folder'); return prev; }); }} className="flex flex-col items-center gap-4 bg-blue-50 dark:bg-blue-900/20 border-4 border-blue-600 p-8 hover:-translate-y-2 transition-transform shadow-[8px_8px_0px_0px_rgba(37,99,235,1)] group">
                     <div className="bg-blue-600 text-white p-6 rounded-full group-hover:scale-110 transition-transform"><PenTool className="w-10 h-10" /></div>
                     <h2 className="text-2xl font-black uppercase text-blue-900 dark:text-blue-100">Take an Exam</h2>
                     <p className="text-blue-700 dark:text-blue-300 font-medium">Participate in live exams or past mock tests</p>

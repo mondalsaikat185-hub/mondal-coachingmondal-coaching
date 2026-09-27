@@ -7,6 +7,7 @@ import { useAuth } from '../components/AuthProvider';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { showToast } from '../lib/toast';
 import { confirmAsync } from '../lib/confirmDialog';
+import { isFolderItem } from './StudentLibrary';
 
 export interface LibraryItem {
   id: string;
@@ -618,7 +619,7 @@ export function AdminLibrary() {
          const children = allItems.filter(item => item.parentId === id);
          for (const child of children) {
            itemsToDelete.push(child.id);
-           if (child.isFolder) {
+           if (isFolderItem(child)) {
              findChildren(child.id);
            }
          }
@@ -802,7 +803,7 @@ export function AdminLibrary() {
     const parent = i.parentId === '' ? null : (i.parentId || null);
     return parent === currentFolderId;
   });
-  const folders = currentItems.filter(i => i.isFolder).sort((a,b) => String(a.title || '').localeCompare(String(b.title || '')));
+  const folders = currentItems.filter(i => isFolderItem(i)).sort((a,b) => String(a.title || '').localeCompare(String(b.title || '')));
   const getMs = (t: any) => {
     if (!t) return 0;
     if (typeof t.toMillis === 'function') return t.toMillis();
@@ -811,7 +812,7 @@ export function AdminLibrary() {
   };
 
   const files = currentItems
-     .filter(i => !i.isFolder)
+     .filter(i => !isFolderItem(i))
      .sort((a,b) => {
         const seqA = typeof a.sequence === 'number' ? a.sequence : 999999;
         const seqB = typeof b.sequence === 'number' ? b.sequence : 999999;
