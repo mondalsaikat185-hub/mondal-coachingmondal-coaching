@@ -1304,16 +1304,6 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              <div className={`quiz-nav-bar flex-shrink-0 flex flex-nowrap items-center gap-1.5 border-t border-zinc-800/80 px-3 py-2 bg-[#121214] lg:px-0 lg:py-0 lg:pt-4 lg:bg-transparent lg:gap-3 landscape:py-1`}>
                 <button
                   type="button"
-                  onClick={prevQuestion}
-                  disabled={currentIdx === 0}
-                  title="পূর্ববর্তী প্রশ্ন (Previous Question)"
-                  className="px-2.5 py-1.5 text-[10px] lg:px-4 lg:py-2 lg:text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-100 uppercase tracking-wide font-bold rounded-lg transition-all border border-zinc-600 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
-                >
-                  <span className="hidden sm:inline">← Previous</span>
-                  <span className="sm:hidden">← Previous</span>
-                </button>
-                <button
-                  type="button"
                   onClick={clearResponse}
                   disabled={userAnswers[currentIdx] === undefined}
                   title="উত্তর মুছুন (Clear Response)"
@@ -1324,12 +1314,12 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                 <div className="flex-1" />
                 <button
                   type="button"
-                  onClick={nextAndReview}
-                  title="পর্যালোচনার জন্য চিহ্নিত করুন এবং পরবর্তী প্রশ্নে যান (Mark for Review & Next)"
-                  className="px-2.5 py-1.5 text-[10px] lg:px-4 lg:py-2.5 lg:text-xs bg-zinc-900 border border-violet-400 hover:bg-zinc-800 text-violet-300 uppercase tracking-wide font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap"
+                  onClick={prevQuestion}
+                  disabled={currentIdx === 0}
+                  title="পূর্ববর্তী প্রশ্ন (Previous Question)"
+                  className="px-3 py-1.5 text-[10px] lg:px-5 lg:py-2.5 lg:text-xs bg-yellow-500 hover:bg-yellow-400 active:bg-yellow-600 text-zinc-950 uppercase tracking-wide font-black rounded-lg transition-all border border-yellow-400 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed whitespace-nowrap shadow-sm"
                 >
-                  <span className="hidden sm:inline">Review & Next ⚑</span>
-                  <span className="sm:hidden">Review ⚑</span>
+                  ← Prev
                 </button>
                 <button
                   type="button"
