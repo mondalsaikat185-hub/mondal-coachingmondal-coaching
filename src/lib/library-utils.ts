@@ -1,31 +1,31 @@
-export function resolveFolderVis(folder: any, allItems: any[]): { exam: boolean, note: boolean } {
-    // 1. Explicit mode set by new UI
-    if (folder.folderMode === 'EXAM') return { exam: true, note: false };
-    if (folder.folderMode === 'NOTE') return { exam: false, note: true };
-    
-    // 2. Find the absolute ROOT folder of this item
-    let rootFolder = folder;
-    let maxDepth = 20; // safety
-    while (rootFolder.parentId && maxDepth > 0) {
-        const parent = allItems.find(i => i.id === rootFolder.parentId);
-        if (!parent) break; // orphaned or root not loaded
-        rootFolder = parent;
-        maxDepth--;
-    }
+const STUDENT_EXAM_ROOT_ID = 'SR7Ee9hMJHL2VDqXCnE9';
 
-    // 3. Check explicit mode on the root folder
-    if (rootFolder.folderMode === 'EXAM') return { exam: true, note: false };
-    if (rootFolder.folderMode === 'NOTE') return { exam: false, note: true };
+export function resolveFolderVis(item: any, allItems: any[]): { exam: boolean, note: boolean } {
+  if (!item) return { exam: false, note: false };
 
-    // 4. Look at the ROOT folder's title. As explicitly requested by the user:
-    // Only the folder named Student Exam (or containing exam/test/quiz/??????) goes to Exams.
-    // Everything else goes to Notes.
-    const title = (rootFolder.title || '').toLowerCase();
-    const isExamRoot = title.includes('exam') || title.includes('test') || title.includes('quiz') || title.includes('??????') || title.includes('???????');
+  // 1. Explicit folder mode if set on this item
+  if (item.folderMode === 'EXAM') return { exam: true, note: false };
+  if (item.folderMode === 'NOTE') return { exam: false, note: true };
 
-    if (isExamRoot) {
-        return { exam: true, note: false };
-    } else {
-        return { exam: false, note: true };
-    }
+  // 2. Trace up to the top-level (root) ancestor
+  let root = item;
+  let maxDepth = 25;
+  while (root.parentId && maxDepth > 0) {
+    const parent = allItems.find(i => i.id === root.parentId);
+    if (!parent) break;
+    root = parent;
+    maxDepth--;
+  }
+
+  // 3. Explicit folder mode on the root ancestor
+  if (root.folderMode === 'EXAM') return { exam: true, note: false };
+  if (root.folderMode === 'NOTE') return { exam: false, note: true };
+
+  // 4. Exact check for STUDENT'S EXAM root (by ID or root title)
+  const rootTitle = (root.title || '').trim().toUpperCase();
+  const isExam = root.id === STUDENT_EXAM_ROOT_ID ||
+                 rootTitle.includes("STUDENT'S EXAM") ||
+                 rootTitle.includes("STUDENT EXAM");
+
+  return isExam ? { exam: true, note: false } : { exam: false, note: true };
 }

@@ -825,7 +825,7 @@ export function AdminExams() {
      .sort(sortItems);
 
   const files = currentItems
-     .filter(i => !isFolderItem(i) && i.type === \'exam\')
+     .filter(i => !isFolderItem(i) && i.type === 'exam')
      .sort(sortItems);
 
   const handleDragStart = (e: React.DragEvent, fileId: string) => {
