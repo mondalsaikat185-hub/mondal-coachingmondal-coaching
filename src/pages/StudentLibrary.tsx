@@ -901,13 +901,13 @@ export function StudentLibrary() {
     if (searchQuery) {
       const match = String(i?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase());
       if (!match) return false;
-      if (isFolderItem(i)) return isFolderVisible(i, (libraryMode || 'NOTE') as 'EXAM' | 'NOTE');
+      if (isFolderItem(i)) return resolveFolderMode(i, allItems) === libraryMode;
       return libraryMode === 'EXAM' ? isExamItem(i) : isNoteItem(i);
     }
     const inFolder = (i?.parentId || null) === currentFolderId;
     if (!inFolder) return false;
     if (isFolderItem(i)) {
-      return isFolderVisible(i, (libraryMode || 'NOTE') as 'EXAM' | 'NOTE');
+      return resolveFolderMode(i, allItems) === libraryMode;
     }
     return libraryMode === 'EXAM' ? isExamItem(i) : isNoteItem(i);
   });

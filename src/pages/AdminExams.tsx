@@ -4,6 +4,7 @@ import { createExamSession, endExamSession } from '../lib/exam-session-utils';
 import { PageHeader } from './Pages';
 import { Loader2, Plus, Eye, Share2, Trash2, FileText, FileDown, BookOpen, Folder, FolderPlus, ChevronRight, Pencil, GripVertical } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
+import { resolveFolderMode } from '../lib/library-utils';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { showToast } from '../lib/toast';
 import { confirmAsync } from '../lib/confirmDialog';
@@ -820,7 +821,7 @@ export function AdminExams() {
   };
 
   const folders = currentItems
-     .filter(i => isFolderItem(i) && ((i as any).folderMode === libraryMode || !(i as any).folderMode))
+     .filter(i => isFolderItem(i) && resolveFolderMode(i, allLibraryItems) === libraryMode)
      .sort(sortItems);
 
   const files = currentItems
