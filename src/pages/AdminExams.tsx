@@ -825,7 +825,7 @@ export function AdminExams() {
      .sort(sortItems);
 
   const files = currentItems
-     .filter(i => !isFolderItem(i) && (libraryMode === 'EXAM' ? i.type === 'exam' : i.type !== 'exam'))
+     .filter(i => !isFolderItem(i) && resolveFolderVis(i, allLibraryItems).exam)
      .sort(sortItems);
 
   const handleDragStart = (e: React.DragEvent, fileId: string) => {
