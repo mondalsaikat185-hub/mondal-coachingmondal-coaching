@@ -3,6 +3,7 @@ import { api, LibraryItem, cleanPhone } from '../lib/api';
 import { PageHeader } from './Pages';
 import { Loader2, Eye, FileText, FileDown, BookOpen, Folder, ChevronRight, Clock, Search, FolderOpen, PenTool } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
+import { resolveFolderVis } from '../lib/library-utils';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { verifyAndJoinSession, joinSessionWithoutCode } from '../lib/exam-session-utils';
 import { useSearchParams } from 'react-router-dom';
