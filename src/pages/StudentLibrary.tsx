@@ -214,7 +214,14 @@ export function StudentLibrary() {
   const [weeksToShow, setWeeksToShow] = useState(2);
   const libraryMode = 'NOTE';
 
-  const processLibraryData = (allBatches: any[], libraryItems: LibraryItem[]) => {
+  const processLibraryData = (allBatches: any[], rawLibraryItems: LibraryItem[]) => {
+    // STRICT ISOLATION: StudentLibrary is ONLY for Notes.
+    // Strip out all items that belong to the STUDENT'S EXAM tree or have type === 'exam'.
+    const libraryItems = (rawLibraryItems || []).filter(i => {
+      if (i.type === 'exam') return false;
+      return resolveFolderVis(i, rawLibraryItems).note;
+    });
+
     const studentBatchIds = String(user?.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
     const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
     

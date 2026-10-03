@@ -1,4 +1,4 @@
-const STUDENT_EXAM_ROOT_ID = 'SR7Ee9hMJHL2VDqXCnE9';
+export const STUDENT_EXAM_ROOT_ID = 'SR7Ee9hMJHL2VDqXCnE9';
 
 export function resolveFolderVis(item: any, allItems: any[]): { exam: boolean, note: boolean } {
   if (!item) return { exam: false, note: false };

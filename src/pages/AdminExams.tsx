@@ -185,7 +185,11 @@ export function AdminExams() {
     }
     setLoading(true);
     try {
-        const libraryItems = await api.getLibrary();
+        const rawLibrary = await api.getLibrary();
+        const libraryItems = rawLibrary.filter(i => {
+          if (i.type === 'note' || i.type === 'pdf') return false;
+          return resolveFolderVis(i, rawLibrary).exam;
+        });
         setAllLibraryItems(libraryItems);
         const fetchedItems = libraryItems.filter(item => {
           const parent = item.parentId === '' ? null : item.parentId;

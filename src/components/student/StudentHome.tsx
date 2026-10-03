@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarClock, Lock, FileText, BookOpen, CheckCircle2, IndianRupee, Trophy, BellPlus } from 'lucide-react';
 import { api } from '../../lib/api';
+import { resolveFolderVis } from '../../lib/library-utils';
 import { ExtraKnowledgeCard } from '../ExtraKnowledgeCard';
 import { greetingFor, firstName } from './greeting';
 
@@ -75,10 +76,10 @@ export function StudentHome({ user, absentCount, paymentStatus, dueMonthsText }:
     });
     return Object.keys(seen)
       .map(id => ({ item: byId[id], at: seen[id] }))
-      .filter(x => x.item && !x.item.isFolder && x.item.type !== 'folder' && x.item.type !== 'exam')
+      .filter(x => x.item && !x.item.isFolder && x.item.type !== 'folder' && x.item.type !== 'exam' && resolveFolderVis(x.item, library).note)
       .sort((a, b) => b.at - a.at)
       .slice(0, 10);
-  }, [myBatches, byId]);
+  }, [myBatches, byId, library]);
 
   const last: LastExam | null = useMemo(() => {
     const latest = results.slice().sort((a, b) => new Date(b.submittedAt || b.createdAt).getTime() - new Date(a.submittedAt || a.createdAt).getTime())[0];

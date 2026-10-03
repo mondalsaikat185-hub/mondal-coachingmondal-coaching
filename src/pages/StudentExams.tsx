@@ -214,7 +214,14 @@ export function StudentExams() {
   const [weeksToShow, setWeeksToShow] = useState(2);
   const libraryMode = 'EXAM';
 
-  const processLibraryData = (allBatches: any[], libraryItems: LibraryItem[]) => {
+  const processLibraryData = (allBatches: any[], rawLibraryItems: LibraryItem[]) => {
+    // STRICT ISOLATION: StudentExams is ONLY for Exams.
+    // Strip out all items that do NOT belong to the STUDENT'S EXAM tree or have type === 'note' | 'pdf'.
+    const libraryItems = (rawLibraryItems || []).filter(i => {
+      if (i.type === 'note' || i.type === 'pdf') return false;
+      return resolveFolderVis(i, rawLibraryItems).exam;
+    });
+
     const studentBatchIds = String(user?.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
     const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
     
