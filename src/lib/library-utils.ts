@@ -1,55 +1,31 @@
 export function resolveFolderVis(folder: any, allItems: any[]): { exam: boolean, note: boolean } {
+    // 1. Explicit mode set by new UI
     if (folder.folderMode === 'EXAM') return { exam: true, note: false };
     if (folder.folderMode === 'NOTE') return { exam: false, note: true };
     
-    // Helper to check descendants
-    const hasExamDescendant = (parentId: string): boolean => {
-        const children = allItems.filter(i => (i.parentId || null) === parentId);
-        for (const child of children) {
-            if (child.type === 'exam') return true;
-            if ((child.isFolder || child.type === 'folder') && hasExamDescendant(child.id)) return true;
-        }
-        return false;
-    };
-
-    const hasNoteDescendant = (parentId: string): boolean => {
-        const children = allItems.filter(i => (i.parentId || null) === parentId);
-        for (const child of children) {
-            if (child.type === 'note' || child.type === 'pdf') return true;
-            if ((child.isFolder || child.type === 'folder') && hasNoteDescendant(child.id)) return true;
-        }
-        return false;
-    };
-
-    const isExam = hasExamDescendant(folder.id);
-    const isNote = hasNoteDescendant(folder.id);
-
-    if (isExam || isNote) {
-        return { exam: isExam, note: isNote };
+    // 2. Find the absolute ROOT folder of this item
+    let rootFolder = folder;
+    let maxDepth = 20; // safety
+    while (rootFolder.parentId && maxDepth > 0) {
+        const parent = allItems.find(i => i.id === rootFolder.parentId);
+        if (!parent) break; // orphaned or root not loaded
+        rootFolder = parent;
+        maxDepth--;
     }
 
-    // If completely empty, inherit from ancestors
-    let currentParentId = folder.parentId;
-    while (currentParentId) {
-        const parent = allItems.find(i => i.id === currentParentId);
-        if (!parent) break;
-        if (parent.folderMode === 'EXAM') return { exam: true, note: false };
-        if (parent.folderMode === 'NOTE') return { exam: false, note: true };
-        
-        const parentHasExam = hasExamDescendant(parent.id);
-        const parentHasNote = hasNoteDescendant(parent.id);
-        if (parentHasExam || parentHasNote) {
-            return { exam: parentHasExam, note: parentHasNote };
-        }
-        currentParentId = parent.parentId;
-    }
+    // 3. Check explicit mode on the root folder
+    if (rootFolder.folderMode === 'EXAM') return { exam: true, note: false };
+    if (rootFolder.folderMode === 'NOTE') return { exam: false, note: true };
 
-    // Fallback based on title
-    const title = (folder.title || '').toLowerCase();
-    if (title.includes('exam') || title.includes('test') || title.includes('quiz') || title.includes('??????') || title.includes('???????')) {
+    // 4. Look at the ROOT folder's title. As explicitly requested by the user:
+    // Only the folder named Student Exam (or containing exam/test/quiz/??????) goes to Exams.
+    // Everything else goes to Notes.
+    const title = (rootFolder.title || '').toLowerCase();
+    const isExamRoot = title.includes('exam') || title.includes('test') || title.includes('quiz') || title.includes('??????') || title.includes('???????');
+
+    if (isExamRoot) {
         return { exam: true, note: false };
+    } else {
+        return { exam: false, note: true };
     }
-
-    // Default for empty root folders with no special names
-    return { exam: false, note: true };
 }
