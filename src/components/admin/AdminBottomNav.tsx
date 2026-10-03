@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Users, BookOpen, IndianRupee, BarChart3 } from 'lucide-react';
+import { Home, Users, BookOpen, FileText, IndianRupee, BarChart3 } from 'lucide-react';
 
 // Admin bottom bar (same look as the students'): Home is always one tap away.
 export function AdminBottomNav() {
@@ -13,7 +13,8 @@ export function AdminBottomNav() {
   const tabs = [
     { to: '/admin', label: 'Home', icon: Home, on: path === '/admin' },
     { to: '/admin/students', label: 'Students', icon: Users, on: path.startsWith('/admin/students') || path.startsWith('/admin/batches') },
-    { to: '/admin/library', label: 'Library', icon: BookOpen, on: path.startsWith('/admin/library') },
+    { to: '/admin/library', label: 'Notes', icon: BookOpen, on: path.startsWith('/admin/library') },
+    { to: '/admin/exams', label: 'Exams', icon: FileText, on: path.startsWith('/admin/exams') },
     { to: '/admin/payments', label: 'Payments', icon: IndianRupee, on: path.startsWith('/admin/payments') },
     { to: '/admin/results', label: 'Results', icon: BarChart3, on: path.startsWith('/admin/results') },
   ];

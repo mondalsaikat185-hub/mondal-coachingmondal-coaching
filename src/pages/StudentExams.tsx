@@ -94,7 +94,7 @@ export const isNoteItem = (i: any): boolean => {
   return i.type === 'note' || (i.type !== 'exam' && !isFolderItem(i));
 };
 
-export function StudentLibrary() {
+export function StudentExams() {
   const { user } = useAuth();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [allItems, setAllItems] = useState<LibraryItem[]>([]);
@@ -211,7 +211,7 @@ export function StudentLibrary() {
   const downloadLockRef = useRef(false);
 
   const [weeksToShow, setWeeksToShow] = useState(2);
-  const libraryMode = 'NOTE';
+  const libraryMode = 'EXAM';
 
   const processLibraryData = (allBatches: any[], libraryItems: LibraryItem[]) => {
     const studentBatchIds = String(user?.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
@@ -1104,7 +1104,7 @@ export function StudentLibrary() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
           <div className="flex items-center gap-4">
              <PageHeader 
-                title="My Target Library" 
+                title="My Exams" 
                 backTo="/" 
                 onBack={handleBackNavigation} 
              />

@@ -14,8 +14,8 @@ export function StudentBottomNav() {
   }, []);
   const tabs = [
     { to: '/student', label: 'Home', icon: Home, on: path === '/student' || path === '' },
-    { to: '/student/library?kind=note', label: 'Library', icon: BookOpen, on: path === '/student/library' && kind !== 'exam' },
-    { to: '/student/library?kind=exam', label: 'Exams', icon: FileText, on: path === '/student/library' && kind === 'exam' },
+    { to: '/student/library', label: 'Notes', icon: BookOpen, on: path.startsWith('/student/library') },
+    { to: '/student/exams', label: 'Exams', icon: FileText, on: path.startsWith('/student/exams') },
     { to: '/student/payments', label: 'Fees', icon: IndianRupee, on: path === '/student/payments' },
   ];
   return (

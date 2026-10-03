@@ -46,7 +46,7 @@ function formatToDatetimeLocal(dateStr: string | undefined): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
-export function AdminLibrary() {
+export function AdminExams() {
   const { user } = useAuth();
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [allLibraryItems, setAllLibraryItems] = useState<LibraryItem[]>([]);
@@ -128,7 +128,7 @@ export function AdminLibrary() {
 
   const [sessionBatchPickerItem, setSessionBatchPickerItem] = useState<LibraryItem | null>(null);
   const [startingSession, setStartingSession] = useState(false);
-  const libraryMode = 'NOTE';
+  const libraryMode = 'EXAM';
 
   // Navigation and Folders
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -990,7 +990,7 @@ export function AdminLibrary() {
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full">
       <div className="flex justify-between items-center mb-4">
         <PageHeader 
-           title="Central Library" 
+           title="Exam Engine" 
            backTo="/admin" 
            onBack={currentFolderId ? handleBackNavigation : undefined} 
         />

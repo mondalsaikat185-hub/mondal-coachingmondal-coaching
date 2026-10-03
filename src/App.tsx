@@ -42,10 +42,12 @@ import {
   formatDateTimeSafe,
 } from "./pages/Pages";
 import { AdminLibrary } from "./pages/AdminLibrary";
+import { AdminExams } from "./pages/AdminExams";
 import { AdminResults } from "./pages/AdminResults";
 import { AdminSettings } from "./pages/AdminSettings";
 import { ProfileSetup } from "./pages/ProfileSetup";
 import { StudentLibrary } from "./pages/StudentLibrary";
+import { StudentExams } from "./pages/StudentExams";
 function ProtectedRoute({
   children,
   adminOnly = false,
@@ -1516,10 +1518,10 @@ function AdminDashboard() {
             </div>
           </div>
           <Link
-            to="/admin/results"
+            to="/admin/exams"
             className="inline-block bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white font-bold uppercase text-xs px-4 py-2 hover:-translate-y-0.5 transition-transform shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] border-2 border-zinc-900 dark:border-zinc-100"
           >
-            View Results
+            Open Exams
           </Link>
         </div>
 
@@ -2288,6 +2290,14 @@ export default function App() {
               }
             />
             <Route
+              path="/admin/exams"
+              element={
+                <ProtectedRoute adminOnly>
+                  <AdminExams />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/admin/results/:examId?"
               element={
                 <ProtectedRoute adminOnly>
@@ -2332,6 +2342,14 @@ export default function App() {
                 }
               />
               <Route
+                path="exams"
+                element={
+                  <ProtectedRoute>
+                    <StudentExams />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="payments"
                 element={
                   <ProtectedRoute>
@@ -2339,10 +2357,7 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route
-                path="exams"
-                element={<Navigate to="/student/library" replace />}
-              />
+              
             </Route>
           </Routes>
         </main>

@@ -177,7 +177,7 @@ export function StudentHome({ user, absentCount, paymentStatus, dueMonthsText }:
       {/* Last exam */}
       {last && (
         <div>
-          <div className="flex justify-between items-baseline mb-3"><h3 className="text-lg font-extrabold">Last Exam</h3><Link to="/student/library?kind=exam" className="text-sm font-bold text-blue-600 dark:text-blue-400">Exams →</Link></div>
+          <div className="flex justify-between items-baseline mb-3"><h3 className="text-lg font-extrabold">Last Exam</h3><Link to="/student/exams" className="text-sm font-bold text-blue-600 dark:text-blue-400">Exams →</Link></div>
           <div className="mc-lift grid grid-cols-[auto_1fr] gap-4 items-center p-4 rounded-3xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-[0_10px_24px_-12px_rgba(19,28,51,.3)]">
             <div className="w-[76px] h-[76px] rounded-full grid place-items-center" style={{ background: `conic-gradient(#17A673 ${(pct ?? 0)}%, rgba(125,135,163,.25) 0)` }}>
               <div className="w-[60px] h-[60px] rounded-full grid place-items-center bg-white dark:bg-zinc-900 font-extrabold tabular-nums">{pct !== null ? `${pct}%` : '—'}</div>
@@ -197,7 +197,7 @@ export function StudentHome({ user, absentCount, paymentStatus, dueMonthsText }:
 
       {/* New study material */}
       <div>
-        <div className="flex justify-between items-baseline mb-1"><h3 className="text-lg font-extrabold">New Study Material</h3><Link to="/student/library?kind=note" className="text-sm font-bold text-blue-600 dark:text-blue-400">See all →</Link></div>
+        <div className="flex justify-between items-baseline mb-1"><h3 className="text-lg font-extrabold">New Study Material</h3><Link to="/student/library" className="text-sm font-bold text-blue-600 dark:text-blue-400">See all →</Link></div>
         {fresh.length === 0 ? (
           <p className="text-sm text-zinc-500 bn py-3">এখনো কিছু দেওয়া হয়নি।</p>
         ) : (
