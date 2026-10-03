@@ -902,11 +902,13 @@ export function StudentLibrary() {
     if (searchQuery) {
       const match = String(i?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase());
       if (!match) return false;
-      return resolveFolderVis(i, allItems).note;
+      if (isFolderItem(i)) return resolveFolderVis(i, allItems).note;
+      return isNoteItem(i);
     }
     const inFolder = (i?.parentId || null) === currentFolderId;
-    if (!inFolder) return false;
-    return resolveFolderVis(i, allItems).note;
+      if (!inFolder) return false;
+      if (isFolderItem(i)) return resolveFolderVis(i, allItems).note;
+      return isNoteItem(i);
   });
   
   const getMs = (t: any) => {
@@ -921,7 +923,7 @@ export function StudentLibrary() {
 
   const allFilesSorted = searchQuery 
     ? files 
-    : items.filter(i => !isFolderItem(i) && resolveFolderVis(i, allItems).note).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
+    : items.filter(i => !isFolderItem(i) && isNoteItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
   const formatDate = (timestamp: any) => {
      if (!timestamp) return 'No date';
      const d = safeToDate(timestamp);
