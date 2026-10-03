@@ -128,6 +128,7 @@ export function AdminLibrary() {
 
   const [sessionBatchPickerItem, setSessionBatchPickerItem] = useState<LibraryItem | null>(null);
   const [startingSession, setStartingSession] = useState(false);
+  const [libraryMode, setLibraryMode] = useState<'EXAM' | 'NOTE'>('EXAM');
 
   // Navigation and Folders
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -408,6 +409,7 @@ export function AdminLibrary() {
           title: name,
           isFolder: true,
           type: 'folder',
+          folderMode: libraryMode,
           parentId: currentFolderId || null,
           createdBy: user?.uid,
           isActive: true
@@ -803,7 +805,6 @@ export function AdminLibrary() {
     const parent = i.parentId === '' ? null : (i.parentId || null);
     return parent === currentFolderId;
   });
-  const folders = currentItems.filter(i => isFolderItem(i)).sort((a,b) => String(a.title || '').localeCompare(String(b.title || '')));
   const getMs = (t: any) => {
     if (!t) return 0;
     if (typeof t.toMillis === 'function') return t.toMillis();
@@ -811,14 +812,20 @@ export function AdminLibrary() {
     return new Date(t).getTime() || 0;
   };
 
+  const sortItems = (a: any, b: any) => {
+     const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt);
+     const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt);
+     if (seqA !== seqB) return seqA - seqB;
+     return getMs(b.createdAt) - getMs(a.createdAt);
+  };
+
+  const folders = currentItems
+     .filter(i => isFolderItem(i) && ((i as any).folderMode === libraryMode || !(i as any).folderMode))
+     .sort(sortItems);
+
   const files = currentItems
-     .filter(i => !isFolderItem(i))
-     .sort((a,b) => {
-        const seqA = typeof a.sequence === 'number' ? a.sequence : 999999;
-        const seqB = typeof b.sequence === 'number' ? b.sequence : 999999;
-        if (seqA !== seqB) return seqA - seqB;
-        return getMs(b.createdAt) - getMs(a.createdAt);
-     });
+     .filter(i => !isFolderItem(i) && (libraryMode === 'EXAM' ? i.type === 'exam' : i.type !== 'exam'))
+     .sort(sortItems);
 
   const handleDragStart = (e: React.DragEvent, fileId: string) => {
      setDraggedFileId(fileId);
@@ -988,6 +995,13 @@ export function AdminLibrary() {
            onBack={currentFolderId ? handleBackNavigation : undefined} 
         />
       </div>
+
+      <div className="flex justify-center mb-6">
+         <div className="inline-flex bg-zinc-200 dark:bg-zinc-800 p-1 border-2 border-zinc-900 dark:border-zinc-100 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)]">
+           <button onClick={() => setLibraryMode('EXAM')} className={`px-6 py-2 font-black uppercase text-sm transition-colors ${libraryMode === 'EXAM' ? 'bg-blue-600 text-white' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}`}>Exams</button>
+           <button onClick={() => setLibraryMode('NOTE')} className={`px-6 py-2 font-black uppercase text-sm transition-colors ${libraryMode === 'NOTE' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'}`}>Notes</button>
+         </div>
+      </div>
       
       {!activeSession && activeSessionsList.length > 0 && (
         <div className="mb-6 p-4 bg-yellow-100 border-2 border-yellow-500 text-yellow-900 font-bold text-sm shadow-[4px_4px_0px_0px_rgba(234,179,8,1)] flex items-center justify-between">
@@ -1060,7 +1074,7 @@ export function AdminLibrary() {
              <FolderPlus className="w-4 h-4" /> New Folder
           </button>
           <button 
-             onClick={() => setIsUploadModalOpen(true)}
+             onClick={() => { setItemType(libraryMode === 'EXAM' ? 'exam' : 'note'); setIsUploadModalOpen(true); }}
              className="flex-1 sm:flex-none justify-center bg-zinc-900 border-2 border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100 text-white font-bold px-4 py-2 uppercase text-xs shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] hover:-translate-y-0.5 transition-transform flex items-center gap-2"
           >
              <Plus className="w-4 h-4" /> Upload

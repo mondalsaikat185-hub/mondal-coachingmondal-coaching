@@ -925,12 +925,12 @@ export function StudentLibrary() {
     return new Date(t).getTime() || 0;
   };
   
-  const folders = currentItems.filter(i => isFolderItem(i)).sort((a,b) => String(a?.title || '').localeCompare(String(b?.title || '')));
-  const files = currentItems.filter(i => !isFolderItem(i)).sort((a,b) => getMs(b?.createdAt) - getMs(a?.createdAt));
+  const folders = currentItems.filter(i => isFolderItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
+  const files = currentItems.filter(i => !isFolderItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
 
   const allFilesSorted = searchQuery 
     ? files 
-    : items.filter(i => !isFolderItem(i) && (libraryMode === 'EXAM' ? isExamItem(i) : isNoteItem(i))).sort((a,b) => getMs(b?.createdAt) - getMs(a?.createdAt));
+    : items.filter(i => !isFolderItem(i) && (libraryMode === 'EXAM' ? isExamItem(i) : isNoteItem(i))).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
   const formatDate = (timestamp: any) => {
      if (!timestamp) return 'No date';
      const d = safeToDate(timestamp);
