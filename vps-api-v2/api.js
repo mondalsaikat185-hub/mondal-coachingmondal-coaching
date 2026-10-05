@@ -1580,73 +1580,136 @@ function undoExamRequest(n, nowMs) {
   if (changed) updateRow('batches', f.obj.id, { assignedItemsMap: JSON.stringify(assigned), scheduledStartTimeMap: JSON.stringify(scheduled) });
 }
 
+function auditUpcomingExamsInternal(nowMs, libIn, batchesIn, notifsIn) {
+  const lib = libIn || readSheet('library');
+  const libById = {}; for (const it of lib) libById[String(it.id)] = it;
+  const batches = batchesIn || readSheet('batches');
+  const batchesById = {}; for (const b of batches) batchesById[String(b.id)] = b;
+  const notifs = notifsIn || readSheet('notifications');
+  const todayIso = istDateStr(nowMs);
+
+  const results = [];
+  const upcomingReqs = notifs.filter(n => isExamReq(n) && n.status === 'scheduled' && n.examDate >= todayIso);
+
+  for (const n of upcomingReqs) {
+    const b = batchesById[String(n.batchId)];
+    const bName = b ? (b.name || '') : String(n.batchName || n.batchId);
+    if (!b) {
+      results.push({
+        batchId: String(n.batchId || ''),
+        batchName: bName,
+        date: n.examDate || '',
+        time: n.examStartTime || '',
+        examId: '',
+        examTitle: 'Batch Missing',
+        inMap: false,
+        timeOk: false,
+        visible: false,
+        status: '✗',
+        issueType: 'batch_missing',
+        error: `Batch ${n.batchId} পাওয়া যায়নি`,
+      });
+      continue;
+    }
+
+    const assigned = parseMap(b.assignedItemsMap);
+    const scheduled = parseMap(b.scheduledStartTimeMap);
+    const examIds = parseIdList(n.examIds);
+
+    for (const eid of examIds) {
+      const it = libById[eid];
+      const examTitle = it ? (it.title || eid) : eid;
+      const existsAndActive = !!(it && String(it.type) === 'exam' && isActiveItem(it));
+      
+      const inMap = !!scheduled[eid];
+      const timeOk = inMap && (scheduled[eid] === n.startIso || (n.examDate && n.examStartTime && scheduled[eid] === examStartIso(n.examDate, n.examStartTime)));
+      
+      let visible = !!assigned[eid];
+      if (!visible && it) {
+        let cur = it;
+        let depth = 0;
+        while (cur && cur.parentId && depth < 20) {
+          if (assigned[String(cur.parentId)]) { visible = true; break; }
+          cur = libById[String(cur.parentId)];
+          depth++;
+        }
+      }
+
+      let errorMsg = '';
+      let issueType = '';
+      if (!existsAndActive) {
+        errorMsg = 'Exam library-তে পাওয়া যায়নি বা নিষ্ক্রিয়';
+        issueType = 'exam_missing';
+      } else if (!inMap) {
+        errorMsg = 'scheduledStartTimeMap-এ exam নেই';
+        issueType = 'not_in_map';
+      } else if (!timeOk) {
+        errorMsg = `scheduled time মিলছে না (scheduled=${scheduled[eid]}, expected=${n.startIso})`;
+        issueType = 'bad_time';
+      } else if (!visible) {
+        errorMsg = 'Batch-এর ছাত্রছাত্রীদের কাছে exam দৃশ্যমান নয় (assignedItemsMap-এ নেই)';
+        issueType = 'not_visible';
+      }
+
+      const status = (existsAndActive && inMap && timeOk && visible) ? '✓' : '✗';
+      results.push({
+        batchId: String(b.id),
+        batchName: bName,
+        date: n.examDate,
+        time: n.examStartTime || '',
+        examId: eid,
+        examTitle,
+        inMap,
+        timeOk,
+        visible,
+        status,
+        issueType,
+        error: errorMsg,
+      });
+    }
+  }
+
+  return results;
+}
+
 function checkAndCreateAdminAlerts(nowMs) {
   const lib = readSheet('library');
   const libById = {}; for (const it of lib) libById[String(it.id)] = it;
   const batches = readSheet('batches');
+  const batchesById = {}; for (const b of batches) batchesById[String(b.id)] = b;
   const notifs = readSheet('notifications');
   const todayIso = istDateStr(nowMs);
 
-  const existingAlertKeys = new Set();
-  for (const n of notifs) {
-    if (String(n.type) === 'admin_alert') {
-      const k = String(n.dedupKey || '');
-      if (k) existingAlertKeys.add(k);
-    }
-  }
+  // 1. Gather all active problems across batches and exam requests
+  const activeProblems = new Map(); // problemKey -> { batch, itemTitle, issueDesc, issueKey, noteId }
 
-  const alertsCreated = [];
-  const alertedPairs = new Set(); // 1 note + 1 batch = max 1 alert!
-
-  const triggerAlert = (batch, itemTitle, issueDesc, issueKey, noteId = '') => {
-    const bId = String(batch.id || '');
-    const bName = String(batch.name || 'Batch');
-    const pairKey = `${bId}:${noteId || itemTitle}`;
-    if (alertedPairs.has(pairKey)) return;
-
-    const dedupKey = `${bId}:${issueKey}:${todayIso}`;
-    if (existingAlertKeys.has(dedupKey)) {
-      alertedPairs.add(pairKey);
-      return;
-    }
-
-    const row = {
-      type: 'admin_alert',
-      target: 'admin',
-      batchId: 'admin',
-      sourceBatchId: bId,
-      senderRole: 'system',
-      senderName: 'System Alert',
-      title: '⚠️ অ্যাডমিন সতর্কতা: ' + bName,
-      message: `${bName} — ${itemTitle} — ${issueDesc}`,
-      noteId: String(noteId || ''),
-      dedupKey,
-      date: todayIso,
-      readers: '[]',
-      createdAt: new Date(nowMs).toISOString(),
-    };
-    const saved = saveRow('notifications', row);
-    existingAlertKeys.add(dedupKey);
-    alertedPairs.add(pairKey);
-    alertsCreated.push(saved);
-  };
-
+  // A. Check notes with missing exams
   for (const b of batches) {
     const bId = String(b.id || '');
     if (!bId) continue;
-
-    // 1. নোটের কোনো exam নেই
     const outM = { missing: [] };
     examCandidates(b, nowMs, lib, outM);
     for (const m of outM.missing) {
       const noteItem = libById[String(m.id)];
       if (noteItem && (noteItem.noExamNeeded === true || String(noteItem.noExamNeeded).toLowerCase() === 'true')) {
-        continue; // Never alert for noExamNeeded
+        continue;
       }
-      triggerAlert(b, m.title, 'নোটের কোনো exam নেই', `note_no_exam:${m.id || m.title}`, m.id || '');
+      const linked = noteItem ? (Array.isArray(noteItem.linkedExamIds) ? noteItem.linkedExamIds : parseIdList(noteItem.linkedExamIds)) : [];
+      if (linked.some(eid => libById[String(eid)] && String(libById[String(eid)].type) === 'exam' && isActiveItem(libById[String(eid)]))) {
+        continue;
+      }
+      const issueKey = `note_no_exam:${m.id || m.title}`;
+      const problemKey = `${bId}:${issueKey}`;
+      activeProblems.set(problemKey, {
+        batch: b,
+        itemTitle: m.title,
+        issueDesc: 'নোটের কোনো exam নেই',
+        issueKey,
+        noteId: m.id || '',
+      });
     }
 
-    // 2. Exam requests for this batch
+    // B. Check exam requests for this batch
     const reqs = notifs.filter(n => isExamReq(n) && String(n.batchId) === bId && n.status !== 'duplicate' && n.status !== 'error');
     const scheduled = parseMap(b.scheduledStartTimeMap);
 
@@ -1661,26 +1724,171 @@ function checkAndCreateAdminAlerts(nowMs) {
             continue;
           }
           const linked = Array.isArray(matchingNote.linkedExamIds) ? matchingNote.linkedExamIds : parseIdList(matchingNote.linkedExamIds);
-          if (linked.length > 0) {
+          if (linked.some(eid => libById[String(eid)] && String(libById[String(eid)].type) === 'exam' && isActiveItem(libById[String(eid)]))) {
             continue;
           }
         }
-        triggerAlert(b, mt, 'exam পাওয়া যায়নি', `missing_exam:${mt}`, matchingNote ? matchingNote.id : '');
+        const activeEx = lib.find(it => String(it.type) === 'exam' && isActiveItem(it) && (it.title === mt || normTitle(it.title) === normTitle(mt)));
+        if (activeEx) continue;
+
+        const issueKey = `missing_exam:${mt}`;
+        const problemKey = `${bId}:${issueKey}`;
+        activeProblems.set(problemKey, {
+          batch: b,
+          itemTitle: mt,
+          issueDesc: 'exam পাওয়া যায়নি',
+          issueKey,
+          noteId: matchingNote ? matchingNote.id : '',
+        });
       }
 
       for (const eid of examIds) {
         const item = libById[eid];
         if (!item || String(item.type) !== 'exam' || !isActiveItem(item)) {
-          triggerAlert(b, eid, 'exam পাওয়া যায়নি', `exam_not_found:${eid}`);
+          const issueKey = `exam_not_found:${eid}`;
+          const problemKey = `${bId}:${issueKey}`;
+          activeProblems.set(problemKey, {
+            batch: b,
+            itemTitle: eid,
+            issueDesc: 'exam পাওয়া যায়নি',
+            issueKey,
+            noteId: '',
+          });
           continue;
         }
         if (n.status === 'scheduled' && !scheduled[eid]) {
-          triggerAlert(b, item.title || eid, 'notification-এর exam scheduledStartTimeMap-এ নেই', `exam_not_scheduled:${eid}`);
+          const issueKey = `exam_not_scheduled:${eid}`;
+          const problemKey = `${bId}:${issueKey}`;
+          activeProblems.set(problemKey, {
+            batch: b,
+            itemTitle: item.title || eid,
+            issueDesc: 'notification-এর exam scheduledStartTimeMap-এ নেই',
+            issueKey,
+            noteId: '',
+          });
         }
       }
     }
   }
 
+  // C. Audit upcoming exams across batches
+  const upcomingAudits = auditUpcomingExamsInternal(nowMs, lib, batches, notifs);
+  for (const aud of upcomingAudits) {
+    if (aud.status === '✗') {
+      const issueKey = `audit_upcoming_exam:${aud.examId}:${aud.issueType || 'error'}`;
+      const problemKey = `${aud.batchId}:${issueKey}`;
+      activeProblems.set(problemKey, {
+        batch: batchesById[aud.batchId] || { id: aud.batchId, name: aud.batchName },
+        itemTitle: aud.examTitle,
+        issueDesc: aud.error || 'আসন্ন পরীক্ষার সেটিংসে ত্রুটি',
+        issueKey,
+        noteId: '',
+      });
+    }
+  }
+
+  // 2. AUTO-RESOLVE (DELETE) FIXED ALERTS
+  const alertsDeleted = [];
+  const existingAlertKeys = new Set();
+
+  for (const n of notifs) {
+    if (String(n.type) !== 'admin_alert') continue;
+
+    let isFixed = false;
+
+    // Check by noteId: if noteId is set, check whether this note has linkedExamIds or noExamNeeded
+    if (n.noteId) {
+      const noteItem = libById[String(n.noteId)];
+      if (!noteItem) {
+        isFixed = true; // Note deleted
+      } else if (noteItem.noExamNeeded === true || String(noteItem.noExamNeeded).toLowerCase() === 'true') {
+        isFixed = true; // Marked no exam needed
+      } else {
+        const linked = Array.isArray(noteItem.linkedExamIds) ? noteItem.linkedExamIds : parseIdList(noteItem.linkedExamIds);
+        if (linked.some(eid => libById[String(eid)] && String(libById[String(eid)].type) === 'exam' && isActiveItem(libById[String(eid)]))) {
+          isFixed = true; // Linked to active exam!
+        }
+      }
+    }
+
+    // Check by dedupKey or problemKey
+    const dedup = String(n.dedupKey || '');
+    if (!isFixed && dedup) {
+      const lastColon = dedup.lastIndexOf(':');
+      const problemKeyNoDate = lastColon > 0 ? dedup.slice(0, lastColon) : dedup;
+
+      if (!activeProblems.has(problemKeyNoDate)) {
+        if (dedup.includes(':note_no_exam:')) isFixed = true;
+        else if (dedup.includes(':missing_exam:')) isFixed = true;
+        else if (dedup.includes(':exam_not_found:')) isFixed = true;
+        else if (dedup.includes(':exam_not_scheduled:')) isFixed = true;
+        else if (dedup.includes(':audit_upcoming_exam:')) isFixed = true;
+      }
+    }
+
+    // Fallback: check by message if "নোটের কোনো exam নেই"
+    if (!isFixed && n.message && n.message.includes('নোটের কোনো exam নেই')) {
+      const parts = n.message.split('—').map(s => s.trim());
+      if (parts.length >= 2) {
+        const noteTitle = parts[1];
+        const noteItem = lib.find(it => (it.type === 'note' || it.type === 'pdf') && (it.title === noteTitle || it.fileName === noteTitle));
+        if (noteItem) {
+          if (noteItem.noExamNeeded === true || String(noteItem.noExamNeeded).toLowerCase() === 'true') isFixed = true;
+          const linked = Array.isArray(noteItem.linkedExamIds) ? noteItem.linkedExamIds : parseIdList(noteItem.linkedExamIds);
+          if (linked.some(eid => libById[String(eid)] && String(libById[String(eid)].type) === 'exam' && isActiveItem(libById[String(eid)]))) isFixed = true;
+        } else {
+          const ex = lib.find(it => String(it.type) === 'exam' && isActiveItem(it) && (it.title === noteTitle || normTitle(it.title) === normTitle(noteTitle)));
+          if (ex) isFixed = true;
+        }
+      }
+    }
+
+    if (isFixed) {
+      deleteRow('notifications', n.id);
+      alertsDeleted.push(n);
+    } else {
+      if (dedup) existingAlertKeys.add(dedup);
+    }
+  }
+
+  // 3. CREATE ALERTS FOR REMAINING ACTIVE PROBLEMS
+  const alertsCreated = [];
+  const alertedPairs = new Set();
+
+  for (const [problemKey, p] of activeProblems.entries()) {
+    const bId = String(p.batch.id || '');
+    const bName = String(p.batch.name || 'Batch');
+    const pairKey = `${bId}:${p.noteId || p.itemTitle}`;
+    if (alertedPairs.has(pairKey)) continue;
+
+    const dedupKey = `${bId}:${p.issueKey}:${todayIso}`;
+    if (existingAlertKeys.has(dedupKey)) {
+      alertedPairs.add(pairKey);
+      continue;
+    }
+
+    const row = {
+      type: 'admin_alert',
+      target: 'admin',
+      batchId: 'admin',
+      sourceBatchId: bId,
+      senderRole: 'system',
+      senderName: 'System Alert',
+      title: '⚠️ অ্যাডমিন সতর্কতা: ' + bName,
+      message: `${bName} — ${p.itemTitle} — ${p.issueDesc}`,
+      noteId: String(p.noteId || ''),
+      dedupKey,
+      date: todayIso,
+      readers: '[]',
+      createdAt: new Date(nowMs).toISOString(),
+    };
+    const saved = saveRow('notifications', row);
+    existingAlertKeys.add(dedupKey);
+    alertedPairs.add(pairKey);
+    alertsCreated.push(saved);
+  }
+
+  alertsCreated.deleted = alertsDeleted;
   return alertsCreated;
 }
 
@@ -1690,7 +1898,19 @@ function apiCheckAdminAlerts(session) {
       return { success: false, error: 'Unauthorized: Admin access required', code: 403 };
     }
     const alerts = checkAndCreateAdminAlerts(Date.now());
-    return { success: true, alertsCount: alerts.length, alerts };
+    return { success: true, alertsCount: alerts.length, alerts, deletedCount: (alerts.deleted || []).length, deleted: alerts.deleted || [] };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+function apiAuditUpcomingExams(session) {
+  try {
+    if (!session || session.role !== 'admin') {
+      return { success: false, error: 'Unauthorized: Admin access required', code: 403 };
+    }
+    const results = auditUpcomingExamsInternal(Date.now());
+    return { success: true, count: results.length, data: results };
   } catch (err) {
     return { success: false, error: String(err) };
   }
@@ -1978,10 +2198,10 @@ function apiFixStudentId(oldId, newId) {
 // DISPATCH (same allowlists as Code.gs doPost)
 // =========================================================================
 const PUBLIC_ACTIONS = ["apiGetPublicBatches", "apiLoginUser", "apiRegisterUser", "apiCheckApplicationStatus", "apiSendOTP", "apiVerifyOTPAndReset"];
-const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiGetMissingExams", "apiCheckAdminAlerts", "apiSetNoteExamLink"];
+const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiGetMissingExams", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams"];
 const USER_ACTIONS = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetLibrary", "apiGetBatches", "apiGetExamSessions", "apiGetAnnouncement", "apiGetExamRequestOptions", "apiCreateExamNotification"];
-const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification", "apiCheckAdminAlerts", "apiSetNoteExamLink"];
-const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions", "apiGetPublicBatches", "apiGetMissingExams"]);
+const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams"];
+const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions", "apiGetPublicBatches", "apiGetMissingExams", "apiAuditUpcomingExams"]);
 
 const FUNCS = {
   apiLoginUser, apiRegisterUser, apiCheckApplicationStatus, apiSendOTP, apiVerifyOTPAndReset,
@@ -1995,7 +2215,7 @@ const FUNCS = {
   apiGetStudentDashboardData, apiHasSubmitted, apiCreateNotification, apiDeleteNotification, apiGetNotifications,
   apiGetMyProfile, apiGetLibrary, apiGetBatches, apiGetExamSessions, apiGetAnnouncement,
   apiGetExamRequestOptions, apiCreateExamNotification, apiGetPublicBatches, apiGetMissingExams, apiCheckAdminAlerts,
-  apiSetNoteExamLink,
+  apiSetNoteExamLink, apiAuditUpcomingExams,
   // not allow-listed (same as GAS) but kept for parity
   apiHealStudentIds, apiFixStudentId, apiVerifyGatewayPayment,
 };
@@ -2052,4 +2272,4 @@ function invalidateAllCaches() {
   invalidateExamSessionsCache();
 }
 
-module.exports = { handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches, FUNCS, validateSessionToken, _internal: { hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso, checkAndCreateAdminAlerts, examCandidates } };
+module.exports = { handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches, FUNCS, validateSessionToken, _internal: { hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso, checkAndCreateAdminAlerts, examCandidates, auditUpcomingExams: auditUpcomingExamsInternal, seriesNext, seriesOf } };

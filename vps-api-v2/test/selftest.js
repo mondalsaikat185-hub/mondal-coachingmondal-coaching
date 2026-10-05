@@ -439,6 +439,87 @@ const PUB = 'MondalCoachingSecureToken2026!';
     console.log('R26 tests (linkedExamIds, notto-shotto, Feb 26, noExamNeeded, deduplication, autoLink) OK');
   }
 
+  // ---------- R29 tests: alert auto-resolve, upcoming exam audit, server lock ----------
+  {
+    r = await call('apiLoginUser', ['9000000001', 'adminpass']); const adm = r.data.data.sessionToken;
+    r = await call('apiLoginUser', ['9999999901', 'newpass1']); const stu = r.data.data.sessionToken;
+
+    // 1. Alert auto-resolve test
+    S.saveRow('library', { id: 'noteR29', title: 'R29 Missing Note', type: 'note' });
+    const nowIso = new Date().toISOString();
+    S.saveRow('batches', {
+      id: 'bR29',
+      name: 'R29 Alert Batch',
+      classDay: '6',
+      examStartTime: '10:00',
+      assignedItemsMap: { noteR29: nowIso },
+      scheduledStartTimeMap: {}
+    });
+
+    // Run alerts: should create 1 alert
+    let alerts = _internal.checkAndCreateAdminAlerts(Date.now());
+    let r29Alerts = S.readSheet('notifications').filter(n => n.type === 'admin_alert' && n.sourceBatchId === 'bR29');
+    assert.equal(r29Alerts.length, 1, 'Should create 1 alert for missing note');
+
+    // Auto-resolve via linkedExamIds: link noteR29 to an exam directly in DB
+    S.saveRow('library', { id: 'exR29', title: 'R29 Linked Exam', type: 'exam' });
+    S.updateRow('library', 'noteR29', { linkedExamIds: JSON.stringify(['exR29']) });
+
+    // Run alerts again: checkAndCreateAdminAlerts should auto-delete the alert
+    alerts = _internal.checkAndCreateAdminAlerts(Date.now());
+    assert.ok(alerts.deleted && alerts.deleted.some(d => d.id === r29Alerts[0].id), 'Alert should be in alerts.deleted');
+    r29Alerts = S.readSheet('notifications').filter(n => n.type === 'admin_alert' && n.sourceBatchId === 'bR29');
+    assert.equal(r29Alerts.length, 0, 'Alert should be auto-deleted from sheet notifications');
+
+    // 2. Upcoming exam audit and server lock test
+    const futureDate = '2026-12-31';
+    const futureTime = '10:00';
+    const futureStartIso = _internal.examStartIso(futureDate, futureTime);
+
+    // Schedule exam for student batch b1
+    S.updateRow('batches', 'b1', {
+      assignedItemsMap: JSON.stringify({ exR29: nowIso }),
+      scheduledStartTimeMap: JSON.stringify({ exR29: futureStartIso })
+    });
+    S.saveRow('notifications', {
+      type: 'exam_request',
+      status: 'scheduled',
+      batchId: 'b1',
+      batchName: 'TEST',
+      examDate: futureDate,
+      examStartTime: futureTime,
+      startIso: futureStartIso,
+      examIds: JSON.stringify(['exR29'])
+    });
+
+    // Run audit
+    const auditRes = await call('apiAuditUpcomingExams', [], adm);
+    assert.equal(auditRes.success, true);
+    const audited = auditRes.data.data.find(a => a.examId === 'exR29');
+    assert.ok(audited, 'exR29 should be audited');
+    assert.equal(audited.inMap, true);
+    assert.equal(audited.timeOk, true);
+    assert.equal(audited.visible, true);
+    assert.equal(audited.status, '✓');
+
+    // Server lock test: student requesting locked exam
+    const lockRes = await call('apiGetLibraryItemDetails', ['exR29'], stu);
+    assert.equal(lockRes.success, false);
+    assert.equal(lockRes.locked, true);
+    assert.equal(lockRes.code, 403);
+    assert.ok(/নির্ধারিত শুরু সময়/.test(lockRes.error));
+
+    // Admin requesting locked exam: lock bypassed
+    const adminExamRes = await call('apiGetLibraryItemDetails', ['exR29'], adm);
+    assert.equal(adminExamRes.success, true);
+    assert.equal(adminExamRes.data.data.id, 'exR29');
+
+    // Clean up test batch b1 schedule
+    S.updateRow('batches', 'b1', { assignedItemsMap: '{}', scheduledStartTimeMap: '{}' });
+
+    console.log('R29 tests (alert auto-resolve, upcoming exam audit, server lock) OK');
+  }
+
   // transaction rollback: failing write leaves no partial data
   const before = S.counts();
   try { S.tx(() => { S.saveRow('payments', { x: 1 }); throw new Error('boom'); }); } catch (e) {}
