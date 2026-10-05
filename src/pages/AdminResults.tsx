@@ -164,6 +164,31 @@ export function AdminResults() {
     }
   };
 
+  const handleResetAllResults = async () => {
+    if (!await confirmAsync(
+      'আপনি কি নিশ্চিত যে সমস্ত ব্যাচের সব Exam Result মুছে নতুন সপ্তাহ শুরু করতে চান?\n\n(মোছার আগে স্বয়ংক্রিয় DB ব্যাকআপ ও JSONL আর্কাইভ তৈরি হবে)',
+      'হ্যাঁ, সব মুছুন',
+      'বাতিল'
+    )) return;
+
+    setDeleting(true);
+    try {
+      const res = await api.resetAllExamResults();
+      if (res && res.success) {
+        showToast('সমস্ত পরীক্ষার ফলাফল সফলভাবে রিসেট করা হয়েছে ✓');
+        setResults([]);
+        setSelectedIds(new Set());
+        setRefreshKey(k => k + 1);
+      } else {
+        showToast((res && res.error) || 'রিসেট করতে ব্যর্থ হয়েছে', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'রিসেট করতে ব্যর্থ হয়েছে', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   let displayResults = [...results];
   let uniqueExams: string[] = [];
 
@@ -206,13 +231,24 @@ export function AdminResults() {
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full">
       <div className="flex justify-between items-center mb-4">
         <PageHeader title="Exam Results" backTo={examId ? "/admin/library" : "/admin"} />
-        <button 
-           onClick={() => setRefreshKey(k => k + 1)} 
-           disabled={loading}
-           className="bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-xs px-4 py-2 border-2 border-transparent hover:-translate-y-0.5 transition-transform disabled:opacity-50"
-        >
-           {loading ? 'Refreshing...' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+             onClick={handleResetAllResults} 
+             disabled={loading || deleting}
+             className="bg-rose-600 hover:bg-rose-700 text-white font-black uppercase text-xs px-3.5 py-2 border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-transform disabled:opacity-50 flex items-center gap-1.5"
+             title="সব ব্যাচের exam result মুছে নতুন সপ্তাহ শুরু করুন"
+          >
+             {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+             এখনই result মুছুন
+          </button>
+          <button 
+             onClick={() => setRefreshKey(k => k + 1)} 
+             disabled={loading}
+             className="bg-black dark:bg-white text-white dark:text-black font-bold uppercase text-xs px-4 py-2 border-2 border-transparent hover:-translate-y-0.5 transition-transform disabled:opacity-50"
+          >
+             {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
       
       {!examId && batches.length > 0 && (

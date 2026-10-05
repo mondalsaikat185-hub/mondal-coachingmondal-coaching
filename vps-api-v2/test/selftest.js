@@ -520,6 +520,137 @@ const PUB = 'MondalCoachingSecureToken2026!';
     console.log('R29 tests (alert auto-resolve, upcoming exam audit, server lock) OK');
   }
 
+  // =========================================================================
+  // R31 tests: Auto-cleanup of notifications + Weekly Exam Results Reset
+  // =========================================================================
+  {
+    S.deleteWhere('notifications', () => true);
+    // (a), (b), (c): Notification cleanup tests
+    const dateStr = '2026-10-10'; // Saturday
+    const bMorningId = 'bSlotMorning';
+    const bAfternoonId = 'bSlotAfternoon';
+
+    S.saveRow('batches', { id: bMorningId, name: 'Morning Batch', assignedItemsMap: '{}', scheduledStartTimeMap: '{}', examStartTime: '09:05' });
+    S.saveRow('batches', { id: bAfternoonId, name: 'Afternoon Batch', assignedItemsMap: '{}', scheduledStartTimeMap: '{}', examStartTime: '14:05' });
+
+    // 09:05 IST start time
+    const startIsoMorning = _internal.examStartIso(dateStr, '09:05');
+    // 14:05 IST start time
+    const startIsoAfternoon = _internal.examStartIso(dateStr, '14:05');
+
+    S.saveRow('notifications', {
+      id: 'notif_morn',
+      type: 'exam_request',
+      batchId: bMorningId,
+      examDate: dateStr,
+      examStartTime: '09:05',
+      startIso: startIsoMorning,
+      status: 'scheduled'
+    });
+
+    S.saveRow('notifications', {
+      id: 'notif_aft',
+      type: 'exam_request',
+      batchId: bAfternoonId,
+      examDate: dateStr,
+      examStartTime: '14:05',
+      startIso: startIsoAfternoon,
+      status: 'scheduled'
+    });
+
+    S.saveRow('notifications', {
+      id: 'notif_admin_alert',
+      type: 'admin_alert',
+      batchId: 'admin',
+      message: 'Some alert'
+    });
+
+    // Test at 9:14:59 IST (9 mins 59s after start -> < 10 mins)
+    const time914Ms = new Date(dateStr + 'T09:14:59+05:30').getTime();
+    const clean914 = _internal.cleanupExpiredExamNotifications(time914Ms);
+    assert.equal(clean914.deleted, 0, 'No notification should be deleted at 9:14');
+    assert.ok(S.findRowById('notifications', 'notif_morn'), '(a) 9:05 notification must still exist at 9:14');
+    assert.ok(S.findRowById('notifications', 'notif_aft'), '(b) Afternoon notification must still exist');
+    assert.ok(S.findRowById('notifications', 'notif_admin_alert'), '(c) admin_alert must not be deleted');
+
+    // Test at 9:15:00 IST (exactly 10 mins after start)
+    const time915Ms = new Date(dateStr + 'T09:15:00+05:30').getTime();
+    const clean915 = _internal.cleanupExpiredExamNotifications(time915Ms);
+    assert.equal(clean915.deleted, 1, 'Exactly 1 notification should be deleted at 9:15');
+    assert.equal(S.findRowById('notifications', 'notif_morn'), null, '(a) 9:05 notification must be deleted at 9:15');
+    assert.ok(S.findRowById('notifications', 'notif_aft'), '(b) Other batch notification must NOT be deleted');
+    assert.ok(S.findRowById('notifications', 'notif_admin_alert'), '(c) admin_alert must NOT be deleted');
+
+    // Clean up remaining test notifications
+    S.deleteRow('notifications', 'notif_aft');
+    S.deleteRow('notifications', 'notif_admin_alert');
+
+    // (d): Saturday weekly reset timing: 6:59 AM vs 7:00 AM vs 7:15 AM
+    S.delProp('lastWeeklyResetDate');
+    S.deleteWhere('examResults', () => true);
+    S.deleteWhere('examSessions', () => true);
+    S.saveRow('examResults', { id: 'rReset1', examId: 'lib1', studentId: 'stu1', score: 10 });
+    S.saveRow('examResults', { id: 'rReset2', examId: 'lib1', studentId: 'stu2', score: 20 });
+    S.saveRow('examSessions', { id: 'sessActive', isActive: true, createdAt: new Date(dateStr + 'T06:00:00+05:30').toISOString() });
+    S.saveRow('examSessions', { id: 'sessOld', isActive: false, createdAt: new Date('2026-10-01T00:00:00Z').toISOString() });
+
+    // Saturday 06:59:59 IST
+    const sat659Ms = new Date(dateStr + 'T06:59:59+05:30').getTime();
+    const reset659 = _internal.checkAndRunWeeklyReset(sat659Ms);
+    assert.equal(reset659, null, '(d) Saturday 6:59 must NOT reset');
+    assert.equal(S.readSheet('examResults').length, 2, 'Results must still exist at 6:59');
+
+    // Saturday 07:00:00 IST
+    const sat700Ms = new Date(dateStr + 'T07:00:00+05:30').getTime();
+    const reset700 = _internal.checkAndRunWeeklyReset(sat700Ms);
+    assert.ok(reset700 && reset700.success, '(d) Saturday 7:00 MUST reset');
+    assert.equal(S.readSheet('examResults').length, 0, 'All examResults must be wiped after reset');
+    assert.equal(S.findRowById('examSessions', 'sessOld'), null, 'Old exam session must be deleted');
+    assert.ok(S.findRowById('examSessions', 'sessActive'), 'Active recent exam session must be kept');
+    assert.equal(S.getProp('lastWeeklyResetDate'), dateStr, 'lastWeeklyResetDate prop must be set');
+
+    // Saturday 07:15:00 IST (second attempt on the same day)
+    const sat715Ms = new Date(dateStr + 'T07:15:00+05:30').getTime();
+    const reset715 = _internal.checkAndRunWeeklyReset(sat715Ms);
+    assert.equal(reset715, null, '(d) Saturday 7:15 must NOT run second time on same day');
+
+    // (e): Reset does NOT affect series next-set auto-scheduling
+    const bSeriesBatch = {
+      id: 'bSeriesTest',
+      name: 'Sunday Morning',
+      assignedItemsMap: JSON.stringify({ p1: '2026-10-01T00:00:00.000Z', c1: '2026-10-01T00:00:00.000Z' }),
+      scheduledStartTimeMap: JSON.stringify({ p1: '2026-10-01T00:00:00.000Z', c1: '2026-10-01T00:00:00.000Z' }),
+    };
+    S.saveRow('batches', bSeriesBatch);
+    const libSeries = [
+      { id: 'p1', title: 'Passage 1', type: 'exam', isActive: true },
+      { id: 'p2', title: 'Passage 2', type: 'exam', isActive: true },
+      { id: 'c1', title: 'Cloze Test 1', type: 'exam', isActive: true },
+      { id: 'c2', title: 'Cloze Test 2', type: 'exam', isActive: true },
+    ];
+    const seriesBefore = _internal.seriesNext(bSeriesBatch, libSeries);
+    assert.deepEqual(seriesBefore.map(x => x.id), ['p2', 'c2']);
+
+    // Perform manual reset
+    _internal.runWeeklyReset(sat700Ms, true);
+
+    // Series next check after reset
+    const seriesAfter = _internal.seriesNext(bSeriesBatch, libSeries);
+    assert.deepEqual(seriesAfter.map(x => x.id), ['p2', 'c2'], '(e) Next series set must remain identical before and after reset');
+
+    // Admin RPC apiResetAllExamResults
+    S.saveRow('examResults', { id: 'rAdminTest', examId: 'lib1', studentId: 'stu1', score: 50 });
+    const stuSession = (await call('apiLoginUser', ['9999999901', 'newpass1'])).data.data.sessionToken;
+    const admSession = (await call('apiLoginUser', ['9000000001', 'adminpass'])).data.data.sessionToken;
+    const stuResetRes = await call('apiResetAllExamResults', [], stuSession);
+    assert.equal(stuResetRes.code, 403, 'Student cannot reset all exam results');
+    const admResetRes = await call('apiResetAllExamResults', [], admSession);
+    assert.equal(admResetRes.success, true, 'Admin can reset all exam results');
+    assert.equal(S.readSheet('examResults').length, 0, 'Results must be wiped by admin call');
+
+    console.log('R31 tests (notification cleanup, weekly reset timing, series preservation, admin reset) OK');
+  }
+
   // transaction rollback: failing write leaves no partial data
   const before = S.counts();
   try { S.tx(() => { S.saveRow('payments', { x: 1 }); throw new Error('boom'); }); } catch (e) {}

@@ -1620,9 +1620,9 @@ export const api = {
 
   // --- 📢 NOTIFICATIONS ---
 
-  getNotifications: async (userId?: string): Promise<NotificationItem[]> => {
+  getNotifications: async (userId?: string, forceRefresh?: boolean): Promise<NotificationItem[]> => {
     if (USE_REAL_API) {
-      if (globalApiCache.notifications && Date.now() - globalApiCache.notifications.time < CACHE_TTL) {
+      if (!forceRefresh && globalApiCache.notifications && Date.now() - globalApiCache.notifications.time < CACHE_TTL) {
         return dropDeleted(globalApiCache.notifications.data);
       }
       let data: NotificationItem[] | null = null;
@@ -1891,6 +1891,19 @@ export const api = {
       db.examResults = db.examResults.filter(r => !idsSet.has(r.id));
       saveMockDB(db);
       return { success: true, count: initialLength - db.examResults.length };
+    }
+  },
+
+  resetAllExamResults: async (): Promise<{ success: boolean; data?: any; error?: string }> => {
+    delete globalApiCache.examResults;
+    delete globalApiCache.examSessions;
+    if (USE_REAL_API) {
+      return runGasMethod<{ success: boolean; data?: any; error?: string }>("apiResetAllExamResults");
+    } else {
+      const db = getMockDB();
+      db.examResults = [];
+      saveMockDB(db);
+      return { success: true };
     }
   },
 

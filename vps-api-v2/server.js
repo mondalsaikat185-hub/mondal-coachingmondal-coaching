@@ -123,8 +123,8 @@ function runBackups() {
 setTimeout(runBackups, 30 * 1000).unref();
 setInterval(runBackups, 60 * 60 * 1000).unref();
 
-// Exam notification scheduler (writes batches.scheduledStartTimeMap), every 5 min
-startExamScheduler(5 * 60 * 1000);
+// Exam notification & cleanup scheduler, every 1 min
+startExamScheduler(60 * 1000);
 
 // Signed download of the latest backup (for off-server copies to the owner's PC)
 app.get('/backup/latest', (req, res) => {

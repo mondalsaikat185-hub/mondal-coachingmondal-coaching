@@ -3,6 +3,8 @@
 // Same names, same arguments, same return shapes. Google-only features
 // (Drive upload, e-mail) are relayed to Apps Script via relay.js.
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const S = require('./store');
 const relay = require('./relay');
 
@@ -1941,23 +1943,197 @@ function apiAuditUpcomingExams(session) {
   }
 }
 
+// Auto-cleanup: Deletes student exam notifications whose scheduled start time has passed by 10 minutes or more.
+// Archives deleted rows to /data/archive/notifications-YYYY-MM-DD.jsonl before deletion.
+function cleanupExpiredExamNotifications(nowMs) {
+  nowMs = nowMs || Date.now();
+  const TEN_MINUTES_MS = 10 * 60 * 1000;
+  const notifs = readSheet('notifications');
+  const expired = [];
+
+  for (const n of notifs) {
+    if (!n || !n.id) continue;
+    const type = String(n.type || '').trim().toLowerCase();
+    // Only student exam notifications (type 'exam_request' or 'exam')
+    if (type !== 'exam_request' && type !== 'exam') continue;
+
+    let startMs = null;
+    if (n.startIso) {
+      const t = new Date(n.startIso).getTime();
+      if (!isNaN(t)) startMs = t;
+    }
+    if (startMs === null && n.examDate) {
+      let time = String(n.examStartTime || '').trim();
+      if (!time) {
+        const b = S.findRowById('batches', n.batchId);
+        if (b) {
+          const slot = resolveBatchSlot(b.obj);
+          time = slot.examStartTime;
+        }
+      }
+      if (time) {
+        const t = new Date(examStartIso(n.examDate, time)).getTime();
+        if (!isNaN(t)) startMs = t;
+      }
+    }
+
+    if (startMs !== null && nowMs >= startMs + TEN_MINUTES_MS) {
+      expired.push(n);
+    }
+  }
+
+  if (!expired.length) return { deleted: 0 };
+
+  // Archive expired notifications before deleting
+  const ARCHIVE_DIR = path.join(S.DATA_DIR, 'archive');
+  try {
+    if (!fs.existsSync(ARCHIVE_DIR)) fs.mkdirSync(ARCHIVE_DIR, { recursive: true, mode: 0o700 });
+    const day = istDateStr(nowMs);
+    const archiveFile = path.join(ARCHIVE_DIR, `notifications-${day}.jsonl`);
+    const lines = expired.map(n => JSON.stringify(n)).join('\n') + '\n';
+    fs.appendFileSync(archiveFile, lines, 'utf8');
+  } catch (err) {
+    console.error('[cleanup-notifs] archive error:', err);
+  }
+
+  let deleted = 0;
+  for (const n of expired) {
+    if (deleteRow('notifications', n.id)) deleted++;
+  }
+
+  return { deleted, archived: expired.length };
+}
+
+// Weekly reset: Wipes all examResults and finished/old examSessions.
+// Preserves users, batches, library/exams, notifications, attendance, payments, scheduledStartTimeMap.
+// Before wipe: Full DB backup to /data/backups/weekly-pre-reset-YYYY-MM-DD.db
+// + Results archive to /data/archive/examResults-YYYY-MM-DD.jsonl
+// Prunes weekly backups keeping latest 8.
+function runWeeklyReset(nowMs, isManual = false) {
+  nowMs = nowMs || Date.now();
+  const day = istDateStr(nowMs);
+  const BACKUP_DIR = path.join(S.DATA_DIR, 'backups');
+  const ARCHIVE_DIR = path.join(S.DATA_DIR, 'archive');
+
+  // 1. Full DB Backup
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true, mode: 0o700 });
+    let backupFile = path.join(BACKUP_DIR, `weekly-pre-reset-${day}.db`);
+    if (fs.existsSync(backupFile)) {
+      backupFile = path.join(BACKUP_DIR, `weekly-pre-reset-${day}-${Date.now()}.db`);
+    }
+    S.backupTo(backupFile);
+  } catch (err) {
+    console.error('[weekly-reset] Backup error:', err);
+    throw new Error('Weekly reset failed during DB backup: ' + err.message);
+  }
+
+  // 2. Archive results to JSONL
+  let resultsCount = 0;
+  try {
+    if (!fs.existsSync(ARCHIVE_DIR)) fs.mkdirSync(ARCHIVE_DIR, { recursive: true, mode: 0o700 });
+    const archiveFile = path.join(ARCHIVE_DIR, `examResults-${day}.jsonl`);
+    const allResults = readSheet('examResults');
+    resultsCount = allResults.length;
+    if (allResults.length > 0) {
+      const lines = allResults.map(r => JSON.stringify(r)).join('\n') + '\n';
+      fs.appendFileSync(archiveFile, lines, 'utf8');
+    }
+  } catch (err) {
+    console.error('[weekly-reset] Archive error:', err);
+  }
+
+  // 3. Prune old weekly backups (keep latest 8)
+  try {
+    const files = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('weekly-pre-reset-')).sort();
+    while (files.length > 8) {
+      const old = files.shift();
+      try { fs.unlinkSync(path.join(BACKUP_DIR, old)); } catch (e) {}
+    }
+  } catch (err) {
+    console.error('[weekly-reset] Prune error:', err);
+  }
+
+  // 4. Atomic delete of examResults and finished/old examSessions in a single transaction
+  let deletedSessions = 0;
+  S.tx(() => {
+    // Delete all rows in sheet examResults
+    S.db.prepare("DELETE FROM rows WHERE sheet = 'examResults'").run();
+
+    // Delete finished / old examSessions (keep active sessions created in last 12h)
+    const TWELVE_HOURS = 12 * 60 * 60 * 1000;
+    deletedSessions = S.deleteWhere('examSessions', s => {
+      const isActive = s.isActive === true || s.isActive === 'true';
+      const createdMs = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+      const isRecent = createdMs && (nowMs - createdMs < TWELVE_HOURS);
+      return !(isActive && isRecent);
+    });
+
+    if (!isManual) {
+      S.setProp('lastWeeklyResetDate', day);
+    }
+  });
+
+  // 5. Invalidate caches
+  try {
+    invalidateExamSessionsCache();
+    if (typeof invalidateAllCaches === 'function') invalidateAllCaches();
+  } catch (e) {}
+
+  return { success: true, wipedResults: resultsCount, deletedSessions, date: day, isManual };
+}
+
+function checkAndRunWeeklyReset(nowMs) {
+  nowMs = nowMs || Date.now();
+  const istDate = new Date(nowMs + IST_OFFSET_MS);
+  const dow = istDate.getUTCDay(); // 6 is Saturday
+  const hour = istDate.getUTCHours(); // 7 is 7:00-7:59 AM IST
+  const day = istDate.toISOString().slice(0, 10);
+
+  if (dow !== 6 || hour !== 7) return null;
+
+  const lastReset = S.getProp('lastWeeklyResetDate');
+  if (lastReset === day) return null; // Already executed today!
+
+  console.log(`[weekly-reset] Triggering scheduled reset for Saturday 7 AM (${day})...`);
+  return runWeeklyReset(nowMs, false);
+}
+
+function apiResetAllExamResults(session) {
+  if (!session || session.role !== 'admin') {
+    return { success: false, error: 'Unauthorized: Admin access required', code: 403 };
+  }
+  try {
+    const res = runWeeklyReset(Date.now(), true);
+    return { success: true, data: res };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
 function startExamScheduler(intervalMs) {
   const tick = () => {
     try {
+      const nowMs = Date.now();
       const r = S.tx(() => {
-        const schedRes = runExamScheduler(Date.now());
-        const alertsRes = checkAndCreateAdminAlerts(Date.now());
-        return { scheduler: schedRes, alerts: alertsRes.length };
+        const schedRes = runExamScheduler(nowMs);
+        const alertsRes = checkAndCreateAdminAlerts(nowMs);
+        const cleanupRes = cleanupExpiredExamNotifications(nowMs);
+        return { scheduler: schedRes, alerts: alertsRes.length, cleanup: cleanupRes };
       });
-      if (r.scheduler.done || r.scheduler.failed || r.scheduler.late || r.alerts) {
+      if (r.scheduler.done || r.scheduler.failed || r.scheduler.late || r.alerts || (r.cleanup && r.cleanup.deleted)) {
         console.log('[exam-scheduler]', JSON.stringify(r));
+      }
+      const weeklyRes = checkAndRunWeeklyReset(nowMs);
+      if (weeklyRes) {
+        console.log('[weekly-reset]', JSON.stringify(weeklyRes));
       }
     } catch (e) {
       console.error('[exam-scheduler]', e);
     }
   };
   setTimeout(tick, 10 * 1000).unref();
-  return setInterval(tick, intervalMs || 5 * 60 * 1000).unref();
+  return setInterval(tick, intervalMs || 60 * 1000).unref();
 }
 
 // =========================================================================
@@ -2223,9 +2399,9 @@ function apiFixStudentId(oldId, newId) {
 // DISPATCH (same allowlists as Code.gs doPost)
 // =========================================================================
 const PUBLIC_ACTIONS = ["apiGetPublicBatches", "apiLoginUser", "apiRegisterUser", "apiCheckApplicationStatus", "apiSendOTP", "apiVerifyOTPAndReset"];
-const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiGetMissingExams", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams"];
+const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiGetMissingExams", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams", "apiResetAllExamResults"];
 const USER_ACTIONS = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetLibrary", "apiGetBatches", "apiGetExamSessions", "apiGetAnnouncement", "apiGetExamRequestOptions", "apiCreateExamNotification"];
-const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams"];
+const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams", "apiResetAllExamResults"];
 const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions", "apiGetPublicBatches", "apiGetMissingExams", "apiAuditUpcomingExams"]);
 
 const FUNCS = {
@@ -2240,7 +2416,7 @@ const FUNCS = {
   apiGetStudentDashboardData, apiHasSubmitted, apiCreateNotification, apiDeleteNotification, apiGetNotifications,
   apiGetMyProfile, apiGetLibrary, apiGetBatches, apiGetExamSessions, apiGetAnnouncement,
   apiGetExamRequestOptions, apiCreateExamNotification, apiGetPublicBatches, apiGetMissingExams, apiCheckAdminAlerts,
-  apiSetNoteExamLink, apiAuditUpcomingExams,
+  apiSetNoteExamLink, apiAuditUpcomingExams, apiResetAllExamResults,
   // not allow-listed (same as GAS) but kept for parity
   apiHealStudentIds, apiFixStudentId, apiVerifyGatewayPayment,
 };
@@ -2280,7 +2456,7 @@ async function handleRpc(requestData) {
   if (ACTIONS_NEEDING_SESSION.includes(action)) args.push(session);
 
   let result;
-  if (READ_ONLY.has(action) || action === 'apiUploadFileToDrive' || action === 'apiSendOTP') {
+  if (READ_ONLY.has(action) || action === 'apiUploadFileToDrive' || action === 'apiSendOTP' || action === 'apiResetAllExamResults') {
     result = await func.apply(null, args);
   } else {
     // every write runs inside one SQLite transaction: all-or-nothing
@@ -2297,4 +2473,11 @@ function invalidateAllCaches() {
   invalidateExamSessionsCache();
 }
 
-module.exports = { handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches, FUNCS, validateSessionToken, _internal: { hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso, checkAndCreateAdminAlerts, examCandidates, auditUpcomingExams: auditUpcomingExamsInternal, seriesNext, seriesOf } };
+module.exports = {
+  handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches, FUNCS, validateSessionToken,
+  _internal: {
+    hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso,
+    checkAndCreateAdminAlerts, examCandidates, auditUpcomingExams: auditUpcomingExamsInternal, seriesNext, seriesOf,
+    cleanupExpiredExamNotifications, runWeeklyReset, checkAndRunWeeklyReset
+  }
+};

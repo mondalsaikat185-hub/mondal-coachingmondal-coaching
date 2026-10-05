@@ -74,7 +74,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
     const fetchNotifs = async () => {
        try {
          if (notifications.length === 0) setLoading(true);
-         const list = await api.getNotifications(user.uid);
+         const list = await api.getNotifications(user.uid, true);
          
          // Sort descending by date
          list.sort((a, b) => {
