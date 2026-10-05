@@ -191,8 +191,12 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   // Load questions, passages and configs
   const quizData = useMemo(() => {
     try {
-       return JSON.parse(exam.quizData || '[]');
-    } catch {
+       if (typeof exam.quizData === 'string') {
+         return JSON.parse(exam.quizData || '[]');
+       }
+       return exam.quizData || [];
+    } catch (e) {
+       console.error("[QuizPlayer] JSON parse error in exam.quizData:", e);
        return [];
     }
   }, [exam.quizData]);
@@ -770,16 +774,17 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
 
   // Empty Quiz Guard
   if (questions.length === 0) {
+    console.error("[QuizPlayer] Exam has 0 questions:", exam.id, exam.title);
     return (
       <div className="flex items-center justify-center p-6 min-h-[80vh] bg-[#121214] text-zinc-100">
-        <div className="max-w-md w-full bg-[#1c1c1f] border-4 border-zinc-900 dark:border-zinc-100 p-8 rounded-2xl text-center space-y-6 shadow-[8px_8px_0px_0px_rgba(234,179,8,0.2)]">
-          <div className="mx-auto w-14 h-14 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 rounded-full flex items-center justify-center text-2xl font-bold">⚠️</div>
-          <h2 className="serif text-2xl font-black uppercase text-white">No Questions Available</h2>
-          <p className="font-bold text-zinc-400 text-sm leading-relaxed">
-            এই পরীক্ষায় এখনো কোনো প্রশ্ন যোগ করা হয়নি। দয়া করে শিক্ষকের সাথে যোগাযোগ করুন।
+        <div className="max-w-md w-full bg-[#1c1c1f] border-4 border-red-500 p-8 rounded-2xl text-center space-y-6 shadow-[8px_8px_0px_0px_rgba(239,68,68,0.3)]">
+          <div className="mx-auto w-14 h-14 bg-red-500/10 border border-red-500/20 text-red-500 rounded-full flex items-center justify-center text-2xl font-bold">⚠️</div>
+          <h2 className="serif text-xl font-black uppercase text-red-400">পরীক্ষার প্রশ্ন পাওয়া যায়নি (Error)</h2>
+          <p className="font-bold text-zinc-300 text-sm leading-relaxed">
+            এই পরীক্ষার প্রশ্ন লোড করা যায়নি বা এতে কোনো বৈধ প্রশ্ন নেই। দয়া করে ইন্টারনেট সংযোগ পরীক্ষা করে পুনরায় চেষ্টা করুন অথবা শিক্ষকের সাথে যোগাযোগ করুন।
           </p>
-          <button onClick={onBack} className="w-full py-3.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-xs uppercase tracking-widest font-bold rounded-xl transition-all border-none cursor-pointer">
-            Return to Library
+          <button onClick={onBack} className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white text-xs uppercase tracking-widest font-bold rounded-xl transition-all border-none cursor-pointer">
+            ফিরে যান (Return to Library)
           </button>
         </div>
       </div>

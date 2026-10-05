@@ -691,6 +691,28 @@ function apiGetLibrary() {
   } catch (err) { return { success: false, error: String(err) }; }
 }
 
+function formatIsoToIst(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return String(isoStr);
+    const istMs = d.getTime() + 19800000;
+    const istDate = new Date(istMs);
+    const day = String(istDate.getUTCDate()).padStart(2, '0');
+    const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+    const year = istDate.getUTCFullYear();
+    let hours = istDate.getUTCHours();
+    const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    if (hours === 0) hours = 12;
+    const hh = String(hours).padStart(2, '0');
+    return `${day}/${month}/${year}, ${hh}:${minutes} ${ampm} IST`;
+  } catch (e) {
+    return String(isoStr);
+  }
+}
+
 function apiGetLibraryItemDetails(itemId, session) {
   try {
     const key = String(itemId).trim();
@@ -748,10 +770,13 @@ function apiGetLibraryItemDetails(itemId, session) {
       }
 
       if (isScheduledInFuture && !hasAnyBatchOpen) {
+        const istFormatted = formatIsoToIst(earliestFutureIso);
         return {
           success: false,
           locked: true,
-          error: `এই Exam-টি এখনো শুরু হয়নি। নির্ধারিত শুরু সময়: ${earliestFutureIso}`,
+          unlockTime: earliestFutureIso,
+          unlockTimeIst: istFormatted,
+          error: `এই পরীক্ষা খুলবে ${istFormatted}-এ`,
           code: 403
         };
       }

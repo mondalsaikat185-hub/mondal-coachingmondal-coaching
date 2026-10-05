@@ -110,6 +110,7 @@ export function StudentExams() {
   const basePreviewItem = items.find(i => i.id === previewId) || null;
   const [previewItem, setPreviewItemState] = useState<LibraryItem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [lockedExamInfo, setLockedExamInfo] = useState<{ title: string; message: string; unlockTime?: string } | null>(null);
   const preloadedDetailsRef = useRef<Map<string, LibraryItem>>(new Map());
 
   // Background prefetch visible exams into memory & IndexedDB so clicking ANY exam is 0ms instant!
@@ -153,18 +154,30 @@ export function StudentExams() {
         if (preloaded) {
           setPreviewItemState(preloaded);
           setPreviewLoading(false);
+          setLockedExamInfo(null);
           return;
         }
 
         const fetchDetails = async () => {
           setPreviewLoading(true);
+          setLockedExamInfo(null);
           try {
              const fullItem = await api.getLibraryItemDetails(basePreviewItem.id!);
              setPreviewItemState(fullItem);
-          } catch(e) {
-             console.error(e);
-             alert("Failed to load exam details.");
-             setPreviewItemState(basePreviewItem); // fallback
+          } catch(e: any) {
+             console.error("[StudentExams] Failed to load exam details:", e);
+             const isLocked = e?.locked === true || e?.code === 403 || String(e?.message || '').includes('লক') || String(e?.message || '').includes('খুলবে');
+             if (isLocked) {
+                setLockedExamInfo({
+                  title: basePreviewItem.title || 'Exam',
+                  message: e?.message || 'এই পরীক্ষাটি বর্তমানে লক করা আছে।',
+                  unlockTime: e?.unlockTime
+                });
+             } else {
+                alert(e?.message || "পরীক্ষার প্রশ্ন লোড করা যায়নি। দয়া করে ইন্টারনেট সংযোগ পরীক্ষা করে পুনরায় চেষ্টা করুন।");
+                setPreviewItem(null);
+             }
+             setPreviewItemState(null);
           } finally {
              setPreviewLoading(false);
           }
@@ -172,9 +185,11 @@ export function StudentExams() {
         fetchDetails();
       } else {
         setPreviewItemState(basePreviewItem);
+        setLockedExamInfo(null);
       }
     } else {
       setPreviewItemState(null);
+      setLockedExamInfo(null);
     }
   }, [basePreviewItem?.id]);
 
@@ -883,6 +898,11 @@ export function StudentExams() {
     };
 
   const handleBackNavigation = () => {
+      if (lockedExamInfo) {
+         setLockedExamInfo(null);
+         setPreviewItem(null);
+         return;
+      }
       if (previewId) {
          setPreviewItem(null);
          return;
@@ -899,6 +919,49 @@ export function StudentExams() {
          navigate('/');
       }
   };
+
+  if (lockedExamInfo) {
+    return (
+      <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-zinc-900 border-4 border-black dark:border-white shadow-[8px_8px_0px_black] dark:shadow-[8px_8px_0px_white] p-8 max-w-sm w-full text-center">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-950 border-4 border-black dark:border-white rounded-full flex items-center justify-center mx-auto mb-4">
+            <Clock className="w-8 h-8 text-black dark:text-white animate-pulse" />
+          </div>
+          <h2 className="text-xl font-black mb-2 text-black dark:text-white">{lockedExamInfo.title}</h2>
+          <p className="text-sm font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-3">
+            🔒 পরীক্ষাটি লক করা আছে (Locked)
+          </p>
+          <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-6 bg-yellow-50 dark:bg-zinc-800 p-3 border-2 border-black dark:border-zinc-700 rounded-lg">
+            {lockedExamInfo.message}
+          </p>
+
+          {lockedExamInfo.unlockTime && !isNaN(new Date(lockedExamInfo.unlockTime).getTime()) && new Date(lockedExamInfo.unlockTime).getTime() > Date.now() && (
+            <div className="mb-6">
+              <CountdownTimer 
+                targetDate={new Date(lockedExamInfo.unlockTime)} 
+                onComplete={() => {
+                  setLockedExamInfo(null);
+                  if (basePreviewItem) {
+                    setPreviewItem(basePreviewItem);
+                  }
+                }} 
+              />
+            </div>
+          )}
+
+          <button
+            onClick={() => {
+              setLockedExamInfo(null);
+              setPreviewItem(null);
+            }}
+            className="w-full py-3 bg-yellow-300 dark:bg-yellow-400 border-4 border-black font-black text-black shadow-[4px_4px_0px_black] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all cursor-pointer"
+          >
+            ফিরে যান (Go Back)
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (previewLoading) {
      return (
@@ -934,15 +997,19 @@ export function StudentExams() {
       if (scheduledTimeStr) {
          const scheduledTime = new Date(scheduledTimeStr);
          if (scheduledTime.getTime() > Date.now()) {
+            const timeStr = `${scheduledTime.toLocaleDateString('en-GB')}, ${scheduledTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} IST`;
             return (
               <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-                <div className="bg-white border-4 border-black shadow-[8px_8px_0px_black] p-8 max-w-sm w-full text-center">
-                  <div className="w-16 h-16 bg-red-100 border-4 border-black rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Clock className="w-8 h-8 text-black animate-pulse" />
+                <div className="bg-white dark:bg-zinc-900 border-4 border-black dark:border-white shadow-[8px_8px_0px_black] dark:shadow-[8px_8px_0px_white] p-8 max-w-sm w-full text-center">
+                  <div className="w-16 h-16 bg-red-100 dark:bg-red-950 border-4 border-black dark:border-white rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Clock className="w-8 h-8 text-black dark:text-white animate-pulse" />
                   </div>
-                  <h2 className="text-xl font-black mb-1 text-black">{previewItem.title}</h2>
-                  <p className="text-sm font-bold text-red-600 uppercase tracking-wider mb-4">
+                  <h2 className="text-xl font-black mb-1 text-black dark:text-white">{previewItem.title}</h2>
+                  <p className="text-sm font-bold text-red-600 dark:text-red-400 uppercase tracking-wider mb-2">
                     🔒 পরীক্ষাটি লক করা আছে (Locked)
+                  </p>
+                  <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300 mb-4 bg-yellow-50 dark:bg-zinc-800 p-2 border-2 border-black dark:border-zinc-700 rounded-lg">
+                    {`এই পরীক্ষা খুলবে ${timeStr}-এ`}
                   </p>
                   
                   <CountdownTimer 
@@ -955,7 +1022,7 @@ export function StudentExams() {
 
                   <button
                     onClick={() => setPreviewItem(null)}
-                    className="w-full py-3 bg-yellow-300 border-4 border-black font-black text-black shadow-[4px_4px_0px_black] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+                    className="w-full py-3 bg-yellow-300 dark:bg-yellow-400 border-4 border-black font-black text-black shadow-[4px_4px_0px_black] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all cursor-pointer mt-4"
                   >
                     ফিরে যান (Go Back)
                   </button>
@@ -963,6 +1030,33 @@ export function StudentExams() {
               </div>
             );
          }
+      }
+
+      // Guard against corrupted or empty questions before QuizPlayer
+      const parsedQuizData = (() => {
+        try {
+          if (!previewItem.quizData) return [];
+          if (typeof previewItem.quizData === 'string') return JSON.parse(previewItem.quizData);
+          return previewItem.quizData;
+        } catch { return []; }
+      })();
+      const qList = Array.isArray(parsedQuizData) ? parsedQuizData : (parsedQuizData?.questions || []);
+      if (qList.length === 0) {
+        console.error("[StudentExams] Exam has 0 questions:", previewItem.id, previewItem.title);
+        return (
+          <div className="flex items-center justify-center p-6 min-h-[50vh]">
+            <div className="max-w-md w-full bg-white dark:bg-zinc-900 border-4 border-red-500 p-8 rounded-2xl text-center space-y-6 shadow-[8px_8px_0px_0px_rgba(239,68,68,0.3)]">
+              <div className="mx-auto w-14 h-14 bg-red-100 dark:bg-red-950 border-2 border-red-500 text-red-500 rounded-full flex items-center justify-center text-2xl font-bold">⚠️</div>
+              <h2 className="text-xl font-black uppercase text-red-600 dark:text-red-400">পরীক্ষার প্রশ্ন পাওয়া যায়নি (Error)</h2>
+              <p className="font-bold text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed">
+                এই পরীক্ষার প্রশ্ন লোড করা যায়নি বা এতে কোনো বৈধ প্রশ্ন নেই। দয়া করে ইন্টারনেট সংযোগ পরীক্ষা করে পুনরায় চেষ্টা করুন অথবা শিক্ষকের সাথে যোগাযোগ করুন।
+              </p>
+              <button onClick={() => setPreviewItem(null)} className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all cursor-pointer">
+                ফিরে যান (Return)
+              </button>
+            </div>
+          </div>
+        );
       }
 
       return <UnifiedQuizPlayer exam={previewItem as any} onBack={() => setPreviewItem(null)} />;

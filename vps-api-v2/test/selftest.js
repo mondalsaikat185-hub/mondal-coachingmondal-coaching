@@ -507,7 +507,7 @@ const PUB = 'MondalCoachingSecureToken2026!';
     assert.equal(lockRes.success, false);
     assert.equal(lockRes.locked, true);
     assert.equal(lockRes.code, 403);
-    assert.ok(/নির্ধারিত শুরু সময়/.test(lockRes.error));
+    assert.ok(/এই পরীক্ষা খুলবে/.test(lockRes.error));
 
     // Admin requesting locked exam: lock bypassed
     const adminExamRes = await call('apiGetLibraryItemDetails', ['exR29'], adm);

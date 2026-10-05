@@ -286,6 +286,10 @@ export function cleanPhone(p: any): string {
           if (typeof json.code === 'number' && json.code >= 400 && json.code < 500) {
             (gwErr as any).isLogicError = true;
           }
+          (gwErr as any).locked = json.locked === true;
+          (gwErr as any).code = json.code;
+          (gwErr as any).unlockTime = json.unlockTime || json.earliestFutureIso;
+          (gwErr as any).unlockTimeIst = json.unlockTimeIst;
           throw gwErr;
         }
 
@@ -297,6 +301,10 @@ export function cleanPhone(p: any): string {
               // Don't retry logic errors from the app
               const logicErr = new Error(response.error);
               (logicErr as any).isLogicError = true;
+              (logicErr as any).locked = response.locked === true;
+              (logicErr as any).code = response.code;
+              (logicErr as any).unlockTime = response.unlockTime;
+              (logicErr as any).unlockTimeIst = response.unlockTimeIst;
               throw logicErr;
             } else if (Object.keys(response).length === 1) {
               return false as T;
