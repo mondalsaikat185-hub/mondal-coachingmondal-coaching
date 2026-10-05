@@ -1051,7 +1051,7 @@ function seriesOf(title) {
   for (const s of EXAM_SERIES) { const m = String(title || '').match(s.re); if (m) return { key: s.key, n: Number(m[1]) }; }
   return null;
 }
-function normTitle(s) { return String(s || '').normalize('NFC').toLowerCase().replace(/\b(from|to|set|part|mock|test)\b/gi, ' ').replace(/[^\p{L}\p{M}\p{N}]/gu, ''); }
+function normTitle(s) { return String(s || '').normalize('NFC').toLowerCase().replace(/\b(from|to|set|part|mock|test|exam|sheet|english|bengali|mcqs?|level|easy|moderate|high)\b/gi, ' ').replace(/[^\p{L}\p{M}\p{N}]/gu, ''); }
 function isActiveItem(it) { return it && it.isActive !== false && it.isActive !== 'false'; }
 
 // Next set of each regular series for this batch: (highest set already shared/requested) + 1.

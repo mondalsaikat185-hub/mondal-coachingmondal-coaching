@@ -1092,7 +1092,7 @@ export function StudentExams() {
                    <React.Fragment key={bc.id}>
                       <ChevronRight className="w-4 h-4 shrink-0" />
                       <button onClick={() => handleOpenFolder(bc.id)} className="hover:text-zinc-900 dark:hover:text-zinc-100 shrink-0">
-                         {bc.title}
+                         {bc.title === "Math's Sheet" ? "Math Exam" : bc.title}
                       </button>
                    </React.Fragment>
                ))}
@@ -1109,7 +1109,7 @@ export function StudentExams() {
                              onClick={() => handleOpenFolder(folder.id)}>
                            <div className="flex items-center gap-3 w-full">
                               <Folder className="w-6 h-6 text-blue-500 shrink-0" fill="currentColor" />
-                              <h4 className="font-black text-lg truncate flex-1">{folder.title}</h4>
+                              <h4 className="font-black text-lg truncate flex-1">{folder.title === "Math's Sheet" ? "Math Exam" : folder.title}</h4>
                            </div>
                            <div className="shrink-0 text-xs text-zinc-400 font-bold hidden sm:block">
                               Directory

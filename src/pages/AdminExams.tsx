@@ -1113,7 +1113,7 @@ export function AdminExams() {
                   }}>
                      <div className="flex items-center gap-3 w-full">
                         <Folder className="w-6 h-6 text-blue-500 shrink-0" fill="currentColor" />
-                        <h4 className="font-black text-lg truncate flex-1">{folder.title}</h4>
+                        <h4 className="font-black text-lg truncate flex-1">{folder.title === "Math's Sheet" ? "Math Exam" : folder.title}</h4>
                      </div>
                      <div className="flex flex-wrap items-center gap-2">
                        <button onClick={() => openShareModal(folder)} className="action-btn flex items-center gap-1 bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-800 px-3 py-1.5 font-bold text-xs hover:bg-emerald-200 whitespace-nowrap">
