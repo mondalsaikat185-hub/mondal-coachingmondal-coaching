@@ -118,6 +118,8 @@ export interface LibraryItem {
   sequence?: number;
   quizData?: string;
   updatedAt?: string;
+  linkedExamIds?: string[];
+  noExamNeeded?: boolean;
 }
 
 export interface PaymentRecord {
@@ -1267,6 +1269,25 @@ export const api = {
       db.library.push(newItem);
       saveMockDB(db);
       return newItem;
+    }
+  },
+
+  setNoteExamLink: async (noteId: string, linkedExamIds: string[], noExamNeeded?: boolean): Promise<any> => {
+    globalApiCache.library = null;
+    await removeLibraryItemCacheAsync(noteId);
+    if (USE_REAL_API) {
+      const res = await runGasMethod<any>("apiSetNoteExamLink", noteId, linkedExamIds, !!noExamNeeded);
+      await removeLibraryItemCacheAsync(noteId);
+      return res;
+    } else {
+      const db = getMockDB();
+      const it = db.library.find(i => i.id === noteId);
+      if (it) {
+        it.linkedExamIds = linkedExamIds;
+        it.noExamNeeded = !!noExamNeeded;
+        saveMockDB(db);
+      }
+      return { success: true, data: { id: noteId, linkedExamIds, noExamNeeded: !!noExamNeeded } };
     }
   },
 

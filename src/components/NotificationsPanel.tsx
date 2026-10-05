@@ -356,6 +356,29 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                              </div>
                              
                              <p className="text-sm font-medium whitespace-pre-wrap mt-1 opacity-90">{notif.message}</p>
+                             {notif.type === 'admin_alert' && user.role === 'admin' && (
+                                <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-800 flex justify-end">
+                                   <button
+                                      type="button"
+                                      onClick={(e) => {
+                                         e.stopPropagation();
+                                         if (notif.noteId) {
+                                            sessionStorage.setItem('pendingLinkNoteId', notif.noteId);
+                                         }
+                                         window.dispatchEvent(new CustomEvent('open-note-exam-link', {
+                                            detail: { noteId: notif.noteId, noteTitle: notif.noteTitle || '' }
+                                         }));
+                                         onClose();
+                                         if (!window.location.hash.includes('/admin/library')) {
+                                            window.location.hash = '#/admin/library';
+                                         }
+                                      }}
+                                      className="text-xs font-black bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded shadow flex items-center gap-1 uppercase cursor-pointer"
+                                   >
+                                      Exam লিংক করুন
+                                   </button>
+                                </div>
+                             )}
                           </div>
                        );
                    })}

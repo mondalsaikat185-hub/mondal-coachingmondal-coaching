@@ -1,77 +1,125 @@
-# READ-ONLY audit: for every NOTE/SHEET, is there an EXAM (a) matched by title, and (b) a sibling exam in the same folder?
-import sqlite3, json, sys, re, unicodedata, collections
+# tools/note_exam_coverage.py
+# TASK R26: Audit note <-> exam coverage using permanent linkedExamIds and noExamNeeded.
+import sqlite3, json, sys
+
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
-db = sqlite3.connect(sys.argv[1] if len(sys.argv) > 1 else '_dbcopy/mc2_snapshot.db')
-L = {d['id']: d for d in (json.loads(r[0]) for r in db.execute("select data from rows where sheet='library'"))}
-kids = {}
-for d in L.values(): kids.setdefault(d.get('parentId'), []).append(d['id'])
-def isf(d): return d.get('type') == 'folder' or str(d.get('isFolder')).lower() == 'true'
-def active(d): return d.get('isActive') not in (False, 'false')
-STOP = re.compile(r'\b(from|to|set|part|mock|test|the|and|of|in|pdf|note|notes|exam|sheet|english|bengali)\b', re.I)
-def norm(s, parent=''):
-    s = unicodedata.normalize('NFC', (str(parent or '') + ' ' + str(s or ''))).lower()
-    s = STOP.sub(' ', s)
-    return re.sub(r'[^\wঀ-৿]+', '', s)
-def ptitle(d): return (L.get(d.get('parentId')) or {}).get('title', '')
-def chain(d0):
-    i = d0.get('id')
-    out = []; p = i; n = 0
-    while p in L and n < 40: out.append(str(L[p].get('title') or '')); p = L[p].get('parentId'); n += 1
-    return list(reversed(out))
-exams = [d for d in L.values() if d.get('type') == 'exam' and active(d) and not isf(d)]
-examKeys = [(norm(e.get('title')), norm(e.get('title'), ptitle(e))) for e in exams]
 
-MONTHS = {'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3, 'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6, 'july': 7, 'jul': 7, 'august': 8, 'aug': 8, 'september': 9, 'sep': 9, 'sept': 9, 'october': 10, 'oct': 10, 'november': 11, 'nov': 11, 'december': 12, 'dec': 12}
-def parse_my(s):
-    m = re.search(r'\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b', str(s or ''), re.I)
-    y = re.search(r'\b(20\d\d)\b', str(s or ''))
-    if m and y: return MONTHS[m.group(1).lower()], y.group(1)
-    return None, None
+db_path = sys.argv[1] if len(sys.argv) > 1 else '_dbcopy/mc2_snapshot.db'
+db = sqlite3.connect(db_path)
 
-def ca_match(note):
-    ch_str = ' / '.join(chain(note))
-    if 'Current Affairs' not in ch_str and 'CA' not in ch_str: return False
-    nm, ny = parse_my(note.get('title'))
-    if not nm: nm, ny = parse_my(ch_str)
-    if not nm or not ny: return False
-    for e in exams:
-        ech_str = ' / '.join(chain(e))
-        if 'Current Affairs' not in ech_str: continue
-        em, ey = parse_my(e.get('title'))
-        if not em: em, ey = parse_my(ech_str)
-        if em == nm and ey == ny: return True
-    return False
+# 1. Load library
+L = {d['id']: d for d in (json.loads(r[0]) for r in db.execute("SELECT data FROM rows WHERE sheet='library'"))}
 
-def title_match(note):
-    if ca_match(note): return True
-    nk = norm(note.get('title')); pk = norm(note.get('title'), ptitle(note))
-    if len(nk) < 4: return False
-    return any(nk == ek or ek.startswith(nk) or nk.startswith(ek) or ek == epk or ek.startswith(epk) for ek, epk in examKeys)
-# sibling exam = an exam anywhere under the note's parent folder
-def sibling_exam(note):
-    p = note.get('parentId')
-    st = [p]; 
-    while st:
-        x = st.pop()
-        for k in kids.get(x, []):
-            if isf(L[k]): st.append(k)
-            elif L[k].get('type') == 'exam' and active(L[k]): return True
-    return False
-notes = [d for d in L.values() if d.get('type') in ('note', 'pdf') and active(d) and not isf(d)]
-groups = collections.defaultdict(list)
-for nt in notes:
-    ch = chain(nt); top = ch[0] if ch else '(root)'
-    groups[top].append((nt, ' / '.join(ch[:-1]) if len(ch) > 1 else top, nt.get('title'), title_match(nt), sibling_exam(nt)))
-mode = sys.argv[2] if len(sys.argv) > 2 else 'missing'
-tot = tm = sb = 0
-for top in sorted(groups):
-    rows = groups[top]
-    nmiss = sum(1 for r in rows if not r[3])
-    print(f"\n## {top}: {len(rows)} notes | title-matched exam: {sum(1 for r in rows if r[3])} | no title-match: {nmiss}")
-    for nt, folder, title, tmatch, sib in rows:
-        tot += 1; tm += tmatch; sb += sib
-        if mode == 'all' or not tmatch:
-            flag = '✓' if tmatch else ('~ (exam in folder, name differs)' if sib else '✗ NO EXAM')
-            print(f"   {flag}  [{folder}]  {title}")
-print(f"\n=== {tm}/{tot} notes have a title-matched exam; {tot-tm} do NOT ({sb} of the rest have a sibling exam with a different name) ===")
+def is_folder(d):
+    return d.get('type') == 'folder' or str(d.get('isFolder')).lower() == 'true'
+
+def is_active(d):
+    return d.get('isActive') not in (False, 'false')
+
+def is_note(d):
+    return d.get('type') in ('note', 'pdf') and not is_folder(d) and is_active(d)
+
+def parse_linked(d):
+    v = d.get('linkedExamIds')
+    if isinstance(v, list):
+        return [str(x) for x in v if str(x).strip()]
+    if isinstance(v, str) and v.strip():
+        try:
+            arr = json.loads(v)
+            if isinstance(arr, list):
+                return [str(x) for x in arr if str(x).strip()]
+        except:
+            pass
+        return [s.strip() for s in v.split(',') if s.strip()]
+    return []
+
+def no_exam_needed(d):
+    return d.get('noExamNeeded') is True or str(d.get('noExamNeeded')).lower() == 'true'
+
+def folder_path(d):
+    parts = []
+    p = d.get('parentId')
+    depth = 0
+    while p and p in L and depth < 30:
+        parts.insert(0, str(L[p].get('title') or ''))
+        p = L[p].get('parentId')
+        depth += 1
+    return ' / '.join(parts) if parts else '(root)'
+
+all_notes = [d for d in L.values() if is_note(d)]
+
+# 2. Load batches
+batches_raw = [json.loads(r[0]) for r in db.execute("SELECT data FROM rows WHERE sheet='batches'")]
+batches = [b for b in batches_raw if is_active(b)]
+
+print("=" * 80)
+print(f"NOTE <-> EXAM COVERAGE AUDIT (Database: {db_path})")
+print("=" * 80)
+
+print("\n### ১. প্রতি ব্যাচে শেয়ার করা নোটের কভারেজ (Batch-Wise Coverage):\n")
+print(f"{'ব্যাচ (Batch)':<35} | {'শেয়ার নোট':<10} | {'লিংক আছে':<10} | {'দরকার নেই':<10} | {'নেই (Unlinked)':<14}")
+print("-" * 88)
+
+batch_missing_map = {}
+
+for b in sorted(batches, key=lambda x: str(x.get('name') or '')):
+    bname = str(b.get('name') or b.get('id'))
+    bmap_raw = b.get('assignedItemsMap') or '{}'
+    if isinstance(bmap_raw, str):
+        try:
+            bmap = json.loads(bmap_raw)
+        except:
+            bmap = {}
+    elif isinstance(bmap_raw, dict):
+        bmap = bmap_raw
+    else:
+        bmap = {}
+
+    assigned_note_ids = [k for k in bmap.keys() if k in L and is_note(L[k])]
+    tot = len(assigned_note_ids)
+    linked = 0
+    noneed = 0
+    unlinked = []
+
+    for nid in assigned_note_ids:
+        n = L[nid]
+        if no_exam_needed(n):
+            noneed += 1
+        elif len(parse_linked(n)) > 0:
+            linked += 1
+        else:
+            unlinked.append(n)
+
+    print(f"{bname:<35} | {tot:<10} | {linked:<10} | {noneed:<10} | {len(unlinked):<14}")
+    if unlinked:
+        batch_missing_map[bname] = unlinked
+
+if batch_missing_map:
+    print("\n#### ব্যাচে শেয়ার করা unlinked নোট তালিকা:")
+    for bname, unl in batch_missing_map.items():
+        print(f"  [{bname}]:")
+        for n in unl:
+            print(f"    - {n.get('title')} (id: {n.get('id')})")
+else:
+    print("\n✓ কোনো ব্যাচে কোনো unlinked নোট নেই!")
+
+# 3. Overall Library Summary
+lib_linked = sum(1 for n in all_notes if not no_exam_needed(n) and len(parse_linked(n)) > 0)
+lib_noneed = sum(1 for n in all_notes if no_exam_needed(n))
+lib_unlinked = [n for n in all_notes if not no_exam_needed(n) and len(parse_linked(n)) == 0]
+
+print("\n" + "=" * 80)
+print("### ২. সমগ্র লাইব্রেরি সারাংশ (Global Library Summary):")
+print(f"মোট নোট (Total Notes):          {len(all_notes)}")
+print(f"Exam লিংক আছে (Linked):         {lib_linked}")
+print(f"Exam দরকার নেই (noExamNeeded):  {lib_noneed}")
+print(f"Exam নেই (Unlinked):            {len(lib_unlinked)}")
+print("=" * 80)
+
+if lib_unlinked:
+    print("\n### ৩. লাইব্রেরির Unlinked নোট তালিকা (বাকি ৪টি - R25-এর জন্য):")
+    for n in sorted(lib_unlinked, key=lambda x: str(x.get('title') or '')):
+        print(f"  ✗ [{folder_path(n)}]  {n.get('title')}  (id: {n.get('id')})")
+else:
+    print("\n✓ লাইব্রেরিতে কোনো unlinked নোট নেই!")

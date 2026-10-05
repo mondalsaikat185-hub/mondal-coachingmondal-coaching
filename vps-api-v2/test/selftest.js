@@ -357,6 +357,88 @@ const PUB = 'MondalCoachingSecureToken2026!';
     console.log('new student journey tests OK');
   }
 
+  // ---------- R26 tests: linkedExamIds, notto-shotto, Feb 26, range, multiple sibling, noExamNeeded, alerts ----------
+  {
+    r = await call('apiLoginUser', ['9000000001', 'adminpass']); const adm = r.data.data.sessionToken;
+
+    // 1. notto-shotto test: note "02-notto-shotto-bidhan" with linkedExamIds
+    S.saveRow('library', { id: 'fBengali', title: 'Bengali Grammar', type: 'folder', isFolder: 'true' });
+    S.saveRow('library', { id: 'exNotto', title: 'বাংলা ব্যাকরণ: ণত্ব ও ষত্ব বিধান (Notto o Shotto Bidhan)', type: 'exam', parentId: 'fBengali' });
+    S.saveRow('library', { id: 'noteNotto', title: '02-notto-shotto-bidhan', type: 'note', parentId: 'fBengali', linkedExamIds: ['exNotto'] });
+
+    // 2. Feb, 26 test: Current Affairs note linked to multiple exams (Pt1, Pt2, Pt3)
+    S.saveRow('library', { id: 'fCa', title: 'Current Affairs', type: 'folder', isFolder: 'true' });
+    S.saveRow('library', { id: 'exFeb1', title: 'Feb, 26 Pt1', type: 'exam', parentId: 'fCa' });
+    S.saveRow('library', { id: 'exFeb2', title: 'Feb, 26 Pt2', type: 'exam', parentId: 'fCa' });
+    S.saveRow('library', { id: 'exFeb3', title: 'Feb, 26 Pt3', type: 'exam', parentId: 'fCa' });
+    S.saveRow('library', { id: 'noteFeb', title: 'February, 2026', type: 'note', parentId: 'fCa', linkedExamIds: ['exFeb1', 'exFeb2', 'exFeb3'] });
+
+    // 3. noExamNeeded test: Formula note
+    S.saveRow('library', { id: 'noteFormula', title: 'Percentage Table Formula', type: 'note', noExamNeeded: true });
+
+    // 4. Unmatched note with no link and no exam
+    S.saveRow('library', { id: 'noteUnlinked', title: 'Idioms 601-625', type: 'note' });
+
+    // Assign to a new test batch
+    const nowIso = new Date().toISOString();
+    S.saveRow('batches', {
+      id: 'bR26',
+      name: 'R26 Test Batch',
+      classDay: '6',
+      examStartTime: '10:00',
+      assignedItemsMap: {
+        noteNotto: nowIso,
+        noteFeb: nowIso,
+        noteFormula: nowIso,
+        noteUnlinked: nowIso,
+      },
+      scheduledStartTimeMap: {}
+    });
+
+    const bR26 = S.findRowById('batches', 'bR26').obj;
+    const outM = { missing: [] };
+    const candidates = _internal.examCandidates ? _internal.examCandidates(bR26, Date.now(), S.readSheet('library'), outM) : [];
+    const candIds = candidates.map(c => c.id);
+
+    // Verify notto-shotto exam is returned
+    assert.ok(candIds.includes('exNotto'), 'exNotto should be a candidate via linkedExamIds');
+    // Verify Feb 26 exams are returned
+    assert.ok(candIds.includes('exFeb1') && candIds.includes('exFeb2') && candIds.includes('exFeb3'), 'Feb 26 exams should be candidates via linkedExamIds');
+    // Verify formula note is NOT in missing
+    assert.ok(!outM.missing.some(m => m.id === 'noteFormula'), 'Formula note should not be in missing');
+    // Verify unlinked note IS in missing
+    assert.ok(outM.missing.some(m => m.id === 'noteUnlinked'), 'Unlinked note should be in missing');
+
+    // Test Admin Alerts deduplication & noExamNeeded
+    const alerts = _internal.checkAndCreateAdminAlerts(Date.now());
+    // Formula note should never generate alert
+    assert.ok(!alerts.some(a => String(a.message).includes('Percentage Table Formula')), 'Formula note should not generate alert');
+    // notto-shotto has exam, so should not generate missing alert
+    assert.ok(!alerts.some(a => String(a.message).includes('02-notto-shotto-bidhan')), 'notto-shotto should not generate alert');
+    // noteUnlinked should generate at most 1 alert for bR26
+    const unlinkedAlerts = alerts.filter(a => a.sourceBatchId === 'bR26' && String(a.message).includes('Idioms 601-625'));
+    assert.equal(unlinkedAlerts.length, 1, 'Should have exactly 1 alert for unlinked note');
+
+    // Test apiSetNoteExamLink RPC
+    r = await call('apiSetNoteExamLink', ['noteUnlinked', ['exFeb1'], false], adm);
+    assert.equal(r.success, true);
+    const unlinkedRow = S.findRowById('library', 'noteUnlinked').obj;
+    const unlinkedParsed = typeof unlinkedRow.linkedExamIds === 'string' ? JSON.parse(unlinkedRow.linkedExamIds) : unlinkedRow.linkedExamIds;
+    assert.deepEqual(unlinkedParsed, ['exFeb1']);
+
+    // Test autoLinkNewExam on exam save:
+    S.saveRow('library', { id: 'fSingle', title: 'Single Topic Folder', type: 'folder', isFolder: 'true' });
+    S.saveRow('library', { id: 'noteSingle', title: 'Single Note', type: 'note', parentId: 'fSingle' });
+    r = await call('apiSaveLibraryItem', [{ title: 'Single Note Exam', type: 'exam', parentId: 'fSingle' }], adm);
+    assert.equal(r.success, true);
+    const newExId = r.data.data.id;
+    const singleRow = S.findRowById('library', 'noteSingle').obj;
+    const singleParsed = typeof singleRow.linkedExamIds === 'string' ? JSON.parse(singleRow.linkedExamIds) : singleRow.linkedExamIds;
+    assert.ok(singleParsed.includes(newExId), 'autoLinkNewExam should link exam in same single-note folder');
+
+    console.log('R26 tests (linkedExamIds, notto-shotto, Feb 26, noExamNeeded, deduplication, autoLink) OK');
+  }
+
   // transaction rollback: failing write leaves no partial data
   const before = S.counts();
   try { S.tx(() => { S.saveRow('payments', { x: 1 }); throw new Error('boom'); }); } catch (e) {}

@@ -31,6 +31,8 @@ export interface LibraryItem {
   createdAt?: any;
   isChunked?: boolean;
   chunkCount?: number;
+  linkedExamIds?: string[];
+  noExamNeeded?: boolean;
 }
 
 function formatToDatetimeLocal(dateStr: string | undefined): string {
@@ -53,6 +55,13 @@ export function AdminLibrary() {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [allLibraryItems, setAllLibraryItems] = useState<LibraryItem[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [allExams, setAllExams] = useState<LibraryItem[]>([]);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [linkingNote, setLinkingNote] = useState<LibraryItem | null>(null);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [selectedExamIds, setSelectedExamIds] = useState<string[]>([]);
+  const [noExamNeededVal, setNoExamNeededVal] = useState(false);
+  const [savingLink, setSavingLink] = useState(false);
   const [itemAssignments, setItemAssignments] = useState<{id: string, libraryItemId: string, batchId: string, scheduledStartTime?: string}[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -187,6 +196,8 @@ export function AdminLibrary() {
     setLoading(true);
     try {
         const rawLibrary = await api.getLibrary();
+        const examsOnly = rawLibrary.filter((it: any) => it.type === 'exam' && !it.isFolder);
+        setAllExams(examsOnly as any);
         const vis = visibleIds(rawLibrary, [], null);
         const { folders: noteFolders, files: noteFiles } = buildSide(rawLibrary, vis, 'note');
         const libraryItems = [...noteFolders, ...noteFiles];
@@ -232,6 +243,72 @@ export function AdminLibrary() {
   const handleRefreshFolder = () => {
     fetchFolderContent(currentFolderId, true);
   };
+
+  const getLinkedExamNames = (ids?: string[]) => {
+    if (!ids || ids.length === 0) return '';
+    const names = ids.map(id => {
+      const e = allExams.find(x => x.id === id);
+      return e ? e.title : id;
+    });
+    if (names.length <= 2) return names.join(', ');
+    return `${names.slice(0, 2).join(', ')} (+${names.length - 2})`;
+  };
+
+  const openLinkModal = (note: LibraryItem) => {
+    setLinkingNote(note);
+    setSelectedExamIds(Array.isArray(note.linkedExamIds) ? [...note.linkedExamIds] : []);
+    setNoExamNeededVal(!!note.noExamNeeded);
+    setLinkSearch('');
+    setIsLinkModalOpen(true);
+  };
+
+  const handleSaveLink = async () => {
+    if (!linkingNote) return;
+    setSavingLink(true);
+    try {
+      const res = await api.setNoteExamLink(linkingNote.id, selectedExamIds, noExamNeededVal);
+      if (res && res.success === false) {
+        throw new Error(res.error || 'Failed to save exam link');
+      }
+      showToast('নোটের exam লিংক সংরক্ষিত হয়েছে ✓');
+      setItems(prev => prev.map(it => it.id === linkingNote.id ? { ...it, linkedExamIds: selectedExamIds, noExamNeeded: noExamNeededVal } : it));
+      setAllLibraryItems(prev => prev.map(it => it.id === linkingNote.id ? { ...it, linkedExamIds: selectedExamIds, noExamNeeded: noExamNeededVal } : it));
+      setIsLinkModalOpen(false);
+    } catch (err: any) {
+      console.error(err);
+      showToast('Exam লিংক সংরক্ষণ ব্যর্থ: ' + (err.message || String(err)), 'error');
+    } finally {
+      setSavingLink(false);
+    }
+  };
+
+  useEffect(() => {
+    const handler = async (e: any) => {
+      const { noteId, noteTitle } = e.detail || {};
+      if (!noteId && !noteTitle) return;
+      try {
+        const rawLibrary = await api.getLibrary();
+        const note = rawLibrary.find((it: any) => it.id === noteId || it.title === noteTitle);
+        if (note) {
+          openLinkModal(note as any);
+        }
+      } catch (err) {
+        console.error('Error opening note link modal:', err);
+      }
+    };
+    window.addEventListener('open-note-exam-link', handler);
+
+    const pendingId = sessionStorage.getItem('pendingLinkNoteId');
+    if (pendingId) {
+      sessionStorage.removeItem('pendingLinkNoteId');
+      api.getLibrary().then(rawLibrary => {
+        const note = rawLibrary.find((it: any) => it.id === pendingId);
+        if (note) openLinkModal(note as any);
+      }).catch(console.error);
+    }
+
+    return () => window.removeEventListener('open-note-exam-link', handler);
+  }, [allExams]);
 
   const fetchBatches = async () => {
     try {
@@ -997,6 +1074,7 @@ export function AdminLibrary() {
   useBackStep('admin_folder_modal', isFolderModalOpen, () => setIsFolderModalOpen(false));
   useBackStep('admin_upload_modal', isUploadModalOpen, () => setIsUploadModalOpen(false));
   useBackStep('admin_share_modal', isShareModalOpen, () => setIsShareModalOpen(false));
+  useBackStep('admin_link_modal', isLinkModalOpen, () => setIsLinkModalOpen(false));
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full">
@@ -1139,6 +1217,28 @@ export function AdminLibrary() {
                     <span className="text-[10px] bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded-full font-bold uppercase">
                       {item.type === 'exam' ? item.examType : 'PDF Note'}
                     </span>
+                    {(item.type === 'note' || item.type === 'pdf') && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openLinkModal(item); }}
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase transition-transform hover:scale-105 border flex items-center gap-1 cursor-pointer ${
+                          item.noExamNeeded
+                            ? 'bg-zinc-100 text-zinc-600 border-zinc-300 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700'
+                            : (item.linkedExamIds && item.linkedExamIds.length > 0)
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                            : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                        }`}
+                        title="Exam লিংক করতে বা বদলাতে ক্লিক করুন"
+                      >
+                        {item.noExamNeeded ? (
+                          '— দরকার নেই'
+                        ) : (item.linkedExamIds && item.linkedExamIds.length > 0) ? (
+                          `✓ Exam: ${getLinkedExamNames(item.linkedExamIds)}`
+                        ) : (
+                          '✗ Exam নেই'
+                        )}
+                      </button>
+                    )}
                     {item.isChunked && (
                        <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded border border-red-800 font-bold uppercase">
                          WARNING: FILE EXHAUSTS QUOTA - PLEASE DELETE OR RE-UPLOAD AS GOOGLE DRIVE LINK
@@ -1375,6 +1475,34 @@ export function AdminLibrary() {
                <h2 className="text-xl font-black uppercase mb-1 text-emerald-600">Share Item</h2>
                <p className="text-sm font-bold opacity-70 mb-4">{selectedItem.title}</p>
                
+               {(selectedItem.type === 'note' || selectedItem.type === 'pdf') && !selectedItem.noExamNeeded && (!selectedItem.linkedExamIds || selectedItem.linkedExamIds.length === 0) && (
+                  <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-500 rounded text-amber-900 dark:text-amber-200 text-xs">
+                     <p className="font-bold mb-1 flex items-center gap-1 text-amber-800 dark:text-amber-300">
+                        <span>⚠️ এই নোটের exam লিংক নেই</span>
+                     </p>
+                     <p className="mb-2">ছাত্ররা notification form-এ exam খুঁজে পাবে না। এখনই exam লিংক করবেন নাকি পরে করবেন?</p>
+                     <div className="flex gap-2">
+                        <button
+                           type="button"
+                           onClick={() => {
+                              setIsShareModalOpen(false);
+                              openLinkModal(selectedItem);
+                           }}
+                           className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded text-[11px]"
+                        >
+                           এখনই বেছে নিন
+                        </button>
+                        <button
+                           type="button"
+                           onClick={() => { /* proceed */ }}
+                           className="px-2.5 py-1 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-bold rounded text-[11px]"
+                        >
+                           পরে
+                        </button>
+                     </div>
+                  </div>
+               )}
+               
                <div className="space-y-2 mb-6 max-h-60 overflow-y-auto border border-zinc-200 dark:border-zinc-800 p-2">
                   {batches.length === 0 ? <div className="text-sm text-center">No batches found</div> : null}
                   {batches.map(b => (
@@ -1407,6 +1535,147 @@ export function AdminLibrary() {
                   <button onClick={() => setIsShareModalOpen(false)} disabled={submitting} className="px-4 border-2 border-zinc-900 dark:border-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancel</button>
                   <button onClick={handleSaveShare} disabled={submitting} className="bg-emerald-500 text-white border-2 border-zinc-900 px-4 py-2 hover:bg-emerald-600 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] flex items-center gap-2 disabled:opacity-50">
                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save Changes'}
+                  </button>
+               </div>
+            </div>
+         </div>
+      )}
+
+      {/* Exam Link Modal */}
+      {isLinkModalOpen && linkingNote && (
+         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 w-full max-w-lg p-6 relative flex flex-col max-h-[90vh]">
+               <button 
+                  onClick={() => setIsLinkModalOpen(false)} 
+                  disabled={savingLink} 
+                  className="absolute top-4 right-4 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-white border-2 border-zinc-900 dark:border-zinc-100 font-black px-2.5 py-0.5"
+               >
+                  X
+               </button>
+               <h2 className="text-xl font-black uppercase mb-1 text-emerald-600">নোট ↔ Exam লিংক</h2>
+               <p className="text-sm font-bold opacity-75 mb-3">{linkingNote.title}</p>
+
+               {/* noExamNeeded Checkbox */}
+               <div className="mb-4 p-3 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 rounded">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-xs text-zinc-800 dark:text-zinc-200">
+                     <input 
+                        type="checkbox" 
+                        checked={noExamNeededVal} 
+                        onChange={e => {
+                           setNoExamNeededVal(e.target.checked);
+                           if (e.target.checked) setSelectedExamIds([]);
+                        }} 
+                        className="w-4 h-4 accent-zinc-900 dark:accent-zinc-100 cursor-pointer" 
+                     />
+                     <span>এই নোটের কোনো exam দরকার নেই (— দরকার নেই)</span>
+                  </label>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 pl-6">
+                     টিক দিলে এই নোটের জন্য আর কখনো অ্যাডমিন সতর্কতা ("নোটের কোনো exam নেই") আসবে না।
+                  </p>
+               </div>
+
+               {!noExamNeededVal && (
+                  <div className="flex flex-col flex-1 min-h-0 mb-4">
+                     {/* Search Box */}
+                     <div className="mb-2">
+                        <input
+                           type="text"
+                           value={linkSearch}
+                           onChange={e => setLinkSearch(e.target.value)}
+                           placeholder="🔍 Exam খুঁজুন (নাম বা ফোল্ডার)..."
+                           className="w-full text-xs p-2 border-2 border-zinc-900 dark:border-zinc-100 bg-white dark:bg-zinc-900 font-medium"
+                        />
+                     </div>
+
+                     {/* Selected Exams Summary */}
+                     {selectedExamIds.length > 0 && (
+                        <div className="mb-2 flex flex-wrap gap-1 p-2 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded">
+                           <span className="text-[10px] font-black uppercase text-emerald-800 dark:text-emerald-300 w-full mb-0.5">
+                              নির্বাচিত Exam ({selectedExamIds.length}):
+                           </span>
+                           {selectedExamIds.map(eid => {
+                              const ex = allExams.find(x => x.id === eid);
+                              return (
+                                 <span 
+                                    key={eid} 
+                                    className="text-[11px] bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 px-2 py-0.5 rounded font-bold flex items-center gap-1"
+                                 >
+                                    <span>{ex ? ex.title : eid}</span>
+                                    <button 
+                                       type="button" 
+                                       onClick={() => setSelectedExamIds(prev => prev.filter(x => x !== eid))}
+                                       className="hover:text-red-600 font-black ml-0.5"
+                                    >
+                                       ×
+                                    </button>
+                                 </span>
+                              );
+                           })}
+                        </div>
+                     )}
+
+                     {/* Exam List */}
+                     <div className="flex-1 overflow-y-auto border border-zinc-300 dark:border-zinc-700 p-2 space-y-1.5 max-h-56">
+                        {allExams
+                           .filter(e => {
+                              if (!linkSearch.trim()) return true;
+                              const q = linkSearch.toLowerCase();
+                              return String(e.title || '').toLowerCase().includes(q) || String(e.fileName || '').toLowerCase().includes(q);
+                           })
+                           .slice(0, 100)
+                           .map(exam => {
+                              const isChecked = selectedExamIds.includes(exam.id);
+                              return (
+                                 <label 
+                                    key={exam.id} 
+                                    className={`flex items-start gap-2 p-1.5 rounded cursor-pointer text-xs border ${
+                                       isChecked 
+                                          ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-700' 
+                                          : 'hover:bg-zinc-100 dark:hover:bg-zinc-800 border-transparent'
+                                    }`}
+                                 >
+                                    <input
+                                       type="checkbox"
+                                       checked={isChecked}
+                                       onChange={() => {
+                                          if (isChecked) {
+                                             setSelectedExamIds(prev => prev.filter(x => x !== exam.id));
+                                          } else {
+                                             setSelectedExamIds(prev => [...prev, exam.id]);
+                                          }
+                                       }}
+                                       className="w-4 h-4 mt-0.5 accent-emerald-600 cursor-pointer"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                       <div className="font-bold truncate">{exam.title}</div>
+                                       <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                                          {exam.examType || 'Exam'} {exam.fileName ? `· ${exam.fileName}` : ''}
+                                       </div>
+                                    </div>
+                                 </label>
+                              );
+                           })}
+                        {allExams.length === 0 && (
+                           <div className="text-center text-xs text-zinc-400 py-4">কোনো exam পাওয়া যায়নি</div>
+                        )}
+                     </div>
+                  </div>
+               )}
+
+               <div className="flex justify-end gap-2 text-sm font-bold pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                  <button 
+                     onClick={() => setIsLinkModalOpen(false)} 
+                     disabled={savingLink} 
+                     className="px-4 py-1.5 border-2 border-zinc-900 dark:border-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs uppercase"
+                  >
+                     বাতিল
+                  </button>
+                  <button 
+                     onClick={handleSaveLink} 
+                     disabled={savingLink} 
+                     className="bg-emerald-600 text-white border-2 border-zinc-900 px-4 py-1.5 hover:bg-emerald-700 shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] flex items-center gap-1.5 disabled:opacity-50 text-xs font-black uppercase"
+                  >
+                     {savingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'সংরক্ষণ করুন'}
                   </button>
                </div>
             </div>
