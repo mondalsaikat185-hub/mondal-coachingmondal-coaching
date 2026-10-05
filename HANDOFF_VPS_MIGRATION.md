@@ -213,3 +213,12 @@ Raw output into `R19_REPORT.md` (not committed). No force-push. Do not touch pro
 
 ---
 ## ROUND R21 — Math sheet/exam clean matching names + "Math Exam" label. Follow `TASK_R21_MATH_NAMES.md` EXACTLY. Raw output into `R21_REPORT.md`. STOP after step E.
+
+---
+## ROUND R22 — PRODUCTION release of R20 + R21 (Saikat approved). Frontend fixes already live on backend where needed.
+Write raw output to `R22_REPORT.md` (not committed). No force-push.
+1. `git fetch origin`; `git checkout main`; `git pull --ff-only origin main`.
+2. `git merge --ff-only origin/payments-upi` (must be fast-forward; if it refuses, STOP and report).
+3. `npm run lint` and `npm run build` pass; `cd vps-api-v2 && node test/selftest.js` → ALL TESTS PASSED.
+4. `git push origin main` (Vercel builds production). `git checkout payments-upi`.
+5. Wait for Vercel production Ready; confirm the production URL loads and its HTML contains `mc-api2-187-127-191-163.sslip.io`. `curl -s https://mc-api2-187-127-191-163.sslip.io/health` (counts NOT lower). Report production URL + commit hash. STOP.
