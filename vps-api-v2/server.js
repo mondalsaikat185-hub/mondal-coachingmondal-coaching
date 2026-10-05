@@ -19,7 +19,7 @@ app.disable('x-powered-by');
 app.use(compression({ threshold: 512 }));
 
 // ---------- CORS (only our Vercel app + local dev) ----------
-const ORIGIN_RE = /^https:\/\/mondal-coachingmondal-coaching(-[a-z0-9-]+)?\.vercel\.app$/i;
+const ORIGIN_RE = /^https:\/\/mondal-coaching[a-z0-9-]*\.vercel\.app$/i;
 const DEV = new Set(['http://localhost:5173', 'http://localhost:4173', 'http://127.0.0.1:5173', 'http://127.0.0.1:4173']);
 const EXTRA = new Set(String(process.env.EXTRA_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean));
 function originOk(o) { return !o || ORIGIN_RE.test(o) || DEV.has(o) || EXTRA.has(o); }
