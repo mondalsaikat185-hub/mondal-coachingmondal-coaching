@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { api, Batch } from '../lib/api';
 import { createExamSession, endExamSession } from '../lib/exam-session-utils';
 import { PageHeader } from './Pages';
-import { useBackStep, useFolderBackStep, triggerBack } from '../lib/useBackStep';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Loader2, Plus, Eye, Share2, Trash2, FileText, FileDown, BookOpen, Folder, FolderPlus, ChevronRight, Pencil, GripVertical } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
 import { sideOf, visibleIds, buildSide } from '../lib/library-split';
@@ -133,16 +133,94 @@ export function AdminExams() {
   const libraryMode = 'EXAM';
 
   // Navigation and Folders
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [folderBreadcrumbs, setFolderBreadcrumbs] = useState<LibraryItem[]>([]);
-  
-  // Modals
-  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
-  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const currentFolderId = searchParams.get('folder') || null;
+  const previewId = searchParams.get('preview') || null;
+  const activeModal = searchParams.get('modal') || null;
+
+  const isFolderModalOpen = activeModal === 'folder';
+  const isUploadModalOpen = activeModal === 'upload';
+  const isShareModalOpen = activeModal === 'share';
+
+  const openModal = (name: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('modal', name);
+      return next;
+    }, { replace: false });
+  };
+
+  const closeModal = () => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('modal');
+      return next;
+    }, { replace: false });
+  };
+
+  const setIsFolderModalOpen = (open: boolean) => open ? openModal('folder') : closeModal();
+  const setIsUploadModalOpen = (open: boolean) => open ? openModal('upload') : closeModal();
+  const setIsShareModalOpen = (open: boolean) => open ? openModal('share') : closeModal();
+
+  const setCurrentFolderId = (id: string | null) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('folder', id);
+      else next.delete('folder');
+      next.delete('preview');
+      return next;
+    }, { replace: false });
+  };
+
+  const folderBreadcrumbs = useMemo(() => {
+    if (!currentFolderId) return [];
+    const crumbs: LibraryItem[] = [];
+    let curr = items.find(i => i.id === currentFolderId);
+    const visited = new Set<string>();
+    while (curr && !visited.has(curr.id)) {
+      visited.add(curr.id);
+      crumbs.unshift(curr);
+      if (!curr.parentId) break;
+      curr = items.find(i => i.id === curr!.parentId);
+    }
+    return crumbs;
+  }, [currentFolderId, items]);
+
+  const setFolderBreadcrumbs = (_fnOrVal: any) => {};
+
+  const [previewItem, setPreviewItemState] = useState<LibraryItem | null>(null);
+
+  const setPreviewItem = (item: LibraryItem | null) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (item?.id) next.set('preview', item.id);
+      else next.delete('preview');
+      return next;
+    }, { replace: false });
+  };
+
+  useEffect(() => {
+    if (!previewId) {
+      setPreviewItemState(null);
+      return;
+    }
+    const base = items.find(i => i.id === previewId);
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const fullItem = await api.getLibraryItemDetails(previewId);
+        if (!cancelled) setPreviewItemState(fullItem);
+      } catch (err: any) {
+        if (!cancelled && base) setPreviewItemState(base);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [previewId, items]);
+
   const uploadLockRef = useRef(false);
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
-  const [previewItem, setPreviewItem] = useState<LibraryItem | null>(null);
 
   // Upload Form
   const [itemType, setItemType] = useState<"exam" | "note">("exam");
@@ -995,25 +1073,21 @@ export function AdminExams() {
   };
 
   const handleBackNavigation = () => {
+     if (activeModal) {
+        closeModal();
+        return;
+     }
+     if (previewId) {
+        setPreviewItem(null);
+        return;
+     }
      if (currentFolderId) {
-        if (folderBreadcrumbs.length > 0) {
-            const newBc = [...folderBreadcrumbs];
-            newBc.pop();
-            setFolderBreadcrumbs(newBc);
-            const parent = newBc.length > 0 ? newBc[newBc.length - 1] : null;
-            setCurrentFolderId(parent ? parent.id : null);
-        } else {
-            setCurrentFolderId(null);
-        }
+        const folder = items.find(i => i.id === currentFolderId);
+        setCurrentFolderId(folder?.parentId || null);
+     } else {
+        navigate('/admin');
      }
   };
-
-  // Mobile / Android Back button management (one step back per press)
-  useFolderBackStep(currentFolderId, handleBackNavigation);
-  useBackStep('admin_exam_preview', !!previewItem, () => setPreviewItem(null));
-  useBackStep('admin_exam_folder_modal', isFolderModalOpen, () => setIsFolderModalOpen(false));
-  useBackStep('admin_exam_upload_modal', isUploadModalOpen, () => setIsUploadModalOpen(false));
-  useBackStep('admin_exam_share_modal', isShareModalOpen, () => setIsShareModalOpen(false));
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full">
@@ -1021,7 +1095,7 @@ export function AdminExams() {
         <PageHeader 
            title="Exam Engine" 
            backTo="/admin" 
-           onBack={currentFolderId ? triggerBack : undefined} 
+           onBack={currentFolderId || previewId || activeModal ? handleBackNavigation : undefined} 
         />
       </div>
 

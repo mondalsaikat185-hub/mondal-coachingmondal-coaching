@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { api, LibraryItem, cleanPhone } from '../lib/api';
 import { PageHeader } from './Pages';
-import { useBackStep, useFolderBackStep, triggerBack } from '../lib/useBackStep';
 import { Loader2, Eye, FileText, FileDown, BookOpen, Folder, ChevronRight, Clock, Search, FolderOpen, PenTool } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
 import { sideOf, visibleIds, buildSide } from '../lib/library-split';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { verifyAndJoinSession, joinSessionWithoutCode } from '../lib/exam-session-utils';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { safeToDate } from '../lib/utils';
 import { idbGet, idbSet } from '../lib/idb';
 const FILE_SERVER_URL = import.meta.env.VITE_FILE_SERVER_URL;
@@ -179,24 +178,34 @@ export function StudentLibrary() {
     }
   }, [basePreviewItem?.id]);
 
+  const navigate = useNavigate();
+
   const setViewMode = (mode: 'folders' | 'latest') => {
-    setSearchParams(prev => { prev.set('mode', mode); return prev; });
+    setSearchParams(prev => { 
+      const next = new URLSearchParams(prev);
+      if (mode === 'latest') next.set('mode', 'latest');
+      else next.delete('mode');
+      return next; 
+    }, { replace: false });
   };
   
   const setCurrentFolderId = (id: string | null) => {
     setSearchParams(prev => { 
-       if (id) prev.set('folder', id); 
-       else prev.delete('folder'); 
-       return prev; 
-    });
+       const next = new URLSearchParams(prev);
+       if (id) next.set('folder', id); 
+       else next.delete('folder'); 
+       next.delete('preview');
+       return next; 
+    }, { replace: false });
   };
 
   const setPreviewItem = (item: LibraryItem | null) => {
     setSearchParams(prev => {
-       if (item && item.id) prev.set('preview', item.id);
-       else prev.delete('preview');
-       return prev;
-     });
+       const next = new URLSearchParams(prev);
+       if (item && item.id) next.set('preview', item.id);
+       else next.delete('preview');
+       return next;
+     }, { replace: false });
   };
   
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -900,23 +909,22 @@ export function StudentLibrary() {
     };
 
   const handleBackNavigation = () => {
+      if (previewId) {
+         setPreviewItem(null);
+         return;
+      }
+      if (downloadMessage || activeDownloadFile) {
+         setDownloadMessage(null);
+         setActiveDownloadFile(null);
+         return;
+      }
       if (currentFolderId) {
          const folder = items.find(i => i.id === currentFolderId);
          setCurrentFolderId(folder?.parentId || null);
       } else {
-         
-         setSearchParams(prev => { prev.delete('kind'); prev.delete('folder'); return prev; });
+         navigate('/');
       }
   };
-
-  // Mobile / Android Back button management (one step back per press)
-  useFolderBackStep(currentFolderId, handleBackNavigation);
-  useBackStep('student_pdf_preview', !!previewItem, () => setPreviewItem(null));
-  useBackStep('student_download_modal', !!downloadMessage || !!activeDownloadFile, () => {
-    setDownloadMessage(null);
-    setActiveDownloadFile(null);
-  });
-  useBackStep('student_tab_mode', viewMode === 'latest', () => setViewMode('folders'));
 
   if (previewLoading) {
      return (
@@ -1073,7 +1081,7 @@ export function StudentLibrary() {
              <PageHeader 
                 title="My Target Library" 
                 backTo="/" 
-                onBack={currentFolderId ? triggerBack : undefined} 
+                onBack={currentFolderId || previewId || downloadMessage || activeDownloadFile ? handleBackNavigation : undefined} 
              />
              <button 
                 onClick={() => {

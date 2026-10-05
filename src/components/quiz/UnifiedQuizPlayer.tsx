@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Exam } from '../../pages/Pages';
 import { RotateCw, Clock, AlertTriangle, CheckCircle2, XCircle, ChevronLeft, ChevronRight, Menu, BookOpen, PenTool, Check } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { clearCache, addExamToOutbox, removeExamFromOutbox, isExamPendingSync } from '../../lib/cache';
 import { setExamActive } from '../../lib/autoUpdate';
@@ -147,6 +148,40 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
     setShowLeaveConfirm(true);
     return false; // Prevents popping out without confirmation
   });
+
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Track active attempt in URL search params (?attempt=<id>)
+  useEffect(() => {
+    if (screen === 'QUIZ') {
+      if (searchParams.get('attempt') !== (exam.id || 'running')) {
+        setSearchParams(prev => {
+          const next = new URLSearchParams(prev);
+          next.set('attempt', exam.id || 'running');
+          return next;
+        }, { replace: false });
+      }
+    } else {
+      if (searchParams.has('attempt')) {
+        setSearchParams(prev => {
+          const next = new URLSearchParams(prev);
+          next.delete('attempt');
+          return next;
+        }, { replace: true });
+      }
+    }
+  }, [screen, exam.id, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    return () => {
+      setSearchParams(prev => {
+        if (!prev.has('attempt')) return prev;
+        const next = new URLSearchParams(prev);
+        next.delete('attempt');
+        return next;
+      }, { replace: true });
+    };
+  }, [setSearchParams]);
 
   // During outer screens (Agreement, Landing, Result): Back cleanly exits player
   useBackStep('quiz_outer', screen !== 'QUIZ', () => {

@@ -236,4 +236,29 @@ Write raw output to `R22_REPORT.md` (not committed). No force-push.
 6. Daily deduped admin alerts for missing exams / unscheduled exams in `vps-api-v2/api.js`.
 7. Selftest + lint + build passed. E2E verified on VPS with Test Batch and 9999999901.
 
+---
+## ROUND R26 — Permanent note-exam linking in SQLite + admin UI chips & modal + alert deduplication. Follow `TASK_R26_NOTE_EXAM_LINK.md` EXACTLY. Raw output in `R26_REPORT.md`.
+1. Database migration: live `/data/mc2.db` updated with `linkedExamIds` (JSON array) and `noExamNeeded` (boolean). 280 notes audited (261 linked, 15 noExamNeeded, 4 unlinked Idioms for R25).
+2. Backend `vps-api-v2/api.js`: `libSummary` exposes fields; `examCandidates` prioritizes `note.linkedExamIds`; `autoLinkNewExam` on upload; `apiSetNoteExamLink` admin RPC; deduplicated admin alerts.
+3. Frontend UI: `AdminLibrary.tsx` note status chips (`— দরকার নেই`, `✓ Exam: ...`, `✗ Exam নেই`) + linking modal; `NotificationsPanel.tsx` "Exam লিংক করুন" button; `useBackStep` integration.
+4. Selftest passed, live VPS E2E verified with Test Batch and 9999999901.
+
+---
+## ROUND R27 — PRODUCTION release of R23 + R24 + R26 (Saikat approved).
+Raw output in `R27_REPORT.md`. No force-push.
+1. `git fetch origin`; `git checkout main`; `git pull --ff-only origin main`.
+2. `git merge --ff-only origin/payments-upi` (fast-forward merged 4 commits: `06e4cdc`, `15e8e9a`, `7fa3a0a`, `bbcd15d`).
+3. `npm run lint` (pass); `npm run build` (pass); `node vps-api-v2/test/selftest.js` (ALL TESTS PASSED).
+4. `git push origin main` (published to GitHub main).
+5. Vercel Production deployment: Ready (`https://mondal-coachingmondal-coaching-ma5wnvk7l.vercel.app` & `https://mondal-coachingmondal-coaching.vercel.app`). Verified live production HTML contains R24/R26 identifiers (`linkedExamIds`, `noExamNeeded`, `setNoteExamLink`, `Advance Math`, `1791201660225`).
+6. Verified VPS `api.js` sha256 (`63f5e3b1e9c73a4de58fc480ada31764c199858aae9c9f149fb88618cf0d78c0`) exactly matches git `main`'s `vps-api-v2/api.js` both on host and inside docker container `mc-api-v2`.
+
+---
+## ROUND R28 — URL-as-single-source-of-truth back navigation + Idioms 601-700 exams. Follow `TASK_R28_BACK_FIX_IDIOMS.md` EXACTLY. Raw output in `R28_REPORT.md`.
+1. Part A (Back Button): Eliminated `useFolderBackStep` and async `isSilentPop` history swallowing. URL search params (`?folder=...&preview=...&mode=...&modal=...&attempt=...`) are now the single source of truth across `StudentExams.tsx`, `StudentLibrary.tsx`, `AdminExams.tsx`, and `AdminLibrary.tsx`. Breadcrumbs are reactively derived from `items` and `folderId`. Running exams track `?attempt=<examId>` and prompt confirm modal before exiting.
+2. Part B (Idioms 601-700 Exams): Generated 4 exams (25 bilingual MCQs each, 4 options, balanced answer distribution) from 4 idiom notes (601-625, 626-650, 651-675, 676-700). Inserted into live VPS `/data/mc2.db` in single transaction (row count 2783 -> 2787, library count 1150 -> 1154). Notes linked. Unlinked notes = 0! Admin alerts = 0!
+3. Automated test script (Puppeteer, mobile viewport 390x844) verifies all 5 navigation scenarios.
+
+
+
 

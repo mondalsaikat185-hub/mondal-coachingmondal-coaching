@@ -1,48 +1,38 @@
 // src/lib/useBackStep.ts
-// Shared back step management for mobile / Android back button.
-// Pushes history state on every step (folder navigation, preview, modal, tab, quiz)
-// and handles popstate so Back button always goes back exactly one step.
+// Lightweight popstate interceptor (for active quiz confirmation, etc.)
+// Pure URL search params are the single source of truth for folders, previews, and modals.
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 
 export type BackStepHandler = () => boolean | void;
 
-interface StepRecord {
-  id: string;
+interface Interceptor {
   name: string;
   handler: BackStepHandler;
 }
 
-const backStepStack: StepRecord[] = [];
-let isSilentPop = false;
+const activeInterceptors: Interceptor[] = [];
 
-// Global popstate listener registered once
 if (typeof window !== 'undefined') {
-  window.addEventListener('popstate', (e) => {
-    if (isSilentPop) {
-      isSilentPop = false;
-      return;
-    }
-
-    if (backStepStack.length > 0) {
-      const top = backStepStack.pop()!;
+  window.addEventListener('popstate', () => {
+    if (activeInterceptors.length > 0) {
+      const top = activeInterceptors[activeInterceptors.length - 1];
       try {
-        const result = top.handler();
-        // If handler explicitly returned false, the action was cancelled/intercepted (e.g. running exam confirm)
-        if (result === false) {
-          // Re-push history state so stack and browser stay matched
-          window.history.pushState({ mcStep: top.name, id: top.id }, '');
-          backStepStack.push(top);
+        const res = top.handler();
+        if (res === false) {
+          // Intercepted / cancelled (e.g. running quiz confirm dialog)
+          // Re-push history entry so the browser stays on the current screen
+          window.history.pushState(null, '', window.location.href);
         }
       } catch (err) {
-        console.error('[useBackStep] handler error:', err);
+        console.error('[useBackStep] popstate handler error:', err);
       }
     }
   });
 }
 
 /**
- * Triggers a back step via history.back(), popping the topmost step cleanly.
+ * Triggers a back step via history.back().
  */
 export function triggerBack() {
   if (typeof window !== 'undefined') {
@@ -52,9 +42,8 @@ export function triggerBack() {
 
 /**
  * useBackStep hook:
- * When active is true, pushes a history state { mcStep: name }.
- * When user hits Back (popstate), runs onBack.
- * If closed from within code/UI without popstate, silently unwinds history entry.
+ * When active is true, registers an interceptor on popstate.
+ * If handler returns false, the popstate navigation is prevented (re-pushed).
  */
 export function useBackStep(
   name: string,
@@ -63,125 +52,21 @@ export function useBackStep(
 ) {
   const handlerRef = useRef(onBack);
   handlerRef.current = onBack;
-  const stepIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!active) {
-      if (stepIdRef.current) {
-        const id = stepIdRef.current;
-        stepIdRef.current = null;
-        const idx = backStepStack.findIndex(s => s.id === id);
-        if (idx !== -1) {
-          backStepStack.splice(idx, 1);
-          isSilentPop = true;
-          window.history.back();
-        }
-      }
-      return;
-    }
+    if (!active) return;
 
-    const stepId = 'step_' + Math.random().toString(36).substring(2, 9);
-    stepIdRef.current = stepId;
-
-    const record: StepRecord = {
-      id: stepId,
+    const record: Interceptor = {
       name,
       handler: () => handlerRef.current(),
     };
-
-    window.history.pushState({ mcStep: name, id: stepId }, '');
-    backStepStack.push(record);
+    activeInterceptors.push(record);
 
     return () => {
-      if (stepIdRef.current) {
-        const id = stepIdRef.current;
-        stepIdRef.current = null;
-        const idx = backStepStack.findIndex(s => s.id === id);
-        if (idx !== -1) {
-          backStepStack.splice(idx, 1);
-          isSilentPop = true;
-          window.history.back();
-        }
+      const idx = activeInterceptors.lastIndexOf(record);
+      if (idx !== -1) {
+        activeInterceptors.splice(idx, 1);
       }
     };
   }, [active, name]);
-
-  const closeWithBack = useCallback(() => {
-    if (stepIdRef.current) {
-      window.history.back();
-    } else {
-      handlerRef.current();
-    }
-  }, []);
-
-  return { triggerBack: closeWithBack };
-}
-
-/**
- * useFolderBackStep:
- * Specifically for folder tree navigation (Folder -> Sub-folder -> Root).
- * Pushes a step each time a non-null folder is entered.
- * Pops back to parent folder on Back.
- */
-export function useFolderBackStep(
-  currentFolderId: string | null,
-  onBackToParent: () => void
-) {
-  const onBackRef = useRef(onBackToParent);
-  onBackRef.current = onBackToParent;
-  const activeFolderRef = useRef<string | null>(null);
-  const stepIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!currentFolderId) {
-      // At root: remove any active folder step if present
-      if (stepIdRef.current) {
-        const id = stepIdRef.current;
-        stepIdRef.current = null;
-        activeFolderRef.current = null;
-        const idx = backStepStack.findIndex(s => s.id === id);
-        if (idx !== -1) {
-          backStepStack.splice(idx, 1);
-          isSilentPop = true;
-          window.history.back();
-        }
-      }
-      return;
-    }
-
-    // Entering a folder or changing to another folder
-    const prevFolderId = activeFolderRef.current;
-    activeFolderRef.current = currentFolderId;
-
-    // Push new history state for this folder level
-    const stepId = 'fldr_' + currentFolderId + '_' + Math.random().toString(36).substring(2, 6);
-    stepIdRef.current = stepId;
-
-    const record: StepRecord = {
-      id: stepId,
-      name: 'folder_' + currentFolderId,
-      handler: () => {
-        stepIdRef.current = null;
-        activeFolderRef.current = null;
-        onBackRef.current();
-      },
-    };
-
-    window.history.pushState({ mcStep: 'folder', id: stepId, folderId: currentFolderId }, '');
-    backStepStack.push(record);
-
-    return () => {
-      // If unmounting folder step
-      if (stepIdRef.current) {
-        const id = stepIdRef.current;
-        stepIdRef.current = null;
-        const idx = backStepStack.findIndex(s => s.id === id);
-        if (idx !== -1) {
-          backStepStack.splice(idx, 1);
-          isSilentPop = true;
-          window.history.back();
-        }
-      }
-    };
-  }, [currentFolderId]);
 }
