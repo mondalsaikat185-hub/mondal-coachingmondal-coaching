@@ -207,3 +207,6 @@ Raw output into `R19_REPORT.md` (not committed). No force-push. Do not touch pro
 3. `git add <files above>`; `git commit -m "feat: exam notification reports notes without exam and auto-adds the exam when uploaded"`; `git push origin payments-upi`.
 4. Backend: `scp vps-api-v2/api.js vps:/root/smartqueue-stack/mc-api-v2/api.js`; `ssh vps "cd /root/smartqueue-stack && docker compose up -d --build mc-api-v2"`; wait 20 s; `/health` (counts not lower, importEnabled false); logs --tail=20.
 5. Report commit hash + preview URL. STOP.
+
+---
+## ROUND R20 — Library Notes/Exams split fix. Follow `TASK_R20_LIBRARY_SPLIT.md` exactly. Raw output into `R20_REPORT.md`. STOP after step F.

@@ -3,7 +3,7 @@ import { api, LibraryItem, cleanPhone } from '../lib/api';
 import { PageHeader } from './Pages';
 import { Loader2, Eye, FileText, FileDown, BookOpen, Folder, ChevronRight, Clock, Search, FolderOpen, PenTool } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
-import { resolveFolderVis } from '../lib/library-utils';
+import { sideOf, visibleIds, buildSide } from '../lib/library-split';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { verifyAndJoinSession, joinSessionWithoutCode } from '../lib/exam-session-utils';
 import { useSearchParams } from 'react-router-dom';
@@ -215,12 +215,7 @@ export function StudentLibrary() {
   const libraryMode = 'NOTE';
 
   const processLibraryData = (allBatches: any[], rawLibraryItems: LibraryItem[]) => {
-    // STRICT ISOLATION: StudentLibrary is ONLY for Notes.
-    // Strip out all items that belong to the STUDENT'S EXAM tree or have type === 'exam'.
-    const libraryItems = (rawLibraryItems || []).filter(i => {
-      if (i.type === 'exam') return false;
-      return resolveFolderVis(i, rawLibraryItems).note;
-    });
+    setAllItems(rawLibraryItems);
 
     const studentBatchIds = String(user?.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
     const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
@@ -243,48 +238,9 @@ export function StudentLibrary() {
        scheduledStartTimeMap: combinedScheduledMap
     });
 
-    // Get assigned items mapping from batch
-    const assignedIds = Object.keys(combinedAssignedItemsMap);
-    setAllItems(libraryItems);
-
-    // Resolve accessible items (assigned root items + descendants recursively + ancestors)
-    const accessible = new Set<string>();
-
-    // Start with explicitly assigned items
-    assignedIds.forEach(id => {
-       if (libraryItems.some(i => i.id === id)) {
-          accessible.add(id);
-       }
-    });
-
-    // Recursively add descendants of folders in the accessible set
-    const addLoadedChildren = (parentId: string) => {
-        const children = libraryItems.filter(i => i.parentId === parentId);
-        for (const c of children) {
-            if (accessible.has(c.id)) continue;
-            accessible.add(c.id);
-            addLoadedChildren(c.id);
-        }
-    };
-    
-    Array.from(accessible).forEach(id => {
-       addLoadedChildren(id);
-    });
-
-    // Add ancestors to ensure folder breadcrumbs and parents exist
-    const addAncestors = (itemId: string) => {
-        const item = libraryItems.find(i => i.id === itemId);
-        if (item?.parentId && !accessible.has(item.parentId)) {
-            accessible.add(item.parentId);
-            addAncestors(item.parentId);
-        }
-    };
-    Array.from(accessible).forEach(id => {
-       addAncestors(id);
-    });
-
-    const filteredItems = libraryItems.filter(i => accessible.has(i.id));
-    setItems(filteredItems);
+    const visible = visibleIds(rawLibraryItems, allBatches, user?.batchId || null);
+    const { folders, files } = buildSide(rawLibraryItems, visible, 'note');
+    setItems([...folders, ...files]);
   };
 
   const fetchAll = async () => {
@@ -907,15 +863,10 @@ export function StudentLibrary() {
 
   const currentItems = items.filter(i => {
     if (searchQuery) {
-      const match = String(i?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase());
-      if (!match) return false;
-      if (isFolderItem(i)) return resolveFolderVis(i, allItems).note;
-      return isNoteItem(i);
+      return String(i?.title || '').toLowerCase().includes(searchQuery.toLowerCase());
     }
-    const inFolder = (i?.parentId || null) === currentFolderId;
-      if (!inFolder) return false;
-      if (isFolderItem(i)) return resolveFolderVis(i, allItems).note;
-      return isNoteItem(i);
+    const parent = i.parentId === '' ? null : (i.parentId || null);
+    return parent === currentFolderId;
   });
   
   const getMs = (t: any) => {
@@ -925,12 +876,12 @@ export function StudentLibrary() {
     return new Date(t).getTime() || 0;
   };
   
-  const folders = currentItems.filter(i => isFolderItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
-  const files = currentItems.filter(i => !isFolderItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
+  const folders = currentItems.filter(i => sideOf(i) === 'folder').sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
+  const files = currentItems.filter(i => sideOf(i) === 'note').sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
 
   const allFilesSorted = searchQuery 
     ? files 
-    : items.filter(i => !isFolderItem(i) && isNoteItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
+    : items.filter(i => sideOf(i) === 'note').sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
   const formatDate = (timestamp: any) => {
      if (!timestamp) return 'No date';
      const d = safeToDate(timestamp);

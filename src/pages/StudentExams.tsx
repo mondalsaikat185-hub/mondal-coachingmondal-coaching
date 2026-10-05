@@ -3,7 +3,7 @@ import { api, LibraryItem, cleanPhone } from '../lib/api';
 import { PageHeader } from './Pages';
 import { Loader2, Eye, FileText, FileDown, BookOpen, Folder, ChevronRight, Clock, Search, FolderOpen, PenTool } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
-import { resolveFolderVis } from '../lib/library-utils';
+import { sideOf, visibleIds, buildSide } from '../lib/library-split';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { verifyAndJoinSession, joinSessionWithoutCode } from '../lib/exam-session-utils';
 import { useSearchParams } from 'react-router-dom';
@@ -215,12 +215,7 @@ export function StudentExams() {
   const libraryMode = 'EXAM';
 
   const processLibraryData = (allBatches: any[], rawLibraryItems: LibraryItem[]) => {
-    // STRICT ISOLATION: StudentExams is ONLY for Exams.
-    // Strip out all items that do NOT belong to the STUDENT'S EXAM tree or have type === 'note' | 'pdf'.
-    const libraryItems = (rawLibraryItems || []).filter(i => {
-      if (i.type === 'note' || i.type === 'pdf') return false;
-      return resolveFolderVis(i, rawLibraryItems).exam;
-    });
+    setAllItems(rawLibraryItems);
 
     const studentBatchIds = String(user?.batchId).split(',').map((id: string) => id.trim()).filter(Boolean);
     const studentBatches = allBatches.filter(b => studentBatchIds.includes(b.id));
@@ -243,48 +238,9 @@ export function StudentExams() {
        scheduledStartTimeMap: combinedScheduledMap
     });
 
-    // Get assigned items mapping from batch
-    const assignedIds = Object.keys(combinedAssignedItemsMap);
-    setAllItems(libraryItems);
-
-    // Resolve accessible items (assigned root items + descendants recursively + ancestors)
-    const accessible = new Set<string>();
-
-    // Start with explicitly assigned items
-    assignedIds.forEach(id => {
-       if (libraryItems.some(i => i.id === id)) {
-          accessible.add(id);
-       }
-    });
-
-    // Recursively add descendants of folders in the accessible set
-    const addLoadedChildren = (parentId: string) => {
-        const children = libraryItems.filter(i => i.parentId === parentId);
-        for (const c of children) {
-            if (accessible.has(c.id)) continue;
-            accessible.add(c.id);
-            addLoadedChildren(c.id);
-        }
-    };
-    
-    Array.from(accessible).forEach(id => {
-       addLoadedChildren(id);
-    });
-
-    // Add ancestors to ensure folder breadcrumbs and parents exist
-    const addAncestors = (itemId: string) => {
-        const item = libraryItems.find(i => i.id === itemId);
-        if (item?.parentId && !accessible.has(item.parentId)) {
-            accessible.add(item.parentId);
-            addAncestors(item.parentId);
-        }
-    };
-    Array.from(accessible).forEach(id => {
-       addAncestors(id);
-    });
-
-    const filteredItems = libraryItems.filter(i => accessible.has(i.id));
-    setItems(filteredItems);
+    const visible = visibleIds(rawLibraryItems, allBatches, user?.batchId || null);
+    const { folders, files } = buildSide(rawLibraryItems, visible, 'exam');
+    setItems([...folders, ...files]);
   };
 
   const fetchAll = async () => {
@@ -836,6 +792,14 @@ export function StudentExams() {
      }
   };
 
+  const studentExamFolder = useMemo(() => {
+    return items.find(i => {
+      if (sideOf(i) !== 'folder') return false;
+      const t = (i.title || '').trim().toUpperCase();
+      return i.id === 'SR7Ee9hMJHL2VDqXCnE9' || t.includes("STUDENT'S EXAM") || t.includes("STUDENT EXAM");
+    });
+  }, [items]);
+
   const getBreadcrumbs = () => {
      const crumbs: {id: string, title: string}[] = [];
      let curr = currentFolderId;
@@ -845,7 +809,9 @@ export function StudentExams() {
         visited.add(curr);
         const folder = items.find(i => i.id === curr);
         if (folder) {
-           crumbs.unshift({ id: folder.id, title: folder.title });
+           if (!studentExamFolder || folder.id !== studentExamFolder.id) {
+             crumbs.unshift({ id: folder.id, title: folder.title });
+           }
            curr = folder.parentId || null;
         } else {
            break;
@@ -855,68 +821,27 @@ export function StudentExams() {
   };
 
   const breadcrumbs = getBreadcrumbs();
-  
-  const folderVisibility = useMemo(() => {
-     const memo = new Map<string, { exam: boolean, note: boolean }>();
-     const childrenMap = new Map<string, LibraryItem[]>();
-     
-     for (const item of items) {
-         const pId = item.parentId || 'root';
-         if (!childrenMap.has(pId)) childrenMap.set(pId, []);
-         childrenMap.get(pId)!.push(item);
-     }
 
-     const checkVis = (folderId: string, visited = new Set<string>()): { exam: boolean, note: boolean } => {
-         if (memo.has(folderId)) return memo.get(folderId)!;
-         if (visited.has(folderId)) return { exam: false, note: false };
-         visited.add(folderId);
-
-         const children = childrenMap.get(folderId) || [];
-         let hasExam = false;
-         let hasNote = false;
-         
-         for (const child of children) {
-             if (!isFolderItem(child)) {
-                 if (isExamItem(child)) hasExam = true;
-                 if (isNoteItem(child)) hasNote = true;
-             } else {
-                 const childVis = checkVis(child.id, visited);
-                 if (childVis.exam) hasExam = true;
-                 if (childVis.note) hasNote = true;
-             }
-         }
-         
-         const res = { exam: hasExam, note: hasNote };
-         memo.set(folderId, res);
-         return res;
-     };
-
-     for (const item of items) {
-         if (isFolderItem(item)) checkVis(item.id);
-     }
-     return memo;
-  }, [items]);
-
-  const isFolderVisible = (folder: LibraryItem, mode: 'EXAM' | 'NOTE'): boolean => {
-      const vis = folderVisibility.get(folder.id);
-      if (vis) {
-          return mode === 'EXAM' ? vis.exam : vis.note;
-      }
-      return false;
-  };
-
-  const currentItems = items.filter(i => {
+  const currentItems = useMemo(() => {
     if (searchQuery) {
-      const match = String(i?.title || '').toLowerCase().includes(String(searchQuery || '').toLowerCase());
-      if (!match) return false;
-      if (isFolderItem(i)) return resolveFolderVis(i, allItems).exam;
-      return isExamItem(i);
+      return items.filter(i => String(i?.title || '').toLowerCase().includes(searchQuery.toLowerCase()));
     }
-    const inFolder = (i?.parentId || null) === currentFolderId;
-      if (!inFolder) return false;
-      if (isFolderItem(i)) return resolveFolderVis(i, allItems).exam;
-      return isExamItem(i);
-  });
+    if (currentFolderId === null) {
+      if (studentExamFolder) {
+        // Rule 6: start inside "STUDENT'S EXAM", but outside folders & files still reachable below
+        return items.filter(i => {
+          if (sideOf(i) === 'folder') {
+            return i.parentId === studentExamFolder.id ||
+                   ((!i.parentId || i.parentId === '') && i.id !== studentExamFolder.id);
+          } else {
+            return !i.parentId || i.parentId === '' || i.parentId === studentExamFolder.id;
+          }
+        });
+      }
+      return items.filter(i => !i.parentId || i.parentId === '');
+    }
+    return items.filter(i => (i.parentId === '' ? null : (i.parentId || null)) === currentFolderId);
+  }, [items, searchQuery, currentFolderId, studentExamFolder]);
   
   const getMs = (t: any) => {
     if (!t) return 0;
@@ -925,12 +850,12 @@ export function StudentExams() {
     return new Date(t).getTime() || 0;
   };
   
-  const folders = currentItems.filter(i => isFolderItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
-  const files = currentItems.filter(i => !isFolderItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
+  const folders = currentItems.filter(i => sideOf(i) === 'folder').sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
+  const files = currentItems.filter(i => sideOf(i) === 'exam').sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
 
   const allFilesSorted = searchQuery 
     ? files 
-    : items.filter(i => !isFolderItem(i) && isExamItem(i)).sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
+    : items.filter(i => sideOf(i) === 'exam').sort((a,b) => { const seqA = typeof a.sequence === 'number' ? a.sequence : -getMs(a.createdAt); const seqB = typeof b.sequence === 'number' ? b.sequence : -getMs(b.createdAt); if (seqA !== seqB) return seqA - seqB; return getMs(b.createdAt) - getMs(a.createdAt); });
   const formatDate = (timestamp: any) => {
      if (!timestamp) return 'No date';
      const d = safeToDate(timestamp);
@@ -950,9 +875,13 @@ export function StudentExams() {
   const handleBackNavigation = () => {
       if (currentFolderId) {
          const folder = items.find(i => i.id === currentFolderId);
-         setCurrentFolderId(folder?.parentId || null);
+         const parent = folder?.parentId || null;
+         if (!parent || (studentExamFolder && parent === studentExamFolder.id)) {
+           setCurrentFolderId(null);
+         } else {
+           setCurrentFolderId(parent);
+         }
       } else {
-         
          setSearchParams(prev => { prev.delete('kind'); prev.delete('folder'); return prev; });
       }
   };

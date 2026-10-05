@@ -4,7 +4,7 @@ import { createExamSession, endExamSession } from '../lib/exam-session-utils';
 import { PageHeader } from './Pages';
 import { Loader2, Plus, Eye, Share2, Trash2, FileText, FileDown, BookOpen, Folder, FolderPlus, ChevronRight, Pencil, GripVertical } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
-import { resolveFolderVis } from '../lib/library-utils';
+import { sideOf, visibleIds, buildSide } from '../lib/library-split';
 import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
 import { showToast } from '../lib/toast';
 import { confirmAsync } from '../lib/confirmDialog';
@@ -186,10 +186,9 @@ export function AdminLibrary() {
     setLoading(true);
     try {
         const rawLibrary = await api.getLibrary();
-        const libraryItems = rawLibrary.filter(i => {
-          if (i.type === 'exam') return false;
-          return resolveFolderVis(i, rawLibrary).note;
-        });
+        const vis = visibleIds(rawLibrary, [], null);
+        const { folders: noteFolders, files: noteFiles } = buildSide(rawLibrary, vis, 'note');
+        const libraryItems = [...noteFolders, ...noteFiles];
         setAllLibraryItems(libraryItems);
         const fetchedItems = libraryItems.filter(item => {
           const parent = item.parentId === '' ? null : item.parentId;
@@ -825,11 +824,11 @@ export function AdminLibrary() {
   };
 
   const folders = currentItems
-     .filter(i => isFolderItem(i) && resolveFolderVis(i, allLibraryItems).note)
+     .filter(i => sideOf(i) === 'folder')
      .sort(sortItems);
 
   const files = currentItems
-     .filter(i => !isFolderItem(i) && i.type !== 'exam')
+     .filter(i => sideOf(i) === 'note')
      .sort(sortItems);
 
   const handleDragStart = (e: React.DragEvent, fileId: string) => {
@@ -1074,7 +1073,7 @@ export function AdminLibrary() {
              <FolderPlus className="w-4 h-4" /> New Folder
           </button>
           <button 
-             onClick={() => { setItemType(libraryMode === 'EXAM' ? 'exam' : 'note'); setIsUploadModalOpen(true); }}
+             onClick={() => { setItemType('note'); setIsUploadModalOpen(true); }}
              className="flex-1 sm:flex-none justify-center bg-zinc-900 border-2 border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100 text-white font-bold px-4 py-2 uppercase text-xs shadow-[4px_4px_0px_0px_rgba(161,161,170,1)] hover:-translate-y-0.5 transition-transform flex items-center gap-2"
           >
              <Plus className="w-4 h-4" /> Upload
