@@ -1,8 +1,11 @@
 # ROUND R26 REPORT — নোট ↔ Exam স্থায়ী লিংক (Production Deployment)
 
-**Date**: 2026-10-05T17:22:00+05:30  
+**Date**: 2026-10-05T17:24:00+05:30  
 **Branch**: `payments-upi`  
-**Status**: ধাপ ১ থেকে ৬ সম্পূর্ণ সম্পন্ন এবং লাইভ প্রোডাকশনে সফলভাবে ভেরিফাইড।
+**Commit Hash**: `7fa3a0a`  
+**Vercel Live URL**: `https://mondal-coachingmondal-coaching-6fumxywq1.vercel.app`  
+**Branch Preview URL**: `https://mondal-coachingmondal-coaching-git-payments-upi-saikat-mondals-projects-5bf3cc93.vercel.app`  
+**Status**: ধাপ ১ থেকে ৬ সম্পূর্ণ সম্পন্ন, গিটহাবে পুশ ও Vercel-এ সফলভাবে ডেপ্লয়ড।
 
 ---
 
