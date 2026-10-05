@@ -1,5 +1,7 @@
 # READ-ONLY audit: for every NOTE/SHEET, is there an EXAM (a) matched by title, and (b) a sibling exam in the same folder?
 import sqlite3, json, sys, re, unicodedata, collections
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
 db = sqlite3.connect(sys.argv[1] if len(sys.argv) > 1 else '_dbcopy/mc2_snapshot.db')
 L = {d['id']: d for d in (json.loads(r[0]) for r in db.execute("select data from rows where sheet='library'"))}
 kids = {}
@@ -19,7 +21,30 @@ def chain(d0):
     return list(reversed(out))
 exams = [d for d in L.values() if d.get('type') == 'exam' and active(d) and not isf(d)]
 examKeys = [(norm(e.get('title')), norm(e.get('title'), ptitle(e))) for e in exams]
+
+MONTHS = {'january': 1, 'jan': 1, 'february': 2, 'feb': 2, 'march': 3, 'mar': 3, 'april': 4, 'apr': 4, 'may': 5, 'june': 6, 'jun': 6, 'july': 7, 'jul': 7, 'august': 8, 'aug': 8, 'september': 9, 'sep': 9, 'sept': 9, 'october': 10, 'oct': 10, 'november': 11, 'nov': 11, 'december': 12, 'dec': 12}
+def parse_my(s):
+    m = re.search(r'\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b', str(s or ''), re.I)
+    y = re.search(r'\b(20\d\d)\b', str(s or ''))
+    if m and y: return MONTHS[m.group(1).lower()], y.group(1)
+    return None, None
+
+def ca_match(note):
+    ch_str = ' / '.join(chain(note))
+    if 'Current Affairs' not in ch_str and 'CA' not in ch_str: return False
+    nm, ny = parse_my(note.get('title'))
+    if not nm: nm, ny = parse_my(ch_str)
+    if not nm or not ny: return False
+    for e in exams:
+        ech_str = ' / '.join(chain(e))
+        if 'Current Affairs' not in ech_str: continue
+        em, ey = parse_my(e.get('title'))
+        if not em: em, ey = parse_my(ech_str)
+        if em == nm and ey == ny: return True
+    return False
+
 def title_match(note):
+    if ca_match(note): return True
     nk = norm(note.get('title')); pk = norm(note.get('title'), ptitle(note))
     if len(nk) < 4: return False
     return any(nk == ek or ek.startswith(nk) or nk.startswith(ek) or ek == epk or ek.startswith(epk) for ek, epk in examKeys)

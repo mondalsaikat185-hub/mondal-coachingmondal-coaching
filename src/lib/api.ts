@@ -1668,7 +1668,7 @@ export const api = {
     const list = await runGasMethod<any[]>("apiGetMissingExams");
     return Array.isArray(list) ? list : [];
   },
-  createExamNotification: async (req: { batchId: string; examDate: string; examIds: string[] }): Promise<any> => {
+  createExamNotification: async (req: { batchId: string; examDate: string; examStartTime?: string; examIds: string[] }): Promise<any> => {
     globalApiCache.notifications = null;
     globalApiCache.batches = null;
     return runGasMethod<any>("apiCreateExamNotification", req);

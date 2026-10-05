@@ -183,7 +183,7 @@ export function buildSide(
 
   const EXAM_LABEL_MAP: Record<string, string> = {
     'English': 'English Exam',
-    'Math': 'Math Exam',
+    'Math': 'Advance Math Exam',
     'Reasoning': 'Reasoning Exam',
     'GK': 'GK Exam'
   };
@@ -216,6 +216,14 @@ export function buildSide(
           title: newTitle
         });
       }
+      continue;
+    }
+
+    if (side === 'exam' && (folder.title === "Math's Sheet" || folder.id === 'c9SYtn8GIBtPWwzl1hCO')) {
+      folders.push({
+        ...folder,
+        title: 'Math Exam',
+      });
       continue;
     }
 

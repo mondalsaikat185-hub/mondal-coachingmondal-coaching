@@ -685,33 +685,71 @@ function apiGetLibrary() {
   } catch (err) { return { success: false, error: String(err) }; }
 }
 
-function apiGetLibraryItemDetails(itemId) {
+function apiGetLibraryItemDetails(itemId, session) {
   try {
     const key = String(itemId).trim();
+    let item = null;
     const cached = examDetailsCache.get(key);
     if (cached && (Date.now() - cached.time < 1800000)) {
-      return { success: true, data: cached.data };
-    }
-    const found = S.findRowById("library", key);
-    if (!found) return { success: false, error: "Item not found" };
-    const item = Object.assign({}, found.obj);
-    const cols = S.getHeaders("library");
-    for (let i = 0; i < cols.length; i++) {
-      const h = cols[i];
-      if (item[h] === undefined) item[h] = "";
-    }
-    const isFolder = item.isFolder === true || item.isFolder === "true" || item.type === "folder";
-    item.isFolder = isFolder;
-    item.type = isFolder ? "folder" : (item.type === "exam" ? "exam" : "note");
-    item.isEncrypted = item.isEncrypted === true || item.isEncrypted === "true";
-    item.isChunked = item.isChunked === true || item.isChunked === "true";
-    if (item.chunkCount) item.chunkCount = Number(item.chunkCount);
+      item = cached.data;
+    } else {
+      const found = S.findRowById("library", key);
+      if (!found) return { success: false, error: "Item not found" };
+      item = Object.assign({}, found.obj);
+      const cols = S.getHeaders("library");
+      for (let i = 0; i < cols.length; i++) {
+        const h = cols[i];
+        if (item[h] === undefined) item[h] = "";
+      }
+      const isFolder = item.isFolder === true || item.isFolder === "true" || item.type === "folder";
+      item.isFolder = isFolder;
+      item.type = isFolder ? "folder" : (item.type === "exam" ? "exam" : "note");
+      item.isEncrypted = item.isEncrypted === true || item.isEncrypted === "true";
+      item.isChunked = item.isChunked === true || item.isChunked === "true";
+      if (item.chunkCount) item.chunkCount = Number(item.chunkCount);
 
-    if (examDetailsCache.size >= 1000) {
-      const first = examDetailsCache.keys().next().value;
-      examDetailsCache.delete(first);
+      if (examDetailsCache.size >= 1000) {
+        const first = examDetailsCache.keys().next().value;
+        examDetailsCache.delete(first);
+      }
+      examDetailsCache.set(key, { data: item, time: Date.now() });
     }
-    examDetailsCache.set(key, { data: item, time: Date.now() });
+
+    // Server-side check for scheduled lock:
+    // If student and item is an exam, verify if scheduled start time is in the future
+    if (session && session.role !== 'admin' && item.type === 'exam') {
+      const bIds = userBatchIds(session);
+      let isScheduledInFuture = false;
+      let earliestFutureIso = null;
+      let hasAnyBatchOpen = false;
+
+      for (const bid of bIds) {
+        const bf = S.findRowById('batches', bid);
+        if (!bf) continue;
+        const scheduledMap = parseMap(bf.obj.scheduledStartTimeMap);
+        const startIso = scheduledMap[key];
+        if (startIso) {
+          const startTimeMs = new Date(startIso).getTime();
+          if (Date.now() < startTimeMs) {
+            isScheduledInFuture = true;
+            if (!earliestFutureIso || startTimeMs < new Date(earliestFutureIso).getTime()) {
+              earliestFutureIso = startIso;
+            }
+          } else {
+            hasAnyBatchOpen = true;
+          }
+        }
+      }
+
+      if (isScheduledInFuture && !hasAnyBatchOpen) {
+        return {
+          success: false,
+          locked: true,
+          error: `এই Exam-টি এখনো শুরু হয়নি। নির্ধারিত শুরু সময়: ${earliestFutureIso}`,
+          code: 403
+        };
+      }
+    }
 
     return { success: true, data: item };
   } catch (err) { return { success: false, error: String(err) }; }
@@ -995,22 +1033,25 @@ function isIsoDate(s) {
 function dowOfIsoDate(s) { return new Date(s + 'T00:00:00Z').getUTCDay(); }
 function addDaysIso(s, n) { return new Date(new Date(s + 'T00:00:00Z').getTime() + n * 86400000).toISOString().slice(0, 10); }
 
-function resolveBatchSlot(b) {
-  const name = String((b && b.name) || '');
-  let classDay = String((b && b.classDay) !== undefined && b.classDay !== null ? b.classDay : '').trim();
-  if (!/^[0-6]$/.test(classDay)) {
-    if (/shoni|shani|sani|sat|শনি/i.test(name)) classDay = '6';
-    else if (/sun|robi|rabi|রবি/i.test(name)) classDay = '0';
-    else classDay = '';
-  }
-  let slot = '';
-  if (/sakal|sokal|morning|সকাল/i.test(name)) slot = 'morning';
-  else if (/bikal|bikel|afternoon|evening|বিকাল|বিকেল/i.test(name)) slot = 'afternoon';
-  let time = String((b && b.examStartTime) || '').trim();
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
-    time = (classDay && slot && EXAM_SLOT_DEFAULTS[classDay]) ? EXAM_SLOT_DEFAULTS[classDay][slot] : '';
-  }
-  return { classDay, examStartTime: time };
+let resolveBatchSlot;
+try {
+  resolveBatchSlot = require('./batch-schedule').resolveBatchSlot;
+} catch (e) {
+  const BATCH_SCHEDULE_MAP_FALLBACK = {
+    'RK4XX4cswYrHc2WjeSSh': { classDay: '0', examStartTime: '08:05' },
+    '5NAXh0WJOM89VVBzAau0': { classDay: '0', examStartTime: '14:05' },
+    '8b0d0d6f-2f27-4ee3-aaf6-2180eedbdcb8': { classDay: '6', examStartTime: '09:05' },
+    '91oo3knsCkLbyvZVniqF': { classDay: '6', examStartTime: '14:05' },
+  };
+  resolveBatchSlot = function(b) {
+    if (!b) return { classDay: '', examStartTime: '' };
+    const id = String(b.id || '').trim();
+    if (BATCH_SCHEDULE_MAP_FALLBACK[id]) return BATCH_SCHEDULE_MAP_FALLBACK[id];
+    let classDay = String((b && b.classDay) !== undefined && b.classDay !== null ? b.classDay : '').trim();
+    let time = String((b && b.examStartTime) || '').trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) time = '';
+    return { classDay, examStartTime: time };
+  };
 }
 
 function nextClassDate(classDay, nowMs) {
@@ -1043,9 +1084,9 @@ function activeExamReqs(batchId) {
 
 // Regular series given every class day, in this order. Title must be exactly "<name> <number>".
 const EXAM_SERIES = [
-  { key: 'passage', label: 'Passage / Comprehension', re: /^\s*passage\s*(\d+)\s*$/i },
-  { key: 'cloze', label: 'Cloze Test', re: /^\s*cloze\s*test\s*(\d+)\s*$/i },
-  { key: 'parajumbles', label: 'Para Jumbles', re: /^\s*para\s*jumbles?\s*(\d+)\s*$/i },
+  { key: 'passage', label: 'Passage / Comprehension', re: /^\s*(?:passage|comprehension(?:\s*test)?)\s*(\d+)\s*$/i },
+  { key: 'cloze', label: 'Cloze Test', re: /^\s*cloze(?:\s*test)?\s*(\d+)\s*$/i },
+  { key: 'parajumbles', label: 'Para Jumbles', re: /^\s*(?:para\s*jumbles?|parajumbles?)\s*(\d+)\s*$/i },
 ];
 function seriesOf(title) {
   for (const s of EXAM_SERIES) { const m = String(title || '').match(s.re); if (m) return { key: s.key, n: Number(m[1]) }; }
@@ -1053,6 +1094,43 @@ function seriesOf(title) {
 }
 function normTitle(s) { return String(s || '').normalize('NFC').toLowerCase().replace(/\b(from|to|set|part|mock|test|exam|sheet|english|bengali|mcqs?|level|easy|moderate|high)\b/gi, ' ').replace(/[^\p{L}\p{M}\p{N}]/gu, ''); }
 function isActiveItem(it) { return it && it.isActive !== false && it.isActive !== 'false'; }
+
+const MONTH_MAP = {
+  january: 1, jan: 1,
+  february: 2, feb: 2,
+  march: 3, mar: 3,
+  april: 4, apr: 4,
+  may: 5,
+  june: 6, jun: 6,
+  july: 7, jul: 7,
+  august: 8, aug: 8,
+  september: 9, sep: 9, sept: 9,
+  october: 10, oct: 10,
+  november: 11, nov: 11,
+  december: 12, dec: 12,
+};
+const MONTH_RE = /\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b/i;
+const YEAR_RE = /\b(20\d\d)\b/;
+
+function parseMonthYear(s) {
+  if (!s) return null;
+  const m = String(s).match(MONTH_RE);
+  const y = String(s).match(YEAR_RE);
+  if (m && y) return { month: MONTH_MAP[m[1].toLowerCase()], year: y[1] };
+  return null;
+}
+
+function itemPath(it, byId) {
+  const parts = [];
+  let curr = it;
+  let count = 0;
+  while (curr && count < 20) {
+    parts.push(String(curr.title || ''));
+    curr = curr.parentId ? byId[String(curr.parentId)] : null;
+    count++;
+  }
+  return parts.reverse().join(' / ');
+}
 
 // Next set of each regular series for this batch: (highest set already shared/requested) + 1.
 function seriesNext(batch, lib) {
@@ -1105,10 +1183,41 @@ function examCandidates(batch, nowMs, libIn, out) {
     // short note names like "151-175" are read together with their folder ("Idioms 600 151-175")
     const nk = normTitle(it.title);
     const pk = normTitle(((byId[String(it.parentId)] || {}).title || '') + ' ' + (it.title || ''));
-    if (nk.length < 4) continue;
     let matched = false;
-    for (const x of examNorm) {
-      if (x.k === nk || x.k.startsWith(nk) || nk.startsWith(x.k) || x.k === pk || x.k.startsWith(pk)) { matched = true; consider(x.e, assigned[id], it.title || ''); }
+
+    // Current Affairs matching: if note path or title contains Current Affairs / CA and has month+year
+    const notePath = itemPath(it, byId);
+    if (/current affairs|ca/i.test(notePath)) {
+      const nmy = parseMonthYear(it.title) || parseMonthYear(notePath);
+      if (nmy) {
+        const caCandidates = [];
+        for (const e of exams) {
+          const ePath = itemPath(e, byId);
+          if (!/current affairs|ca/i.test(ePath)) continue;
+          const emy = parseMonthYear(e.title) || parseMonthYear(ePath);
+          if (emy && emy.month === nmy.month && emy.year === nmy.year) {
+            const isSsc = /ssc ca/i.test(ePath) ? 0 : 1;
+            caCandidates.push({ exam: e, isSsc, title: e.title || '' });
+          }
+        }
+        if (caCandidates.length) {
+          // SSC CA first, then Banking CA, then by title
+          caCandidates.sort((a, b) => (a.isSsc - b.isSsc) || a.title.localeCompare(b.title));
+          for (const c of caCandidates) {
+            matched = true;
+            consider(c.exam, assigned[id], it.title || '');
+          }
+        }
+      }
+    }
+
+    if (!matched && nk.length >= 4) {
+      for (const x of examNorm) {
+        if (x.k === nk || x.k.startsWith(nk) || nk.startsWith(x.k) || x.k === pk || x.k.startsWith(pk)) {
+          matched = true;
+          consider(x.e, assigned[id], it.title || '');
+        }
+      }
     }
     // a shared note whose exam does not exist in the library yet (e.g. never uploaded) — reported, not silently dropped
     if (!matched && out && Array.isArray(out.missing)) {
@@ -1192,7 +1301,11 @@ function apiCreateExamNotification(req, session) {
     if (examDate < istDateStr(Date.now())) return { success: false, error: 'অতীতের তারিখে exam দেওয়া যাবে না' };
     const batch = f.obj;
     const slot = resolveBatchSlot(batch);
-    if (!slot.examStartTime) return { success: false, error: 'এই batch-এর exam সময় সেট করা নেই — Admin → Batches-এ সেট করুন' };
+    let examStartTime = String(req.examStartTime || '').trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(examStartTime)) {
+      examStartTime = slot.examStartTime;
+    }
+    if (!examStartTime) return { success: false, error: 'এই batch-এর exam সময় সেট করা নেই বা দেওয়া হয়নি' };
     const libList = readSheet('library');
     const lib = {}; for (const it of libList) lib[String(it.id)] = it;
     // regular series (Passage, Cloze Test, Para Jumbles) are always added by the server, in order
@@ -1218,12 +1331,12 @@ function apiCreateExamNotification(req, session) {
     const row = {
       type: 'exam_request',
       title: 'Exam: ' + d + '/' + m + '/' + y,
-      message: (batch.name || '') + ' — ' + d + '/' + m + '/' + y + ' ' + slot.examStartTime + '\n' + titles.map((t, i) => (i + 1) + '. ' + t).join('\n')
+      message: (batch.name || '') + ' — ' + d + '/' + m + '/' + y + ' ' + examStartTime + '\n' + titles.map((t, i) => (i + 1) + '. ' + t).join('\n')
         + (missingTitles.length ? '\n\n⚠️ Exam এখনো তৈরি হয়নি (Admin দেখবেন):\n' + missingTitles.map(t => '• ' + t).join('\n') : ''),
       missingExams: JSON.stringify(missingTitles),
       batchId, batchName: batch.name || '',
       senderId: session.userId, senderRole: session.role === 'admin' ? 'admin' : 'student', senderName,
-      examDate, examIds: JSON.stringify(examIds), examTitles: JSON.stringify(titles),
+      examDate, examStartTime, examIds: JSON.stringify(examIds), examTitles: JSON.stringify(titles),
       status: existing ? 'duplicate' : 'pending', duplicateOf: existing ? existing.id : '',
       readers: '[]',
     };
@@ -1245,8 +1358,9 @@ function runExamScheduler(nowMs) {
     if (!f) { fail('batch missing'); continue; }
     if (!isIsoDate(n.examDate)) { fail('bad date'); continue; }
     const slot = resolveBatchSlot(f.obj);
-    if (!slot.examStartTime) { fail('batch exam time not set'); continue; }
-    const startIso = examStartIso(n.examDate, slot.examStartTime);
+    const time = String(n.examStartTime || slot.examStartTime || '').trim();
+    if (!time) { fail('batch exam time not set'); continue; }
+    const startIso = examStartIso(n.examDate, time);
     const b = f.obj;
     const assigned = parseMap(b.assignedItemsMap), scheduled = parseMap(b.scheduledStartTimeMap);
     const added = [];
@@ -1305,8 +1419,114 @@ function undoExamRequest(n, nowMs) {
   if (changed) updateRow('batches', f.obj.id, { assignedItemsMap: JSON.stringify(assigned), scheduledStartTimeMap: JSON.stringify(scheduled) });
 }
 
+function checkAndCreateAdminAlerts(nowMs) {
+  const lib = readSheet('library');
+  const libById = {}; for (const it of lib) libById[String(it.id)] = it;
+  const batches = readSheet('batches');
+  const notifs = readSheet('notifications');
+  const todayIso = istDateStr(nowMs);
+
+  const existingAlertKeys = new Set();
+  for (const n of notifs) {
+    if (String(n.type) === 'admin_alert') {
+      const k = String(n.dedupKey || '');
+      if (k) existingAlertKeys.add(k);
+    }
+  }
+
+  const alertsCreated = [];
+
+  const triggerAlert = (batch, itemTitle, issueDesc, issueKey) => {
+    const bId = String(batch.id || '');
+    const bName = String(batch.name || 'Batch');
+    const dedupKey = `${bId}:${issueKey}:${todayIso}`;
+    if (existingAlertKeys.has(dedupKey)) return;
+
+    const row = {
+      type: 'admin_alert',
+      target: 'admin',
+      batchId: 'admin',
+      sourceBatchId: bId,
+      senderRole: 'system',
+      senderName: 'System Alert',
+      title: '⚠️ অ্যাডমিন সতর্কতা: ' + bName,
+      message: `${bName} — ${itemTitle} — ${issueDesc}`,
+      dedupKey,
+      date: todayIso,
+      readers: '[]',
+      createdAt: new Date(nowMs).toISOString(),
+    };
+    const saved = saveRow('notifications', row);
+    existingAlertKeys.add(dedupKey);
+    alertsCreated.push(saved);
+  };
+
+  for (const b of batches) {
+    const bId = String(b.id || '');
+    if (!bId) continue;
+
+    // 1. নোটের কোনো exam নেই
+    const outM = { missing: [] };
+    examCandidates(b, nowMs, lib, outM);
+    for (const m of outM.missing) {
+      triggerAlert(b, m.title, 'নোটের কোনো exam নেই', `note_no_exam:${m.id || m.title}`);
+    }
+
+    // 2. Exam requests for this batch
+    const reqs = notifs.filter(n => isExamReq(n) && String(n.batchId) === bId && n.status !== 'duplicate' && n.status !== 'error');
+    const scheduled = parseMap(b.scheduledStartTimeMap);
+
+    for (const n of reqs) {
+      const examIds = parseIdList(n.examIds);
+      const missingTitles = parseIdList(n.missingExams);
+
+      for (const mt of missingTitles) {
+        triggerAlert(b, mt, 'exam পাওয়া যায়নি', `missing_exam:${mt}`);
+      }
+
+      for (const eid of examIds) {
+        const item = libById[eid];
+        if (!item || String(item.type) !== 'exam' || !isActiveItem(item)) {
+          triggerAlert(b, eid, 'exam পাওয়া যায়নি', `exam_not_found:${eid}`);
+          continue;
+        }
+        if (n.status === 'scheduled' && !scheduled[eid]) {
+          triggerAlert(b, item.title || eid, 'notification-এর exam scheduledStartTimeMap-এ নেই', `exam_not_scheduled:${eid}`);
+        }
+      }
+    }
+  }
+
+  return alertsCreated;
+}
+
+function apiCheckAdminAlerts(session) {
+  try {
+    if (!session || session.role !== 'admin') {
+      return { success: false, error: 'Unauthorized: Admin access required', code: 403 };
+    }
+    const alerts = checkAndCreateAdminAlerts(Date.now());
+    return { success: true, alertsCount: alerts.length, alerts };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
 function startExamScheduler(intervalMs) {
-  const tick = () => { try { const r = S.tx(() => runExamScheduler(Date.now())); if (r.done || r.failed || r.late) console.log('[exam-scheduler]', JSON.stringify(r)); } catch (e) { console.error('[exam-scheduler]', e); } };
+  const tick = () => {
+    try {
+      const r = S.tx(() => {
+        const schedRes = runExamScheduler(Date.now());
+        const alertsRes = checkAndCreateAdminAlerts(Date.now());
+        return { scheduler: schedRes, alerts: alertsRes.length };
+      });
+      if (r.scheduler.done || r.scheduler.failed || r.scheduler.late || r.alerts) {
+        console.log('[exam-scheduler]', JSON.stringify(r));
+      }
+    } catch (e) {
+      console.error('[exam-scheduler]', e);
+    }
+  };
   setTimeout(tick, 10 * 1000).unref();
   return setInterval(tick, intervalMs || 5 * 60 * 1000).unref();
 }
@@ -1574,9 +1794,9 @@ function apiFixStudentId(oldId, newId) {
 // DISPATCH (same allowlists as Code.gs doPost)
 // =========================================================================
 const PUBLIC_ACTIONS = ["apiGetPublicBatches", "apiLoginUser", "apiRegisterUser", "apiCheckApplicationStatus", "apiSendOTP", "apiVerifyOTPAndReset"];
-const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiGetMissingExams"];
+const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiGetMissingExams", "apiCheckAdminAlerts"];
 const USER_ACTIONS = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetLibrary", "apiGetBatches", "apiGetExamSessions", "apiGetAnnouncement", "apiGetExamRequestOptions", "apiCreateExamNotification"];
-const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification"];
+const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification", "apiCheckAdminAlerts"];
 const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions", "apiGetPublicBatches", "apiGetMissingExams"]);
 
 const FUNCS = {
@@ -1590,7 +1810,7 @@ const FUNCS = {
   apiChangePasscode, apiLogoutUser, apiSaveUser, apiJoinExamSession, apiSubmitExamResult, apiSubmitPaymentRequest,
   apiGetStudentDashboardData, apiHasSubmitted, apiCreateNotification, apiDeleteNotification, apiGetNotifications,
   apiGetMyProfile, apiGetLibrary, apiGetBatches, apiGetExamSessions, apiGetAnnouncement,
-  apiGetExamRequestOptions, apiCreateExamNotification, apiGetPublicBatches, apiGetMissingExams,
+  apiGetExamRequestOptions, apiCreateExamNotification, apiGetPublicBatches, apiGetMissingExams, apiCheckAdminAlerts,
   // not allow-listed (same as GAS) but kept for parity
   apiHealStudentIds, apiFixStudentId, apiVerifyGatewayPayment,
 };
@@ -1647,4 +1867,4 @@ function invalidateAllCaches() {
   invalidateExamSessionsCache();
 }
 
-module.exports = { handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches, FUNCS, validateSessionToken, _internal: { hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso } };
+module.exports = { handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches, FUNCS, validateSessionToken, _internal: { hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso, checkAndCreateAdminAlerts } };

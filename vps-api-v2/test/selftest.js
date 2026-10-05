@@ -175,6 +175,119 @@ const PUB = 'MondalCoachingSecureToken2026!';
     console.log('exam notification tests OK');
   }
 
+  // ---------- R24 TESTS: Series, Scheduled Lock, Custom Time, CA matching, Admin Alerts ----------
+  {
+    const I = _internal;
+    const day1 = new Date(Date.now() - 86400000).toISOString();
+    r = await call('apiLoginUser', ['9000000001', 'adminpass']); const ad2 = r.data.data.sessionToken;
+
+    // 1. Series progression: Comprehension / Passage regex support
+    S.saveRow('library', { id: 'comp3', title: 'Comprehension 3', type: 'exam' });
+    S.saveRow('library', { id: 'comp4', title: 'Comprehension Test 4', type: 'exam' });
+    S.saveRow('batches', { id: 'bSeries', name: 'Sunday Morning', assignedItemsMap: { comp3: day1 }, scheduledStartTimeMap: { comp3: '2026-01-01T00:00:00.000Z' } });
+    S.updateRow('users', 'stu1', { batchId: 'b1, B2x, bMus, bSeries' });
+    r = await call('apiLoginUser', ['9999999901', 'newpass1']); const stR24 = r.data.data.sessionToken;
+    r = await call('apiGetExamRequestOptions', ['bSeries', ''], stR24);
+    assert.equal(r.success, true);
+    const nextSeries = r.data.data.series.find(s => s.kind === 'passage');
+    assert.ok(nextSeries, 'Should find next series for passage/comprehension');
+    assert.equal(nextSeries.id, 'comp4', 'Comprehension 3 -> Comprehension Test 4');
+
+    // 2. Scheduled Time Lock (Server-side check in apiGetLibraryItemDetails)
+    const futureIso = new Date(Date.now() + 86400000).toISOString();
+    const pastIso = new Date(Date.now() - 86400000).toISOString();
+    S.saveRow('library', { id: 'exLockFuture', title: 'Future Locked Exam', type: 'exam', quizData: '{"q":["secret"]}' });
+    S.saveRow('library', { id: 'exLockPast', title: 'Past Unlocked Exam', type: 'exam', quizData: '{"q":["open"]}' });
+    S.saveRow('batches', { id: 'bLock', name: 'Lock Test Batch', assignedItemsMap: { exLockFuture: day1, exLockPast: day1 }, scheduledStartTimeMap: { exLockFuture: futureIso, exLockPast: pastIso } });
+    S.updateRow('users', 'stu1', { batchId: 'b1, B2x, bMus, bSeries, bLock' });
+    r = await call('apiLoginUser', ['9999999901', 'newpass1']); const stLock = r.data.data.sessionToken;
+
+    // Student tries to access future locked exam -> 403 locked
+    r = await call('apiGetLibraryItemDetails', ['exLockFuture'], stLock);
+    assert.equal(r.success, false);
+    assert.equal(r.locked, true);
+    assert.equal(r.code, 403);
+    assert.ok(!r.data, 'No exam data exposed when locked');
+
+    // Admin accesses future locked exam -> allowed
+    r = await call('apiGetLibraryItemDetails', ['exLockFuture'], ad2);
+    assert.equal(r.success, true);
+    assert.ok(r.data.data.quizData);
+
+    // Student accesses past unlocked exam -> allowed
+    r = await call('apiGetLibraryItemDetails', ['exLockPast'], stLock);
+    assert.equal(r.success, true);
+    assert.ok(r.data.data.quizData);
+
+    // 3. Custom examStartTime in exam notification
+    const futureClassDate = I.nextClassDate('0', Date.now());
+    r = await call('apiCreateExamNotification', [{
+      batchId: 'bSeries',
+      examDate: futureClassDate,
+      examStartTime: '11:45',
+      examIds: []
+    }], stLock);
+    assert.equal(r.success, true);
+    assert.equal(r.data.data.examStartTime, '11:45');
+    const bSeriesRow = S.findRowById('batches', 'bSeries').obj;
+    const bSeriesScheduled = JSON.parse(bSeriesRow.scheduledStartTimeMap);
+    assert.equal(bSeriesScheduled.comp4, I.examStartIso(futureClassDate, '11:45'));
+
+    // 4. Current Affairs matching
+    S.saveRow('library', { id: 'fCaNotes', title: 'Current Affairs', type: 'folder', isFolder: 'true' });
+    S.saveRow('library', { id: 'fCa2026', title: '2026', type: 'folder', parentId: 'fCaNotes', isFolder: 'true' });
+    S.saveRow('library', { id: 'noteJan26', title: 'January, 2026', type: 'note', parentId: 'fCa2026' });
+    S.saveRow('library', { id: 'noteFeb26', title: 'February, 2026', type: 'note', parentId: 'fCa2026' });
+    S.saveRow('library', { id: 'fGkCa', title: 'Current Affairs', type: 'folder', isFolder: 'true' });
+    S.saveRow('library', { id: 'fSscCa', title: 'SSC CA', type: 'folder', parentId: 'fGkCa', isFolder: 'true' });
+    S.saveRow('library', { id: 'fCaJanFolder', title: 'CA Jan, 26', type: 'folder', parentId: 'fSscCa', isFolder: 'true' });
+    S.saveRow('library', { id: 'exJanPart1', title: 'Jan, 2026 Part - 1', type: 'exam', parentId: 'fCaJanFolder' });
+    S.saveRow('library', { id: 'exJanPart2', title: 'Jan, 2026 Part - 2', type: 'exam', parentId: 'fCaJanFolder' });
+    // Feb exam in CA Feb, 26 has no 2026 year -> should NOT match
+    S.saveRow('library', { id: 'fCaFebFolder', title: 'CA Feb, 26', type: 'folder', parentId: 'fSscCa', isFolder: 'true' });
+    S.saveRow('library', { id: 'exFebPt1', title: 'Feb, 26 Pt1', type: 'exam', parentId: 'fCaFebFolder' });
+
+    S.saveRow('batches', {
+      id: 'bCA',
+      name: 'CA Batch',
+      assignedItemsMap: { noteJan26: day1, noteFeb26: day1 },
+      scheduledStartTimeMap: {}
+    });
+    S.updateRow('users', 'stu1', { batchId: 'b1, B2x, bMus, bSeries, bLock, bCA' });
+    r = await call('apiLoginUser', ['9999999901', 'newpass1']); const stCA = r.data.data.sessionToken;
+    r = await call('apiGetExamRequestOptions', ['bCA', ''], stCA);
+    assert.equal(r.success, true);
+    const caMatchedIds = r.data.data.exams.map(x => x.id);
+    assert.ok(caMatchedIds.includes('exJanPart1'), 'Jan Part 1 should be matched candidate');
+    assert.ok(caMatchedIds.includes('exJanPart2'), 'Jan Part 2 should be matched candidate');
+    assert.ok(!caMatchedIds.includes('exFebPt1'), 'Feb without 2026 should not match');
+    const missingTitles = r.data.data.missingExams.map(m => m.title);
+    assert.ok(missingTitles.includes('February, 2026'), 'February, 2026 should be in missing exams');
+
+    // 5. Admin Alerts & Daily Dedup
+    const alerts = S.tx(() => I.checkAndCreateAdminAlerts(Date.now()));
+    assert.ok(alerts.length > 0, 'Admin alerts should be generated');
+    const febAlert = alerts.find(a => a.message.includes('February, 2026'));
+    assert.ok(febAlert, 'Alert for note without exam February, 2026 should exist');
+    assert.equal(febAlert.type, 'admin_alert');
+    assert.equal(febAlert.target, 'admin');
+    assert.ok(febAlert.message.includes('CA Batch — February, 2026 — নোটের কোনো exam নেই'));
+
+    // Student cannot see admin alerts
+    r = await call('apiGetNotifications', [], stCA);
+    assert.ok(r.data.data.every(n => n.type !== 'admin_alert' && n.target !== 'admin'), 'Student must NOT see admin alerts');
+
+    // Admin sees admin alerts
+    r = await call('apiGetNotifications', [], ad2);
+    assert.ok(r.data.data.some(n => n.type === 'admin_alert'), 'Admin must see admin alerts');
+
+    // Daily deduplication: running check again returns 0 new alerts
+    const alertsAgain = S.tx(() => I.checkAndCreateAdminAlerts(Date.now()));
+    assert.equal(alertsAgain.length, 0, 'No duplicate alerts on same day');
+
+    console.log('R24 tests (series, lock, custom time, CA match, admin alerts) OK');
+  }
+
   // ---------- profile photo, register whitelist, last-exam summary, delete cleanup ----------
   {
     const small = 'data:image/webp;base64,' + 'A'.repeat(2000);

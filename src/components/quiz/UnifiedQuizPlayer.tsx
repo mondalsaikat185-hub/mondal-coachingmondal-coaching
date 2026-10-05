@@ -5,6 +5,7 @@ import { useAuth } from '../AuthProvider';
 import { api } from '../../lib/api';
 import { clearCache, addExamToOutbox, removeExamFromOutbox, isExamPendingSync } from '../../lib/cache';
 import { setExamActive } from '../../lib/autoUpdate';
+import { useBackStep } from '../../lib/useBackStep';
 
 // Helper function to format passages and cloze texts coherently
 export function formatPassageText(text: string): string[] {
@@ -139,6 +140,18 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   const [reviewLang, setReviewLang] = useState('en');
   const [submittingResult, setSubmittingResult] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+
+  // Intercept Back button during active exam; show custom confirmation dialog
+  useBackStep('quiz_running', screen === 'QUIZ', () => {
+    setShowLeaveConfirm(true);
+    return false; // Prevents popping out without confirmation
+  });
+
+  // During outer screens (Agreement, Landing, Result): Back cleanly exits player
+  useBackStep('quiz_outer', screen !== 'QUIZ', () => {
+    onBack();
+  });
 
   // Load questions, passages and configs
   const quizData = useMemo(() => {
@@ -1595,6 +1608,42 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                  </div>
               </div>
            </div>
+        )}
+
+        {/* Custom Confirmation Modal when leaving active exam */}
+        {showLeaveConfirm && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-[#1c1c1f] border-2 border-red-600 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 text-red-500 flex items-center justify-center mx-auto text-2xl font-bold">
+                ⚠️
+              </div>
+              <h3 className="serif text-xl font-black text-white uppercase">
+                পরীক্ষা ছেড়ে বেরোবে?
+              </h3>
+              <p className="text-xs text-zinc-300 font-semibold leading-relaxed">
+                পরীক্ষা চলাকালীন বেরোলে আপনার দেওয়া উত্তর কিন্তু জমা হবে না। আপনি কি নিশ্চিতভাবে পরীক্ষা ছেড়ে বেরোতে চান?
+              </p>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLeaveConfirm(false)}
+                  className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold rounded-xl text-xs uppercase tracking-wider transition-colors border-none cursor-pointer"
+                >
+                  না, পরীক্ষা দেব
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLeaveConfirm(false);
+                    onBack();
+                  }}
+                  className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-colors border-none cursor-pointer"
+                >
+                  হ্যাঁ, বেরোব
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
     </div>

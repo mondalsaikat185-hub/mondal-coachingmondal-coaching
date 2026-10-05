@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { api, LibraryItem, cleanPhone } from '../lib/api';
 import { PageHeader } from './Pages';
+import { useBackStep, useFolderBackStep, triggerBack } from '../lib/useBackStep';
 import { Loader2, Eye, FileText, FileDown, BookOpen, Folder, ChevronRight, Clock, Search, FolderOpen, PenTool } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
 import { sideOf, visibleIds, buildSide } from '../lib/library-split';
@@ -886,6 +887,11 @@ export function StudentExams() {
       }
   };
 
+  // Mobile / Android Back button management (one step back per press)
+  useFolderBackStep(currentFolderId, handleBackNavigation);
+  useBackStep('student_exam_preview', !!previewItem, () => setPreviewItem(null));
+  useBackStep('student_exam_tab_mode', viewMode === 'latest', () => setViewMode('folders'));
+
   if (previewLoading) {
      return (
        <div className="flex flex-col items-center justify-center min-h-[50vh]">
@@ -1041,7 +1047,7 @@ export function StudentExams() {
              <PageHeader 
                 title="My Exams" 
                 backTo="/" 
-                onBack={handleBackNavigation} 
+                onBack={currentFolderId ? triggerBack : undefined} 
              />
              <button 
                 onClick={() => {

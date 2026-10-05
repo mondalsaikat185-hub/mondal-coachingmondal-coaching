@@ -226,3 +226,14 @@ Write raw output to `R22_REPORT.md` (not committed). No force-push.
 ---
 ## ROUND R23 — Library cleanup (Notes/Exams display) + Delete test doc. Follow `TASK_R23_LIBRARY_CLEANUP.md` EXACTLY. Raw output into `R23_REPORT.md` (not committed).
 
+---
+## ROUND R24 — Advance Math label, Mobile Back Step hook, Batch Slot Auto Time, Exam Lock, Current Affairs Matching, Admin Alerts. Follow `TASK_R24_BACK_TIME_ALERTS.md` EXACTLY. Raw output into `R24_REPORT.md` (not committed).
+1. `src/lib/library-split.ts`: Advance Math Exam label for STUDENT'S EXAM/Math, Math Exam for Math's Sheet on exams side; Notes side completely unchanged.
+2. `src/lib/useBackStep.ts`: Shared popstate back step navigation for mobile back button. Active quiz interception with custom confirmation dialog ("পরীক্ষা ছেড়ে বেরোবে?").
+3. Batch schedule slot defaults (IST) centralized in `vps-api-v2/batch-schedule.js` and `src/lib/batch-schedule.ts`.
+4. Server-side scheduled lock check in `vps-api-v2/api.js`: students blocked with 403 locked prior to scheduled start time.
+5. Current Affairs month/year matching in `vps-api-v2/api.js` and `tools/note_exam_coverage.py`.
+6. Daily deduped admin alerts for missing exams / unscheduled exams in `vps-api-v2/api.js`.
+7. Selftest + lint + build passed. E2E verified on VPS with Test Batch and 9999999901.
+
+

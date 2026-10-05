@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api, Batch } from '../lib/api';
 import { createExamSession, endExamSession } from '../lib/exam-session-utils';
 import { PageHeader } from './Pages';
+import { useBackStep, useFolderBackStep, triggerBack } from '../lib/useBackStep';
 import { Loader2, Plus, Eye, Share2, Trash2, FileText, FileDown, BookOpen, Folder, FolderPlus, ChevronRight, Pencil, GripVertical } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
 import { sideOf, visibleIds, buildSide } from '../lib/library-split';
@@ -990,13 +991,20 @@ export function AdminLibrary() {
      }
   };
 
+  // Mobile / Android Back button management (one step back per press)
+  useFolderBackStep(currentFolderId, handleBackNavigation);
+  useBackStep('admin_pdf_preview', !!previewItem, () => setPreviewItem(null));
+  useBackStep('admin_folder_modal', isFolderModalOpen, () => setIsFolderModalOpen(false));
+  useBackStep('admin_upload_modal', isUploadModalOpen, () => setIsUploadModalOpen(false));
+  useBackStep('admin_share_modal', isShareModalOpen, () => setIsShareModalOpen(false));
+
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto flex flex-col h-full w-full">
       <div className="flex justify-between items-center mb-4">
         <PageHeader 
            title="Central Library" 
            backTo="/admin" 
-           onBack={currentFolderId ? handleBackNavigation : undefined} 
+           onBack={currentFolderId ? triggerBack : undefined} 
         />
       </div>
 

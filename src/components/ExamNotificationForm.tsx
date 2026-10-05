@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, X, AlertTriangle, CalendarDays } from 'lucide-react';
+import { Loader2, X, AlertTriangle, CalendarDays, Clock } from 'lucide-react';
 import { api, ExamRequestOptions } from '../lib/api';
 import { showToast } from '../lib/toast';
+import { useBackStep } from '../lib/useBackStep';
 
 // "Add Notification for Exam": date (DD/MM/YYYY) -> batch -> exam checkboxes -> preview -> Post.
-// The server stores {batchId, examDate, examIds[]} and schedules the start time itself.
+// The server stores {batchId, examDate, examStartTime, examIds[]} and schedules the start time itself.
 
 const DAY_NAMES = ['রবিবার', 'সোমবার', 'মঙ্গলবার', 'বুধবার', 'বৃহস্পতিবার', 'শুক্রবার', 'শনিবার'];
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -32,12 +33,19 @@ export function ExamNotificationForm({ user, batches, onClose, onPosted }: Props
   const [dd, setDd] = useState('');
   const [mm, setMm] = useState('');
   const [yyyy, setYyyy] = useState('');
+  const [examTime, setExamTime] = useState('');
   const [opts, setOpts] = useState<ExamRequestOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
   const [step, setStep] = useState<'form' | 'preview'>('form');
   const [posting, setPosting] = useState(false);
+
+  // Mobile Back Button steps
+  useBackStep('notif_preview_step', step === 'preview', () => {
+    setStep('form');
+  });
+  useBackStep('notif_form_modal', step === 'form', onClose);
 
   useEffect(() => {
     if (!batchId && batchChoices.length === 1) setBatchId(batchChoices[0].id);
@@ -46,7 +54,7 @@ export function ExamNotificationForm({ user, batches, onClose, onPosted }: Props
   const dateIso = dd && mm && yyyy ? `${yyyy}-${mm}-${dd}` : '';
   const dateValid = !!dateIso && Number(dd) <= daysInMonth(Number(yyyy), Number(mm));
 
-  // Batch chosen -> load options; first time also fills the default date (next class day)
+  // Batch chosen -> load options; first time also fills the default date (next class day) and default time
   useEffect(() => {
     if (!batchId) { setOpts(null); return; }
     let cancelled = false;
@@ -57,6 +65,9 @@ export function ExamNotificationForm({ user, batches, onClose, onPosted }: Props
         setOpts(o);
         if (!dateValid && o.defaultDate) {
           setYyyy(o.defaultDate.slice(0, 4)); setMm(o.defaultDate.slice(5, 7)); setDd(o.defaultDate.slice(8, 10));
+        }
+        if (o.examStartTime && !examTime) {
+          setExamTime(o.examStartTime);
         }
         setSelected(prev => prev.filter(id => o.exams.some(e => e.id === id)));
       })
@@ -83,14 +94,24 @@ export function ExamNotificationForm({ user, batches, onClose, onPosted }: Props
   const titleOf = (id: string) => opts?.exams.find(e => e.id === id)?.title || id;
   const series = opts?.series || [];
   const total = selected.length + series.length;
-  const toggle = (id: string) => setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]));
+  const toggle = (id: string) => {
+    if (!dd && opts?.defaultDate) {
+      setYyyy(opts.defaultDate.slice(0, 4));
+      setMm(opts.defaultDate.slice(5, 7));
+      setDd(opts.defaultDate.slice(8, 10));
+    }
+    if (!examTime && opts?.examStartTime) {
+      setExamTime(opts.examStartTime);
+    }
+    setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id]));
+  };
   const wrongDay = dateValid && opts?.classDay !== '' && opts?.classDay !== undefined && String(dowOf(dateIso)) !== opts.classDay;
 
   const post = async () => {
-    if (posting || !dateValid || !batchId || total === 0) return;
+    if (posting || !dateValid || !batchId || total === 0 || !examTime) return;
     setPosting(true);
     try {
-      const saved = await api.createExamNotification({ batchId, examDate: dateIso, examIds: selected });
+      const saved = await api.createExamNotification({ batchId, examDate: dateIso, examStartTime: examTime, examIds: selected });
       if (saved?.status === 'duplicate') showToast('এই batch ও তারিখের জন্য আগেই পোস্ট আছে — এটি duplicate হিসেবে রাখা হলো', 'info', 5000);
       else showToast('Exam notification পোস্ট হয়েছে ✓');
       onPosted();
@@ -137,13 +158,24 @@ export function ExamNotificationForm({ user, batches, onClose, onPosted }: Props
               {years.map(y => <option key={y} value={String(y)}>{y}</option>)}
             </select>
           </div>
-          {dateValid && (
-            <p className="text-xs font-bold text-zinc-500">
-              {DAY_NAMES[dowOf(dateIso)]}{opts?.examStartTime ? ` · exam খুলবে ${opts.examStartTime}-এ` : ''}
+          <label className="text-xs font-black uppercase">Exam শুরুর সময় (IST)</label>
+          <div className="flex gap-2 items-center">
+            <input
+              type="time"
+              aria-label="Exam Time"
+              value={examTime}
+              onChange={e => setExamTime(e.target.value)}
+              className={sel + ' flex-1'}
+            />
+          </div>
+          {examTime ? (
+            <p className="text-xs font-bold text-zinc-500 flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5" /> Exam শুরু হবে {examTime}-এ (IST) {dateValid ? `(${DAY_NAMES[dowOf(dateIso)]})` : ''}
             </p>
+          ) : (
+            batchId && <p className="text-xs font-bold text-amber-600">Exam শুরুর সময় দিন (উদা: 08:05, 14:05)</p>
           )}
           {wrongDay && <p className="text-xs font-bold text-amber-700 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> এই দিনটি batch-এর ক্লাসের দিন নয় — নিশ্চিত তো?</p>}
-          {batchId && opts && !opts.examStartTime && <p className="text-xs font-bold text-red-600">এই batch-এর exam সময় সেট করা নেই — Admin → Batches-এ সেট করতে হবে।</p>}
           {opts?.existing && <p className="text-xs font-bold text-amber-700 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> এই batch ও তারিখে আগেই পোস্ট আছে ({opts.existing.senderName || '—'})। আবার পোস্ট করলে duplicate হবে।</p>}
 
           {batchId && dateValid && series.length > 0 && (
@@ -190,7 +222,7 @@ export function ExamNotificationForm({ user, batches, onClose, onPosted }: Props
 
           <div className="flex gap-2 justify-end mt-2">
             <button type="button" onClick={onClose} className="text-xs font-bold uppercase py-2 px-3 border-2 border-zinc-900">Cancel</button>
-            <button type="button" disabled={!dateValid || !batchId || total === 0 || !opts?.examStartTime} onClick={() => setStep('preview')}
+            <button type="button" disabled={!dateValid || !batchId || total === 0 || !examTime} onClick={() => setStep('preview')}
               className="text-xs font-black uppercase py-2 px-4 bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 disabled:opacity-50">
               Preview ({total})
             </button>
@@ -201,7 +233,7 @@ export function ExamNotificationForm({ user, batches, onClose, onPosted }: Props
       {step === 'preview' && (
         <>
           <div className="bg-white dark:bg-zinc-900 border-2 border-black dark:border-zinc-100 p-3 flex flex-col gap-2">
-            <p className="text-sm font-black">{opts?.batchName} — {toDmy(dateIso)} ({DAY_NAMES[dowOf(dateIso)]}) {opts?.examStartTime}</p>
+            <p className="text-sm font-black">{opts?.batchName} — {toDmy(dateIso)} ({DAY_NAMES[dowOf(dateIso)]}) {examTime}</p>
             {series.map((s, i) => (
               <div key={s.id} className="flex justify-between items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-1">
                 <span className="text-sm font-bold">{i + 1}. {s.title}</span>
