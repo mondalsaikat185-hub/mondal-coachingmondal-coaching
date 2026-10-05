@@ -222,3 +222,7 @@ Write raw output to `R22_REPORT.md` (not committed). No force-push.
 3. `npm run lint` and `npm run build` pass; `cd vps-api-v2 && node test/selftest.js` → ALL TESTS PASSED.
 4. `git push origin main` (Vercel builds production). `git checkout payments-upi`.
 5. Wait for Vercel production Ready; confirm the production URL loads and its HTML contains `mc-api2-187-127-191-163.sslip.io`. `curl -s https://mc-api2-187-127-191-163.sslip.io/health` (counts NOT lower). Report production URL + commit hash. STOP.
+
+---
+## ROUND R23 — Library cleanup (Notes/Exams display) + Delete test doc. Follow `TASK_R23_LIBRARY_CLEANUP.md` EXACTLY. Raw output into `R23_REPORT.md` (not committed).
+

@@ -171,12 +171,55 @@ export function buildSide(
     }
   }
 
+  // Identify root "STUDENT'S EXAM" folder if present
+  const isStudentsExamRoot = (f: LibrarySplitItem) => {
+    if (sideOf(f) !== 'folder') return false;
+    if (f.parentId && f.parentId !== '') return false;
+    const t = (f.title || '').trim().toUpperCase();
+    return f.id === 'SR7Ee9hMJHL2VDqXCnE9' || t === "STUDENT'S EXAM" || t === 'STUDENT EXAM' || t.includes("STUDENT'S EXAM");
+  };
+
+  const studentsExamRoot = items.find(isStudentsExamRoot);
+
+  const EXAM_LABEL_MAP: Record<string, string> = {
+    'English': 'English Exam',
+    'Math': 'Math Exam',
+    'Reasoning': 'Reasoning Exam',
+    'GK': 'GK Exam'
+  };
+
   const folders: LibrarySplitItem[] = [];
   for (const id of folderIdsWithSideFiles) {
     const folder = itemMap.get(id);
-    if (folder && visible.has(folder.id)) {
-      folders.push(folder);
+    if (!folder || !visible.has(folder.id)) continue;
+
+    // Flatten root "STUDENT'S EXAM"
+    if (studentsExamRoot && folder.id === studentsExamRoot.id) {
+      // Exclude root "STUDENT'S EXAM" on both notes and exams side
+      continue;
     }
+
+    if (studentsExamRoot && folder.parentId === studentsExamRoot.id) {
+      if (side === 'note') {
+        // R23 Item 1: on 'note' side, child folder (GK) shows directly top-level as "GK Notes"
+        folders.push({
+          ...folder,
+          parentId: null,
+          title: (folder.title === 'GK' || folder.id === 'hjnyiV4Lw3aEhJagLTpa') ? 'GK Notes' : (folder.title?.includes('Notes') ? folder.title : `${folder.title} Notes`)
+        });
+      } else {
+        // R23 Item 3: on 'exam' side, flatten English, Math, Reasoning, GK to top-level
+        const newTitle = EXAM_LABEL_MAP[folder.title || ''] || (folder.title?.includes('Exam') ? folder.title : `${folder.title} Exam`);
+        folders.push({
+          ...folder,
+          parentId: null,
+          title: newTitle
+        });
+      }
+      continue;
+    }
+
+    folders.push(folder);
   }
 
   return { folders, files };
