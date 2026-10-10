@@ -2112,18 +2112,43 @@ function apiResetAllExamResults(session) {
 }
 
 function startExamScheduler(intervalMs) {
-  const tick = () => {
+  const tick = async () => {
     try {
       const nowMs = Date.now();
-      const r = S.tx(() => {
-        const schedRes = runExamScheduler(nowMs);
-        const alertsRes = checkAndCreateAdminAlerts(nowMs);
-        const cleanupRes = cleanupExpiredExamNotifications(nowMs);
-        return { scheduler: schedRes, alerts: alertsRes.length, cleanup: cleanupRes };
-      });
+      
+      let schedRes;
+      try {
+        schedRes = S.tx(() => runExamScheduler(nowMs));
+      } catch (e) {
+        console.error('[exam-scheduler-core]', e);
+        schedRes = { done: 0, failed: 0, late: 0 };
+      }
+
+      await new Promise(r => setTimeout(r, 10)); // yield to event loop
+
+      let alertsRes = [];
+      try {
+        alertsRes = S.tx(() => checkAndCreateAdminAlerts(nowMs));
+      } catch (e) {
+        console.error('[exam-scheduler-alerts]', e);
+      }
+
+      await new Promise(r => setTimeout(r, 10)); // yield to event loop
+
+      let cleanupRes = { deleted: 0 };
+      try {
+        cleanupRes = S.tx(() => cleanupExpiredExamNotifications(nowMs));
+      } catch (e) {
+        console.error('[exam-scheduler-cleanup]', e);
+      }
+
+      const r = { scheduler: schedRes, alerts: alertsRes.length, cleanup: cleanupRes };
       if (r.scheduler.done || r.scheduler.failed || r.scheduler.late || r.alerts || (r.cleanup && r.cleanup.deleted)) {
         console.log('[exam-scheduler]', JSON.stringify(r));
       }
+      
+      await new Promise(r => setTimeout(r, 10)); // yield
+
       const weeklyRes = checkAndRunWeeklyReset(nowMs);
       if (weeklyRes) {
         console.log('[weekly-reset]', JSON.stringify(weeklyRes));

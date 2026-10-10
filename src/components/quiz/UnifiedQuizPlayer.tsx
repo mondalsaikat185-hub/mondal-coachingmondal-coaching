@@ -142,6 +142,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
   const [submittingResult, setSubmittingResult] = useState(false);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showTabWarning, setShowTabWarning] = useState(false);
 
   // Intercept Back button during active exam; show custom confirmation dialog
   useBackStep('quiz_running', screen === 'QUIZ', () => {
@@ -408,7 +409,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-         alert("Warning: Tab switching/leaving the exam window was detected. This action will be reported.");
+         setShowTabWarning(true);
       }
     };
 
@@ -1648,6 +1649,32 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                  </div>
               </div>
            </div>
+        )}
+
+        {/* Custom Tab Switch Warning Modal */}
+        {showTabWarning && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
+            <div className="bg-[#1c1c1f] border-2 border-yellow-500 rounded-2xl p-6 max-w-sm w-full shadow-2xl text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-yellow-500/20 text-yellow-500 flex items-center justify-center mx-auto text-2xl font-bold">
+                ⚠️
+              </div>
+              <h3 className="serif text-xl font-black text-white uppercase">
+                সতর্কতা
+              </h3>
+              <p className="text-xs text-zinc-300 font-semibold leading-relaxed">
+                পরীক্ষা চলাকালীন অন্য ট্যাবে বা অ্যাপে যাওয়া নিষেধ। এই ধরনের কার্যকলাপ রেকর্ড করা হচ্ছে।
+              </p>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTabWarning(false)}
+                  className="w-full py-3 bg-yellow-600 hover:bg-yellow-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-colors border-none cursor-pointer"
+                >
+                  আমি বুঝতে পেরেছি
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Custom Confirmation Modal when leaving active exam */}
