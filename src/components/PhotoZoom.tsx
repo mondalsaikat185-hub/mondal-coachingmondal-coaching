@@ -12,7 +12,7 @@ export function PhotoZoom() {
   return (
     <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/75 p-6 mc-nofx" onClick={() => setP(null)}>
       <div className="text-center">
-        <img src={p.src} alt={p.name || 'Photo'} className="w-72 h-72 max-w-full rounded-3xl object-cover shadow-2xl bg-white" />
+        <img src={p.src} alt={p.name || 'Photo'} className="w-72 h-72 max-w-full rounded-3xl object-cover shadow-2xl bg-white" loading="lazy" decoding="async" width="288" height="288" />
         {p.name && <div className="mt-3 text-white font-bold">{p.name}</div>}
         <div className="mt-1 text-white/60 text-xs">Tap to close</div>
       </div>

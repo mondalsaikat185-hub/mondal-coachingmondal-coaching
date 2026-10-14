@@ -4,7 +4,7 @@ import { PageHeader } from './Pages';
 import { Loader2, Eye, FileText, FileDown, BookOpen, Folder, ChevronRight, Clock, Search, FolderOpen, PenTool } from 'lucide-react';
 import { useAuth } from '../components/AuthProvider';
 import { sideOf, visibleIds, buildSide } from '../lib/library-split';
-import { UnifiedQuizPlayer } from '../components/quiz/UnifiedQuizPlayer';
+const UnifiedQuizPlayer = React.lazy(() => import('../components/quiz/UnifiedQuizPlayer').then(m => ({ default: m.UnifiedQuizPlayer })));
 import { verifyAndJoinSession, joinSessionWithoutCode } from '../lib/exam-session-utils';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { safeToDate } from '../lib/utils';
@@ -1085,7 +1085,11 @@ export function StudentLibrary() {
         );
       }
 
-      return <UnifiedQuizPlayer exam={previewItem as any} onBack={() => setPreviewItem(null)} />;
+      return (
+        <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#121214] text-white"><Loader2 className="w-8 h-8 animate-spin text-yellow-400" /></div>}>
+          <UnifiedQuizPlayer exam={previewItem as any} onBack={() => setPreviewItem(null)} />
+        </React.Suspense>
+      );
   }
 
   
@@ -1240,7 +1244,8 @@ export function StudentLibrary() {
                      {folders.map((folder, idx) => (
                         <div key={folder.id} 
                              className="bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors" 
-                             onClick={() => handleOpenFolder(folder.id)}>
+                             style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 64px' }}
+                              onClick={() => handleOpenFolder(folder.id)}>
                            <div className="flex items-center gap-3 w-full">
                               <Folder className="w-6 h-6 text-blue-500 shrink-0" fill="currentColor" />
                               <h4 className="font-black text-lg truncate flex-1">{folder.title}</h4>
@@ -1380,7 +1385,7 @@ function FileCard({ item, onPreview, formatDate, showPath, items, onDownloadChun
    const isLocked = item.type === 'exam' && scheduledTime && scheduledTime.getTime() > Date.now();
 
    return (
-      <div className={`bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`}>
+      <div className={`bg-white dark:bg-zinc-900 border-2 border-zinc-900 dark:border-zinc-100 p-4 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 96px' }}>
          <div>
             <div className="flex items-center gap-2 mb-1 flex-wrap">
                <h4 className="font-black text-lg text-zinc-900 dark:text-zinc-100">{item.title}</h4>
