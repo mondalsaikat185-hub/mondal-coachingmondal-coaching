@@ -843,55 +843,6 @@ export function StudentLibrary() {
 
   const breadcrumbs = getBreadcrumbs();
   
-  const folderVisibility = useMemo(() => {
-     const memo = new Map<string, { exam: boolean, note: boolean }>();
-     const childrenMap = new Map<string, LibraryItem[]>();
-     
-     for (const item of items) {
-         const pId = item.parentId || 'root';
-         if (!childrenMap.has(pId)) childrenMap.set(pId, []);
-         childrenMap.get(pId)!.push(item);
-     }
-
-     const checkVis = (folderId: string, visited = new Set<string>()): { exam: boolean, note: boolean } => {
-         if (memo.has(folderId)) return memo.get(folderId)!;
-         if (visited.has(folderId)) return { exam: false, note: false };
-         visited.add(folderId);
-
-         const children = childrenMap.get(folderId) || [];
-         let hasExam = false;
-         let hasNote = false;
-         
-         for (const child of children) {
-             if (!isFolderItem(child)) {
-                 if (isExamItem(child)) hasExam = true;
-                 if (isNoteItem(child)) hasNote = true;
-             } else {
-                 const childVis = checkVis(child.id, visited);
-                 if (childVis.exam) hasExam = true;
-                 if (childVis.note) hasNote = true;
-             }
-         }
-         
-         const res = { exam: hasExam, note: hasNote };
-         memo.set(folderId, res);
-         return res;
-     };
-
-     for (const item of items) {
-         if (isFolderItem(item)) checkVis(item.id);
-     }
-     return memo;
-  }, [items]);
-
-  const isFolderVisible = (folder: LibraryItem, mode: 'EXAM' | 'NOTE'): boolean => {
-      const vis = folderVisibility.get(folder.id);
-      if (vis) {
-          return mode === 'EXAM' ? vis.exam : vis.note;
-      }
-      return false;
-  };
-
   const currentItems = items.filter(i => {
     if (searchQuery) {
       return String(i?.title || '').toLowerCase().includes(searchQuery.toLowerCase());
