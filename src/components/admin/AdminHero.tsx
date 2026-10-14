@@ -53,7 +53,7 @@ export function AdminHero({ user }: { user: any }) {
         style={{ background: 'radial-gradient(90% 80% at 105% -10%,rgba(255,184,64,.5) 0%,transparent 55%),radial-gradient(70% 80% at -10% 110%,rgba(180,91,255,.5) 0%,transparent 55%),linear-gradient(150deg,#3B2FD9,#1C1A6E 65%,#120F3A)' }}>
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl overflow-hidden shrink-0 grid place-items-center text-2xl font-extrabold bg-gradient-to-b from-amber-300 to-amber-500 text-zinc-900 shadow-[0_5px_0_0_#92400e]">
-            {user?.profilePhotoUrl ? <img src={user.profilePhotoUrl} alt="" className="w-full h-full object-cover" /> : '★'}
+            {user?.profilePhotoUrl ? <img src={user.profilePhotoUrl} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" width="48" height="48" /> : '★'}
           </div>
           <div className="min-w-0">
             <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-[#FFD27A]">Admin · Mondal Coaching</div>
@@ -96,7 +96,7 @@ export function AdminHero({ user }: { user: any }) {
           <div className="flex gap-3 overflow-x-auto px-2 -mx-2 pt-3 pb-4">
             {photos.map(u => (
               <button type="button" key={u.id} onClick={() => zoomPhoto(u.profilePhotoUrl, u.name)} className="shrink-0 w-[72px] text-center">
-                <img src={u.profilePhotoUrl} alt={u.name} className="w-[72px] h-[72px] rounded-2xl object-cover bg-zinc-200" />
+                <img src={u.profilePhotoUrl} alt={u.name} className="w-[72px] h-[72px] rounded-2xl object-cover bg-zinc-200" loading="lazy" decoding="async" width="72" height="72" />
                 <div className="mt-1 text-[11px] font-semibold truncate">{firstName(u.name)}</div>
               </button>
             ))}

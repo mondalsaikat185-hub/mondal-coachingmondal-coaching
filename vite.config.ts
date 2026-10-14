@@ -1,6 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
@@ -18,8 +17,7 @@ export default defineConfig(({mode}) => {
         }
       },
       react(), 
-      tailwindcss(),
-      viteSingleFile()
+      tailwindcss()
     ],
     define: {
       __MC_BUILD_ID__: JSON.stringify(MC_BUILD_ID),
@@ -28,6 +26,20 @@ export default defineConfig(({mode}) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
+      },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/firebase/')) {
+              return 'firebase';
+            }
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router-dom/')) {
+              return 'react-vendor';
+            }
+          },
+        },
       },
     },
     server: {

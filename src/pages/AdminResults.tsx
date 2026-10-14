@@ -351,7 +351,7 @@ export function AdminResults() {
                </thead>
                <tbody>
                  {displayResults.map((r, idx) => (
-                   <tr key={r.id} onClick={() => { if (!deleting) handleSelect(r.id); }} className={`border-b cursor-pointer select-none transition-colors ${selectedIds.has(r.id) ? 'bg-red-100 dark:bg-red-900/40 border-red-400 outline outline-2 outline-red-500' : 'border-zinc-200 dark:border-zinc-800'}`}>
+                   <tr key={r.id} onClick={() => { if (!deleting) handleSelect(r.id); }} className={`border-b cursor-pointer select-none transition-colors ${selectedIds.has(r.id) ? 'bg-red-100 dark:bg-red-900/40 border-red-400 outline outline-2 outline-red-500' : 'border-zinc-200 dark:border-zinc-800'}`} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 48px' }}>
                      <td className="p-2">
                         <input 
                           type="checkbox" 

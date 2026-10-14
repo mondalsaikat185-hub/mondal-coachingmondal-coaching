@@ -1019,7 +1019,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
                     const correctOptionText = reviewOpts[correctIdx] || '';
 
                     return (
-                       <div key={`review-${idx}`} className="bg-[#1c1c1f] border border-zinc-800 rounded-2xl p-6 shadow-md space-y-4 text-left">
+                       <div key={`review-${idx}`} className="bg-[#1c1c1f] border border-zinc-800 rounded-2xl p-6 shadow-md space-y-4 text-left" style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 200px' }}>
                           <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
                              <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-500">
                                 Question {idx + 1}

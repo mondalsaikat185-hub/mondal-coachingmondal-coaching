@@ -323,7 +323,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
 
                              <div className="flex justify-between items-start">
                                 <div className="flex items-start gap-2">
-                                   {user.role === 'admin' && photoOf[notif.senderId] && <img src={photoOf[notif.senderId]} alt="" className="w-9 h-9 rounded-xl object-cover shrink-0" />}
+                                   {user.role === 'admin' && photoOf[notif.senderId] && <img src={photoOf[notif.senderId]} alt="" className="w-9 h-9 rounded-xl object-cover shrink-0" loading="lazy" decoding="async" width="36" height="36" />}
                                 <div>
                                    <h4 className={`text-sm ${isUnread ? 'font-black' : 'font-bold'}`}>{notif.title || 'Notification'}</h4>
                                    {notif.type === 'exam_request' && (

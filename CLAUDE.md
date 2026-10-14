@@ -1,3 +1,10 @@
+# READ FIRST — Saikat's PC Book
+Before any work here, read: C:\Users\monda\Desktop\Automation Book\SAIKAT_PC_BOOK.md
+Follow its Reading Protocol (preamble + index, then only needed sections) and its Writing Protocol
+(update this project's chapter when you change anything; new project -> preamble + chapter + index).
+
+---
+
 # CLAUDE.md — M-C Tuition Application: Master AI Guide
 
 > **READ THIS ENTIRE FILE BEFORE TOUCHING ANY CODE.**

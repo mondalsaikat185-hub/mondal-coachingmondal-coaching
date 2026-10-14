@@ -106,7 +106,7 @@ export function StudentHome({ user, absentCount, paymentStatus, dueMonthsText }:
       {/* Greeting */}
       <div className="flex items-center gap-3">
         <div className="w-14 h-14 rounded-2xl overflow-hidden shrink-0 grid place-items-center text-white text-xl font-extrabold bg-gradient-to-b from-amber-400 to-amber-600 shadow-[0_4px_0_0_#b45309]">
-          {user?.profilePhotoUrl ? <img src={user.profilePhotoUrl} alt="" className="w-full h-full object-cover" /> : firstName(user?.fullName).charAt(0)}
+          {user?.profilePhotoUrl ? <img src={user.profilePhotoUrl} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" width="48" height="48" /> : firstName(user?.fullName).charAt(0)}
         </div>
         <div className="min-w-0">
           <div className="text-[11px] font-bold tracking-[0.16em] uppercase text-amber-600 dark:text-amber-400">Mondal Coaching wishes you</div>
