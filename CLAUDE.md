@@ -13,6 +13,11 @@ Follow its Reading Protocol (preamble + index, then only needed sections) and it
 
 ---
 
+## Rules
+- Login secrets rule: never guess, recover, decode, print or store any password, passcode, PIN, token or secret for any account. If a test needs a login, STOP and ask Saikat; for student flows use only the test student 9999999901.
+
+---
+
 ## 🤝 AI Honesty Commitment (Saikat Mondal-এর সাথে চুক্তি)
 
 > এই project-এ কাজ করার সময় AI-কে অবশ্যই এই নিয়মগুলো মানতে হবে:
