@@ -46,19 +46,21 @@ function RouteFallback() {
   );
 }
 
-const AdminDashboard = React.lazy(() => import("./pages/AdminDashboard"));
-const AdminStudents = React.lazy(() => import("./pages/AdminStudents"));
-const AdminBatches = React.lazy(() => import("./pages/AdminBatches"));
-const AdminLibrary = React.lazy(() => import("./pages/AdminLibrary").then(m => ({ default: m.AdminLibrary })));
-const AdminExams = React.lazy(() => import("./pages/AdminExams").then(m => ({ default: m.AdminExams })));
-const AdminResults = React.lazy(() => import("./pages/AdminResults").then(m => ({ default: m.AdminResults })));
-const AdminSettings = React.lazy(() => import("./pages/AdminSettings").then(m => ({ default: m.AdminSettings })));
-const AdminPayments = React.lazy(() => import("./pages/AdminPayments"));
-const ProfileSetup = React.lazy(() => import("./pages/ProfileSetup").then(m => ({ default: m.ProfileSetup })));
-const StudentLibrary = React.lazy(() => import("./pages/StudentLibrary").then(m => ({ default: m.StudentLibrary })));
-const StudentExams = React.lazy(() => import("./pages/StudentExams").then(m => ({ default: m.StudentExams })));
-const StudentPayments = React.lazy(() => import("./pages/StudentPayments"));
-const AdminBottomNav = React.lazy(() => import("./components/admin/AdminBottomNav").then(m => ({ default: m.AdminBottomNav })));
+import { lazyWithReload } from "./lib/lazyWithReload";
+
+const AdminDashboard = lazyWithReload(() => import("./pages/AdminDashboard"));
+const AdminStudents = lazyWithReload(() => import("./pages/AdminStudents"));
+const AdminBatches = lazyWithReload(() => import("./pages/AdminBatches"));
+const AdminLibrary = lazyWithReload(() => import("./pages/AdminLibrary").then(m => ({ default: m.AdminLibrary })));
+const AdminExams = lazyWithReload(() => import("./pages/AdminExams").then(m => ({ default: m.AdminExams })));
+const AdminResults = lazyWithReload(() => import("./pages/AdminResults").then(m => ({ default: m.AdminResults })));
+const AdminSettings = lazyWithReload(() => import("./pages/AdminSettings").then(m => ({ default: m.AdminSettings })));
+const AdminPayments = lazyWithReload(() => import("./pages/AdminPayments"));
+const ProfileSetup = lazyWithReload(() => import("./pages/ProfileSetup").then(m => ({ default: m.ProfileSetup })));
+const StudentLibrary = lazyWithReload(() => import("./pages/StudentLibrary").then(m => ({ default: m.StudentLibrary })));
+const StudentExams = lazyWithReload(() => import("./pages/StudentExams").then(m => ({ default: m.StudentExams })));
+const StudentPayments = lazyWithReload(() => import("./pages/StudentPayments"));
+const AdminBottomNav = lazyWithReload(() => import("./components/admin/AdminBottomNav").then(m => ({ default: m.AdminBottomNav })));
 function ProtectedRoute({
   children,
   adminOnly = false,

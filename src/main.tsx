@@ -7,6 +7,7 @@ import { AuthProvider } from './components/AuthProvider';
 import { setupAlertPolyfill } from './lib/alert-polyfill';
 import { startAutoUpdate } from './lib/autoUpdate';
 import { installFx } from './lib/fx';
+import { clearChunkReloadGuard } from './lib/lazyWithReload';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 installFx();
@@ -33,6 +34,8 @@ try {
 
 setupAlertPolyfill();
 startAutoUpdate();
+
+setTimeout(() => clearChunkReloadGuard(), 2500);
 
 
 // PWA: Capture install prompt and show install banner
