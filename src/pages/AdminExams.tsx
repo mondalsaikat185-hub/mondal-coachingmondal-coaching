@@ -879,10 +879,6 @@ export function AdminExams() {
      }
   };
 
-  if (previewItem) {
-     return <UnifiedQuizPlayer exam={previewItem as any} onBack={() => setPreviewItem(null)} isPreview={true} />;
-  }
-
   const studentExamFolder = React.useMemo(() => {
     return allLibraryItems.find(i => {
       if (sideOf(i) !== 'folder') return false;
@@ -890,6 +886,10 @@ export function AdminExams() {
       return i.id === 'SR7Ee9hMJHL2VDqXCnE9' || t.includes("STUDENT'S EXAM") || t.includes("STUDENT EXAM");
     });
   }, [allLibraryItems]);
+
+  if (previewItem) {
+     return <UnifiedQuizPlayer exam={previewItem as any} onBack={() => setPreviewItem(null)} isPreview={true} />;
+  }
 
   const breadcrumbs = folderBreadcrumbs.map(b => ({ id: b.id, title: b.title }));
   const currentItems = items.filter(i => {
