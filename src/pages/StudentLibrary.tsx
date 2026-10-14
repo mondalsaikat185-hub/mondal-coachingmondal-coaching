@@ -237,7 +237,12 @@ export function StudentLibrary() {
   const codeSubmitLockRef = useRef(false);
   const downloadLockRef = useRef(false);
 
-  const [weeksToShow, setWeeksToShow] = useState(2);
+  const [visibleCount, setVisibleCount] = useState(30);
+
+  useEffect(() => {
+    setVisibleCount(30);
+  }, [currentFolderId, searchQuery, viewMode]);
+
   const libraryMode = 'NOTE';
 
   const processLibraryData = (allBatches: any[], rawLibraryItems: LibraryItem[]) => {
@@ -838,55 +843,6 @@ export function StudentLibrary() {
 
   const breadcrumbs = getBreadcrumbs();
   
-  const folderVisibility = useMemo(() => {
-     const memo = new Map<string, { exam: boolean, note: boolean }>();
-     const childrenMap = new Map<string, LibraryItem[]>();
-     
-     for (const item of items) {
-         const pId = item.parentId || 'root';
-         if (!childrenMap.has(pId)) childrenMap.set(pId, []);
-         childrenMap.get(pId)!.push(item);
-     }
-
-     const checkVis = (folderId: string, visited = new Set<string>()): { exam: boolean, note: boolean } => {
-         if (memo.has(folderId)) return memo.get(folderId)!;
-         if (visited.has(folderId)) return { exam: false, note: false };
-         visited.add(folderId);
-
-         const children = childrenMap.get(folderId) || [];
-         let hasExam = false;
-         let hasNote = false;
-         
-         for (const child of children) {
-             if (!isFolderItem(child)) {
-                 if (isExamItem(child)) hasExam = true;
-                 if (isNoteItem(child)) hasNote = true;
-             } else {
-                 const childVis = checkVis(child.id, visited);
-                 if (childVis.exam) hasExam = true;
-                 if (childVis.note) hasNote = true;
-             }
-         }
-         
-         const res = { exam: hasExam, note: hasNote };
-         memo.set(folderId, res);
-         return res;
-     };
-
-     for (const item of items) {
-         if (isFolderItem(item)) checkVis(item.id);
-     }
-     return memo;
-  }, [items]);
-
-  const isFolderVisible = (folder: LibraryItem, mode: 'EXAM' | 'NOTE'): boolean => {
-      const vis = folderVisibility.get(folder.id);
-      if (vis) {
-          return mode === 'EXAM' ? vis.exam : vis.note;
-      }
-      return false;
-  };
-
   const currentItems = items.filter(i => {
     if (searchQuery) {
       return String(i?.title || '').toLowerCase().includes(searchQuery.toLowerCase());
@@ -1257,21 +1213,22 @@ export function StudentLibrary() {
                         </div>
                      ))}
                      
-                     {files.map((item, index) => (
+                     {files.slice(0, visibleCount).map((item) => (
                         <FileCard key={item.id} item={item} onPreview={() => handleItemClick(item)} formatDate={formatDate} onDownloadChunked={() => handleDownloadChunked(item)} onDownloadUrl={() => handleDownloadUrl(item)} downloadingId={downloadingId} showPath={!!searchQuery} items={items} scheduledStartTimeMap={studentBatch?.scheduledStartTimeMap} />
                      ))}
                   </>
               )}
             </div>
-            
-            <div className="flex justify-center mt-4">
-                <button 
-                   onClick={() => setWeeksToShow(w => w + 2)}
-                   className="px-6 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold bg-white dark:bg-zinc-900 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:hover:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] transition-all"
-                >
-                   Load Older Materials
-                </button>
-            </div>
+            {files.length > visibleCount && (
+                <div className="flex justify-center mt-4 mb-4">
+                    <button 
+                       onClick={() => setVisibleCount(c => c + 30)}
+                       className="px-6 py-3 border-2 border-zinc-900 dark:border-zinc-100 font-black text-sm uppercase bg-yellow-300 dark:bg-yellow-400 text-black shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:hover:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] transition-all cursor-pointer"
+                    >
+                       আরও দেখুন ({files.length - visibleCount}টি বাকি)
+                    </button>
+                </div>
+            )}
           </>
       ) : (
           <div className="flex flex-col gap-8 mb-8">
@@ -1279,7 +1236,7 @@ export function StudentLibrary() {
                   <div className="p-8 text-center text-zinc-500 font-bold border-2 border-dashed border-zinc-300 dark:border-zinc-700">No materials available yet.</div>
              ) : (
                   Array.from(Object.entries(
-                     allFilesSorted.reduce((acc: any, item) => {
+                     allFilesSorted.slice(0, visibleCount).reduce((acc: any, item) => {
                         const d = safeToDate(item.createdAt);
                         const dateStr = d ? d.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : 'Older';
                         if (!acc[dateStr]) acc[dateStr] = [];
@@ -1297,15 +1254,16 @@ export function StudentLibrary() {
                      </div>
                   ))
               )}
-              
-              <div className="flex justify-center mt-4">
-                 <button 
-                    onClick={() => setWeeksToShow(w => w + 2)}
-                    className="px-6 py-2 border-2 border-zinc-900 dark:border-zinc-100 font-bold bg-white dark:bg-zinc-900 shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:hover:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] transition-all"
-                 >
-                    Load Older Materials
-                 </button>
-              </div>
+               {allFilesSorted.length > visibleCount && (
+                  <div className="flex justify-center mt-4">
+                     <button 
+                        onClick={() => setVisibleCount(c => c + 30)}
+                        className="px-6 py-3 border-2 border-zinc-900 dark:border-zinc-100 font-black text-sm uppercase bg-yellow-300 dark:bg-yellow-400 text-black shadow-[4px_4px_0px_0px_rgba(24,24,27,1)] dark:shadow-[4px_4px_0px_0px_rgba(244,244,245,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-[2px_2px_0px_0px_rgba(24,24,27,1)] dark:hover:shadow-[2px_2px_0px_0px_rgba(244,244,245,1)] transition-all cursor-pointer"
+                     >
+                        আরও দেখুন ({allFilesSorted.length - visibleCount}টি বাকি)
+                     </button>
+                  </div>
+               )}
           </div>
       )}
 
