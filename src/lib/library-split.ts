@@ -22,6 +22,44 @@ export interface BatchItem {
 }
 
 /**
+ * Normalizes legacy folder relations so GK items are cleanly structured under
+ * the unified GK root (l8MW3d6ALGF1fs5OxUxt).
+ */
+export function normalizeLibraryItems(items: LibrarySplitItem[]): LibrarySplitItem[] {
+  return items
+    .filter(item => {
+      // Exclude empty duplicate shell
+      if (item.id === 'JY3TFimcTMlmVBu4S9go') return false;
+      return true;
+    })
+    .map(item => {
+      // 1. Move Static GK (oxxoX1rAin4llTJxOg9h) under Main GK root and ensure clean title
+      if (item.id === 'oxxoX1rAin4llTJxOg9h') {
+        return {
+          ...item,
+          parentId: 'l8MW3d6ALGF1fs5OxUxt',
+          title: 'Static GK'
+        };
+      }
+      // 2. Move Banking CA and SSC CA directly under Current Affairs in Main GK
+      if (item.id === 'jK7FbbtWnMJZQEBFNaag' || item.id === 'id_seaoayahq_mppqi3pf') {
+        return {
+          ...item,
+          parentId: 'YC9c6WbCQWDfmzpNG3XZ'
+        };
+      }
+      // 3. Fallback: If anything has parentId pointing to old GK shell, point to Main GK root
+      if (item.parentId === 'hjnyiV4Lw3aEhJagLTpa') {
+        return {
+          ...item,
+          parentId: 'l8MW3d6ALGF1fs5OxUxt'
+        };
+      }
+      return item;
+    });
+}
+
+/**
  * Rule 1: A FILE's side is decided by its own `type`, never by its folder:
  * - `type === "exam"` -> Exams side
  * - `type === "note"` or `"pdf"` -> Notes side
@@ -43,10 +81,11 @@ export function sideOf(item: LibrarySplitItem | null | undefined): ItemSide {
  *   so the student can navigate down the folder tree.
  */
 export function visibleIds(
-  items: LibrarySplitItem[],
+  rawItems: LibrarySplitItem[],
   batches: BatchItem[],
   studentBatchIds: string[] | string | null
 ): Set<string> {
+  const items = normalizeLibraryItems(rawItems);
   const allIds = new Set(items.map(i => i.id));
   if (studentBatchIds === null) {
     return allIds;
@@ -134,10 +173,11 @@ export function visibleIds(
  * 2. A folder appears on a side ONLY if it contains (at any depth) at least one visible file of that side.
  */
 export function buildSide(
-  items: LibrarySplitItem[],
+  rawItems: LibrarySplitItem[],
   visible: Set<string>,
   side: 'exam' | 'note'
 ): { folders: LibrarySplitItem[]; files: LibrarySplitItem[] } {
+  const items = normalizeLibraryItems(rawItems);
   const itemMap = new Map<string, LibrarySplitItem>();
   for (const item of items) {
     itemMap.set(item.id, item);
@@ -199,16 +239,29 @@ export function buildSide(
       continue;
     }
 
+    // Skip old GK folder and its empty shells
+    if (folder.id === 'hjnyiV4Lw3aEhJagLTpa' || folder.id === 'lCTV6o2anhvnjYmHmozo') {
+      continue;
+    }
+
+    // Main GK Root Folder (l8MW3d6ALGF1fs5OxUxt)
+    if (folder.id === 'l8MW3d6ALGF1fs5OxUxt') {
+      folders.push({
+        ...folder,
+        parentId: null,
+        title: side === 'note' ? 'GK Notes' : 'GK Exam'
+      });
+      continue;
+    }
+
     if (studentsExamRoot && folder.parentId === studentsExamRoot.id) {
       if (side === 'note') {
-        // R23 Item 1: on 'note' side, child folder (GK) shows directly top-level as "GK Notes"
         folders.push({
           ...folder,
           parentId: null,
-          title: (folder.title === 'GK' || folder.id === 'hjnyiV4Lw3aEhJagLTpa') ? 'GK Notes' : (folder.title?.includes('Notes') ? folder.title : `${folder.title} Notes`)
+          title: (folder.title?.includes('Notes') ? folder.title : `${folder.title} Notes`)
         });
       } else {
-        // R23 Item 3: on 'exam' side, flatten English, Math, Reasoning, GK to top-level
         const newTitle = EXAM_LABEL_MAP[folder.title || ''] || (folder.title?.includes('Exam') ? folder.title : `${folder.title} Exam`);
         folders.push({
           ...folder,
@@ -223,6 +276,14 @@ export function buildSide(
       folders.push({
         ...folder,
         title: 'Math Exam',
+      });
+      continue;
+    }
+
+    if (side === 'exam' && folder.title === 'Gram Panchayat Notes') {
+      folders.push({
+        ...folder,
+        title: 'Gram Panchayat Exam',
       });
       continue;
     }
