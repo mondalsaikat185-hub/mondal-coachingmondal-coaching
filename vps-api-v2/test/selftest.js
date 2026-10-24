@@ -651,6 +651,64 @@ const PUB = 'MondalCoachingSecureToken2026!';
     console.log('R31 tests (notification cleanup, weekly reset timing, series preservation, admin reset) OK');
   }
 
+  // ---------- R55: content hash in library updatedAt ----------
+  {
+    const stuTokFresh = (await call('apiLoginUser', ['9999999901', 'newpass1'])).data.data.sessionToken;
+
+    // (a) library summary updatedAt contains "|" and differs when quizData changes
+    S.saveRow('library', {
+      id: 'r55_test_exam',
+      title: 'R55 Test Exam',
+      type: 'exam',
+      isFolder: 'false',
+      quizData: '{"q":[1,2,3]}',
+      createdAt: '2026-10-24T10:00:00.000Z',
+      updatedAt: '2026-10-24T10:00:00.000Z'
+    });
+    _internal.invalidateLibraryCache();
+
+    let libRes = await call('apiGetLibrary', [], stuTokFresh);
+    const item1 = libRes.data.data.find(x => x.id === 'r55_test_exam');
+    assert.ok(item1, 'r55_test_exam must be present in library summary');
+    assert.ok(item1.updatedAt && item1.updatedAt.includes('|'), '(a) library summary updatedAt must contain "|"');
+    const ver1 = item1.updatedAt;
+
+    // (b) apiGetLibraryItemDetails returns the same version string as the summary for that id
+    const detRes1 = await call('apiGetLibraryItemDetails', ['r55_test_exam'], stuTokFresh);
+    assert.equal(detRes1.success, true);
+    assert.equal(detRes1.data.data.updatedAt, ver1, '(b) apiGetLibraryItemDetails returns the exact same version string as the summary');
+
+    // (a continued) differs when quizData changes
+    const baseUpdatedAt = item1.updatedAt.split('|')[0];
+    S.updateRow('library', 'r55_test_exam', { quizData: '{"q":[4,5,6]}', updatedAt: baseUpdatedAt });
+    _internal.invalidateLibraryCache();
+
+    libRes = await call('apiGetLibrary', [], stuTokFresh);
+    const item2 = libRes.data.data.find(x => x.id === 'r55_test_exam');
+    assert.ok(item2.updatedAt && item2.updatedAt.includes('|'), 'updatedAt must contain "|" after quizData change');
+    assert.notEqual(item2.updatedAt, ver1, '(a) library summary updatedAt must differ when quizData changes');
+
+    // (b continued) details matches updated summary
+    const detRes2 = await call('apiGetLibraryItemDetails', ['r55_test_exam'], stuTokFresh);
+    assert.equal(detRes2.data.data.updatedAt, item2.updatedAt, '(b) details matches updated summary version string');
+
+    // (c) saving an item does not store "|" in updatedAt
+    const rSavePiped = await call('apiSaveLibraryItem', [{
+      id: 'r55_test_exam',
+      title: 'R55 Renamed Exam',
+      updatedAt: '2026-10-24T12:00:00.000Z|deadbeef12'
+    }], adminTok);
+    assert.equal(rSavePiped.success, true);
+    const rowInStore = S.findRowById('library', 'r55_test_exam');
+    assert.ok(rowInStore && rowInStore.obj && rowInStore.obj.updatedAt, 'item must have updatedAt in store');
+    assert.ok(!rowInStore.obj.updatedAt.includes('|'), '(c) saving an item must not store "|" in updatedAt in the database');
+
+    // Clean up
+    S.deleteRow('library', 'r55_test_exam');
+    _internal.invalidateLibraryCache();
+    console.log('R55 tests (contentVer hash in summary, details match, save strips pipe) OK');
+  }
+
   // transaction rollback: failing write leaves no partial data
   const before = S.counts();
   try { S.tx(() => { S.saveRow('payments', { x: 1 }); throw new Error('boom'); }); } catch (e) {}

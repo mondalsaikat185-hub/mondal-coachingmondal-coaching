@@ -647,6 +647,16 @@ function apiDeleteBatch(batchId) {
 // =========================================================================
 // LIBRARY
 // =========================================================================
+// Content version: changes whenever the exam/note CONTENT changes, even if updatedAt was not bumped
+// (e.g. direct DB fixes). Phones cache exams by this value, so a changed exam is always re-downloaded.
+function contentVer(item) {
+  const base = String(item.updatedAt || item.createdAt || '').split('|')[0];
+  const qd = item.quizData;
+  const qds = (qd === undefined || qd === null) ? '' : (typeof qd === 'string' ? qd : JSON.stringify(qd));
+  const h = sha256hex(qds + '|' + String(item.contentUrl || '') + '|' + String(item.chunkCount || '') + '|' + String(item.isActive)).substring(0, 10);
+  return base + '|' + h;
+}
+
 function libSummary(item) {
   const isFolder = item.isFolder === true || item.isFolder === "true" || item.type === "folder";
   const itemType = isFolder ? "folder" : (item.type === "exam" ? "exam" : "note");
@@ -669,7 +679,7 @@ function libSummary(item) {
     contentUrl: item.contentUrl || "",
     fileName: item.fileName || "",
     createdAt: item.createdAt || "",
-    updatedAt: item.updatedAt || "",
+    updatedAt: contentVer(item),
     isActive: item.isActive !== false && item.isActive !== "false",
     linkedExamIds: Array.isArray(item.linkedExamIds)
       ? item.linkedExamIds
@@ -737,6 +747,7 @@ function apiGetLibraryItemDetails(itemId, session) {
       item.isEncrypted = item.isEncrypted === true || item.isEncrypted === "true";
       item.isChunked = item.isChunked === true || item.isChunked === "true";
       if (item.chunkCount) item.chunkCount = Number(item.chunkCount);
+      item.updatedAt = contentVer(found.obj);
 
       if (examDetailsCache.size >= 1000) {
         const first = examDetailsCache.keys().next().value;
@@ -861,6 +872,10 @@ function apiSaveLibraryItem(itemData) {
       itemData.isFolder = isFolder;
       if (isFolder) itemData.type = "folder";
       else if (itemData.type !== "exam") itemData.type = "note";
+    }
+    if (itemData) {
+      // never store the content-version suffix; every save is a new version
+      itemData.updatedAt = S.nowIso();
     }
     if (itemData.id) {
       const id = itemData.id; delete itemData.id;
@@ -2503,6 +2518,7 @@ module.exports = {
   _internal: {
     hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso,
     checkAndCreateAdminAlerts, examCandidates, auditUpcomingExams: auditUpcomingExamsInternal, seriesNext, seriesOf,
-    cleanupExpiredExamNotifications, runWeeklyReset, checkAndRunWeeklyReset
+    cleanupExpiredExamNotifications, runWeeklyReset, checkAndRunWeeklyReset,
+    invalidateLibraryCache, contentVer
   }
 };
