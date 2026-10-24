@@ -665,12 +665,17 @@ const makeId = () => "id_" + Math.random().toString(36).substr(2, 9) + "_" + Dat
 // Library Item IndexedDB + Memory Caching Helpers (Zero-Quota Limit, Instant 0ms)
 // =========================================================================
 const CACHE_24H_MS = 24 * 60 * 60 * 1000;
+// Bump CACHE_EPOCH to invalidate every exam/note copy stored on students' phones (e.g. after question fixes on the server).
+const CACHE_EPOCH = 'e2';
+// An exam copy older than this is re-downloaded when opened (falls back to the copy when offline).
+const EXAM_FRESH_MS = 30 * 60 * 1000;
 const memoryExamCache = new Map<string, { data: LibraryItem; version: string; time: number }>();
+function withEpoch(v: string): string { return v ? `${v}#${CACHE_EPOCH}` : ''; }
 
 function getKnownItemVersion(itemId: string): string {
   const libraryList = globalApiCache.library?.data;
   const meta = libraryList?.find(i => i.id === itemId);
-  return meta?.updatedAt || meta?.createdAt || '';
+  return withEpoch(meta?.updatedAt || meta?.createdAt || '');
 }
 
 function getLibraryItemCacheKey(itemId: string, itemTimestamp?: string): string {
@@ -705,7 +710,7 @@ async function getCachedLibraryItemDetailsAsync(itemId: string): Promise<Library
   // 1. Check in-memory cache (0ms instant)
   const mem = memoryExamCache.get(itemId);
   if (mem && mem.data) {
-    if (!knownVer || mem.version === knownVer) {
+    if ((!knownVer && String(mem.version).endsWith(`#${CACHE_EPOCH}`)) || mem.version === knownVer) {
       return mem.data;
     }
   }
@@ -714,7 +719,7 @@ async function getCachedLibraryItemDetailsAsync(itemId: string): Promise<Library
   try {
     const idbEntry = await idbGet<{ data: LibraryItem; version: string; time: number }>(`mc_exam_${itemId}`);
     if (idbEntry && idbEntry.data) {
-      if (!knownVer || idbEntry.version === knownVer) {
+      if ((!knownVer && String(idbEntry.version).endsWith(`#${CACHE_EPOCH}`)) || idbEntry.version === knownVer) {
         memoryExamCache.set(itemId, idbEntry);
         return idbEntry.data;
       }
@@ -725,7 +730,7 @@ async function getCachedLibraryItemDetailsAsync(itemId: string): Promise<Library
   try {
     const legacy = getCachedLibraryItemDetails(itemId);
     if (legacy) {
-      const ver = legacy.updatedAt || legacy.createdAt || '';
+      const ver = withEpoch(legacy.updatedAt || legacy.createdAt || '');
       memoryExamCache.set(itemId, { data: legacy, version: ver, time: Date.now() });
       idbSet(`mc_exam_${itemId}`, { data: legacy, version: ver, time: Date.now() });
       return legacy;
@@ -737,7 +742,7 @@ async function getCachedLibraryItemDetailsAsync(itemId: string): Promise<Library
 
 function setCachedLibraryItemDetails(itemId: string, data: LibraryItem): void {
   try {
-    const key = getLibraryItemCacheKey(itemId, data.updatedAt || data.createdAt);
+    const key = getLibraryItemCacheKey(itemId, withEpoch(data.updatedAt || data.createdAt || 'v1'));
     localStorage.setItem(key, JSON.stringify({
       timestamp: Date.now(),
       data: data
@@ -748,7 +753,7 @@ function setCachedLibraryItemDetails(itemId: string, data: LibraryItem): void {
 }
 
 async function setCachedLibraryItemDetailsAsync(itemId: string, data: LibraryItem): Promise<void> {
-  const version = data.updatedAt || data.createdAt || 'v1';
+  const version = withEpoch(data.updatedAt || data.createdAt || 'v1');
   const entry = { data, version, time: Date.now() };
   memoryExamCache.set(itemId, entry);
   try {
@@ -1220,20 +1225,29 @@ export const api = {
   getLibraryItemDetails: async (itemId: string): Promise<LibraryItem> => {
     if (USE_REAL_API) {
       const cached = await getCachedLibraryItemDetailsAsync(itemId);
-      if (cached) {
+      const cachedTime = memoryExamCache.get(itemId)?.time || 0;
+      const isExam = !!cached && (cached as any).type === 'exam';
+      if (cached && !(isExam && Date.now() - cachedTime > EXAM_FRESH_MS)) {
         return cached;
       }
       let item: LibraryItem | null = null;
       let source = "GAS";
 
-      const vpsItem = await fetchFromVps<LibraryItem>(`/library/${encodeURIComponent(itemId)}`);
-      if (vpsItem && vpsItem.id) {
-        item = vpsItem;
-        source = "VPS (mc-api)";
-      } else {
-        item = await runGasMethod<LibraryItem>("apiGetLibraryItemDetails", itemId);
-        source = "GAS (fallback)";
+      try {
+        const vpsItem = await fetchFromVps<LibraryItem>(`/library/${encodeURIComponent(itemId)}`);
+        if (vpsItem && vpsItem.id) {
+          item = vpsItem;
+          source = "VPS (mc-api)";
+        } else {
+          item = await runGasMethod<LibraryItem>("apiGetLibraryItemDetails", itemId);
+          source = "GAS (fallback)";
+        }
+      } catch (err) {
+        // offline or server error: an older exam copy is better than nothing
+        if (cached) return cached;
+        throw err;
       }
+      if (!item && cached) return cached;
       console.log(`[API] getLibraryItemDetails (${itemId}) loaded from ${source}`);
 
       if (item) {

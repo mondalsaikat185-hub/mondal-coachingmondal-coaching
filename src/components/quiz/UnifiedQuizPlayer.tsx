@@ -209,20 +209,27 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
          const parseOptions = (opts: any) => {
              if (Array.isArray(opts)) return opts;
              if (opts && typeof opts === 'object') {
-                 return [opts.A, opts.B, opts.C, opts.D].filter(Boolean);
+                 // keep positions A-D fixed (no filter), otherwise the answer index would shift
+                 return ['A', 'B', 'C', 'D'].map(k => (opts[k] === undefined || opts[k] === null) ? '' : opts[k]);
              }
              return [];
          };
-         const getCorrectIndex = (ans: any) => {
-             if (typeof ans === 'number') return ans;
+         const getCorrectIndex = (ans: any, opts: any[]) => {
+             if (typeof ans === 'number' && Number.isFinite(ans)) return ans;
              if (typeof ans === 'string') {
                  const u = ans.trim().toUpperCase();
                  if (u === 'A') return 0;
                  if (u === 'B') return 1;
                  if (u === 'C') return 2;
                  if (u === 'D') return 3;
+                 if (/^\d+$/.test(u)) return parseInt(u, 10);
+                 // answer given as the option text
+                 const i = (opts || []).findIndex((o: any) => String(o).trim().toLowerCase() === ans.trim().toLowerCase());
+                 if (i >= 0) return i;
              }
-             return 0;
+             // unknown key: never silently treat "A" as correct
+             console.warn('[QuizPlayer] unknown answer key for question', q?.id ?? idx, ans);
+             return -1;
          };
          
          const qBn = q.question_bn || q?.bengali?.question || q.question || '';
@@ -245,7 +252,7 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              question_en: qEn,
              options_en: parseOptions(optEn),
              explanation_en: expEn,
-             correctIndex: getCorrectIndex(answer),
+             correctIndex: getCorrectIndex(answer, parseOptions(optEn).length ? parseOptions(optEn) : parseOptions(optBn)),
              image: q.image || q.imageUrl || q.img || ''
          };
      });
