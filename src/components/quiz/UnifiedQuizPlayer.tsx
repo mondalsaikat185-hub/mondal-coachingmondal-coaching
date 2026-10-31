@@ -247,7 +247,8 @@ export function UnifiedQuizPlayer({ exam, onBack, isPreview = false }: { exam: E
              ...q,
              id: q.id || q.serial_number || String(idx + 1),
              question_bn: qBn,
-             options_bn: parseOptions(optBn),
+             // Bengali options that are all blank fall back to English (otherwise students see empty options)
+             options_bn: (() => { const o = parseOptions(optBn); return o.some((x: any) => String(x ?? '').trim()) ? o : []; })(),
              explanation_bn: expBn,
              question_en: qEn,
              options_en: parseOptions(optEn),
