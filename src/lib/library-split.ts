@@ -170,7 +170,8 @@ export function visibleIds(
 /**
  * Rules 1 & 2: Build the items for a specific side ('exam' or 'note').
  * 1. A file belongs to the side if sideOf(file) === side.
- * 2. A folder appears on a side ONLY if it contains (at any depth) at least one visible file of that side.
+ * 2. A folder appears on a side if it contains (at any depth) at least one visible file of that side,
+ *    or if it is empty (no files at all) and was created on that side (folderMode).
  */
 export function buildSide(
   rawItems: LibrarySplitItem[],
@@ -208,6 +209,30 @@ export function buildSide(
       }
       pId = parent.parentId;
       depth++;
+    }
+  }
+
+  // 3. Empty folders (no file of ANY side below them) must still show, otherwise a folder the admin
+  //    just created disappears and nothing can be put into it. Show it on the side it was created
+  //    from (folderMode NOTE/EXAM); legacy folders without folderMode show on both sides.
+  const foldersWithAnyFile = new Set<string>();
+  for (const item of items) {
+    if (sideOf(item) === 'folder') continue;
+    let pId = item.parentId; let depth = 0;
+    while (pId && depth < 30 && !foldersWithAnyFile.has(pId)) {
+      foldersWithAnyFile.add(pId);
+      pId = itemMap.get(pId)?.parentId; depth++;
+    }
+  }
+  const wantMode = side === 'note' ? 'NOTE' : 'EXAM';
+  for (const f of items) {
+    if (sideOf(f) !== 'folder' || !visible.has(f.id) || foldersWithAnyFile.has(f.id)) continue;
+    const mode = String(f.folderMode || '').toUpperCase();
+    if (mode && mode !== wantMode) continue;
+    let cur: LibrarySplitItem | undefined = f; let depth = 0;
+    while (cur && depth < 30 && sideOf(cur) === 'folder' && !folderIdsWithSideFiles.has(cur.id)) {
+      folderIdsWithSideFiles.add(cur.id);
+      cur = cur.parentId ? itemMap.get(cur.parentId) : undefined; depth++;
     }
   }
 
