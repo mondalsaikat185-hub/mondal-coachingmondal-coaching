@@ -171,7 +171,7 @@ export function visibleIds(
  * Rules 1 & 2: Build the items for a specific side ('exam' or 'note').
  * 1. A file belongs to the side if sideOf(file) === side.
  * 2. A folder appears on a side if it contains (at any depth) at least one visible file of that side,
- *    or if it is empty (no files at all) and was created on that side (folderMode).
+ *    or if it is a new empty folder created on that side (folderMode).
  */
 export function buildSide(
   rawItems: LibrarySplitItem[],
@@ -212,9 +212,11 @@ export function buildSide(
     }
   }
 
-  // 3. Empty folders (no file of ANY side below them) must still show, otherwise a folder the admin
-  //    just created disappears and nothing can be put into it. Show it on the side it was created
-  //    from (folderMode NOTE/EXAM); legacy folders without folderMode show on both sides.
+  // 3. A folder the admin just created is empty, so rule 2 would hide it and nothing could be put
+  //    into it. Show an EMPTY folder only if it was created on this side (folderMode NOTE/EXAM).
+  //    Old empty folders without folderMode stay hidden (they were never shown before).
+  //    Its parent chain is added only through folders that are already shown on this side or are
+  //    themselves such new folders — never pulls in a folder of the other side.
   const foldersWithAnyFile = new Set<string>();
   for (const item of items) {
     if (sideOf(item) === 'folder') continue;
@@ -225,15 +227,19 @@ export function buildSide(
     }
   }
   const wantMode = side === 'note' ? 'NOTE' : 'EXAM';
+  const isNewEmpty = (f?: LibrarySplitItem) => !!f && sideOf(f) === 'folder' && visible.has(f.id)
+    && !foldersWithAnyFile.has(f.id) && String(f.folderMode || '').toUpperCase() === wantMode;
   for (const f of items) {
-    if (sideOf(f) !== 'folder' || !visible.has(f.id) || foldersWithAnyFile.has(f.id)) continue;
-    const mode = String(f.folderMode || '').toUpperCase();
-    if (mode && mode !== wantMode) continue;
-    let cur: LibrarySplitItem | undefined = f; let depth = 0;
-    while (cur && depth < 30 && sideOf(cur) === 'folder' && !folderIdsWithSideFiles.has(cur.id)) {
-      folderIdsWithSideFiles.add(cur.id);
-      cur = cur.parentId ? itemMap.get(cur.parentId) : undefined; depth++;
+    if (!isNewEmpty(f)) continue;
+    const chain: string[] = []; let cur: LibrarySplitItem | undefined = f; let ok = false; let depth = 0;
+    while (cur && depth < 30) {
+      if (folderIdsWithSideFiles.has(cur.id)) { ok = true; break; }
+      if (!isNewEmpty(cur)) break;
+      chain.push(cur.id);
+      if (!cur.parentId) { ok = true; break; }
+      cur = itemMap.get(cur.parentId); depth++;
     }
+    if (ok) chain.forEach(id => folderIdsWithSideFiles.add(id));
   }
 
   // Identify root "STUDENT'S EXAM" folder if present
