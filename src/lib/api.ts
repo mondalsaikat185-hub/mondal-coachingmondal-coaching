@@ -87,10 +87,12 @@ export interface Batch {
 }
 
 export interface ExamRequestOption { id: string; title: string; examType: string; folder: string; note?: string; classDate: string }
+export interface AllExamOption { id: string; title: string; folderPath: string; subject: string; }
 export interface ExamRequestOptions {
   batchId: string; batchName: string; classDay: string; examStartTime: string;
   defaultDate: string; date: string; exams: ExamRequestOption[];
-  existing: { id: string; senderName: string; examIds: string[] } | null;
+  allExams?: AllExamOption[];
+  existing: { id: string; senderName: string; examIds: string[]; examStartTime?: string; exams?: ExamRequestOption[] } | null;
   series: { id: string; title: string; kind: string; label: string; n: number }[]; // auto-added regular sets (locked)
   missingExams?: { id: string; title: string; folder: string; classDate: string }[]; // shared notes whose exam is not in the library yet
 }
@@ -1715,6 +1717,11 @@ export const api = {
     globalApiCache.notifications = null;
     globalApiCache.batches = null;
     return runGasMethod<any>("apiCreateExamNotification", req);
+  },
+  updateExamNotification: async (req: { id: string; examDate?: string; examStartTime?: string; examIds: string[] }): Promise<any> => {
+    globalApiCache.notifications = null;
+    globalApiCache.batches = null;
+    return runGasMethod<any>("apiUpdateExamNotification", req);
   },
 
   deleteNotification: async (notifId: string): Promise<boolean> => {

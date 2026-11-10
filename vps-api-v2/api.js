@@ -37,6 +37,7 @@ const examDetailsCache = new Map();
 function invalidateLibraryCache(itemId) {
   cachedLibrarySummaries = null;
   cachedLibrarySummariesTime = 0;
+  cache.remove("all_exams_v2");
   if (itemId) examDetailsCache.delete(String(itemId).trim());
   else examDetailsCache.clear();
 }
@@ -1414,6 +1415,56 @@ function checkBatchAccess(batchId, session) {
   return null;
 }
 
+function getAllExamsList(libList) {
+  const cached = cache.get("all_exams_v2");
+  if (cached) {
+    try { return JSON.parse(cached); } catch (e) {}
+  }
+  const lib = libList || readSheet('library');
+  const libById = {};
+  for (const it of lib) libById[String(it.id)] = it;
+
+  const bankRegex = /bank|banking|ibps|sbi|rbi|slst/i;
+  const list = [];
+  for (const it of lib) {
+    if (!it.quizData) continue;
+    const act = it.isActive;
+    if (act === false || act === 'false') continue;
+
+    const parts = [];
+    let curr = it;
+    let count = 0;
+    while (curr && count < 20) {
+      parts.push(String(curr.title || ''));
+      curr = curr.parentId ? libById[String(curr.parentId)] : null;
+      count++;
+    }
+    parts.reverse();
+    const folderParts = parts.slice(0, -1);
+    const folderPath = folderParts.join(' / ');
+    const fullPath = parts.join(' / ');
+
+    if (!folderPath.startsWith("STUDENT'S EXAM") && !folderPath.startsWith("Math's Sheet")) {
+      continue;
+    }
+    if (bankRegex.test(fullPath) || bankRegex.test(String(it.title || ''))) {
+      continue;
+    }
+
+    const subject = folderParts[0] === "Math's Sheet" ? 'Math' : (folderParts[1] || 'Other');
+    list.push({
+      id: String(it.id),
+      title: String(it.title || ''),
+      folderPath,
+      subject
+    });
+  }
+
+  list.sort((a, b) => a.subject.localeCompare(b.subject) || a.folderPath.localeCompare(b.folderPath) || a.title.localeCompare(b.title));
+  cache.put("all_exams_v2", JSON.stringify(list), 300); // 5 minutes
+  return list;
+}
+
 function apiGetExamRequestOptions(batchId, dateIso, session, req = {}) {
   try {
     const f = S.findRowById('batches', batchId);
@@ -1443,6 +1494,7 @@ function apiGetExamRequestOptions(batchId, dateIso, session, req = {}) {
         classDay: slot.classDay, examStartTime: slot.examStartTime,
         defaultDate: nextClassDate(slot.classDay, now), date,
         exams: candidates,
+        allExams: getAllExamsList(libList),
         missingExams: outM.missing,
         series: seriesNext(batch, libList),
         existing: existing ? {
@@ -1483,11 +1535,17 @@ function apiCreateExamNotification(req, session) {
     const examIds = series.concat(picked.filter(id => !seriesSet.has(id) && !seriesOf((lib[id] || {}).title)));
     if (!examIds.length) return { success: false, error: 'অন্তত একটি exam বেছে নিন' };
     if (examIds.length > 25) return { success: false, error: 'একবারে সর্বোচ্চ 25টি exam' };
-    for (const id of examIds) if (!lib[id] || String(lib[id].type) !== 'exam') return { success: false, error: 'Exam পাওয়া যায়নি: ' + id };
+    for (const id of examIds) {
+      if (!lib[id] || (!lib[id].quizData && String(lib[id].type) !== 'exam')) return { success: false, error: 'Exam পাওয়া যায়নি বা বৈধ নয়: ' + id };
+      const act = lib[id].isActive;
+      if (act === false || act === 'false') return { success: false, error: 'Examটি সক্রিয় নয়: ' + (lib[id].title || id) };
+    }
     if (session.role !== 'admin') {
-      const allowed = new Set(examCandidates(batch, Date.now(), libList, null, { allowScheduled: true }).map(x => x.id).concat(series));
+      const allEx = getAllExamsList(libList).map(x => x.id);
+      const cand = examCandidates(batch, Date.now(), libList, null, { allowScheduled: true }).map(x => x.id);
+      const allowed = new Set(cand.concat(series, allEx));
       const bad = examIds.filter(id => !allowed.has(id));
-      if (bad.length) return { success: false, error: 'এই exam আগেই schedule হয়েছে বা এই batch-এর নয়: ' + bad.map(id => lib[id].title).join(', ') };
+      if (bad.length) return { success: false, error: 'এই exam বেছে নেওয়া যাবে না: ' + bad.map(id => (lib[id] ? lib[id].title : id)).join(', ') };
     }
     const existing = activeExamReqs(batchId).find(n => String(n.examDate) === examDate);
     let senderName = session.name || '';
@@ -1535,6 +1593,116 @@ function apiCreateExamNotification(req, session) {
     if (!existing) sched = runExamScheduler(Date.now());
     const after = S.findRowById('notifications', saved.id);
     return { success: true, data: after ? after.obj : saved, duplicate: !!existing, duplicateOf: existing ? existing.id : '', scheduled: sched };
+  } catch (err) { return { success: false, error: String(err) }; }
+}
+
+function apiUpdateExamNotification(req, session) {
+  try {
+    if (!session || !session.userId) return { success: false, error: 'Unauthorized access: Valid session required', code: 401 };
+    req = req || {};
+    const notifId = String(req.id || '').trim();
+    if (!notifId) return { success: false, error: 'Notification ID আবশ্যক' };
+
+    const f = S.findRowById('notifications', notifId);
+    if (!f) return { success: false, error: 'Notification পাওয়া যায়নি' };
+    const old = f.obj;
+    if (!isExamReq(old)) return { success: false, error: 'এটি Exam notification নয়' };
+
+    const nowMs = Date.now();
+    let startMs = null;
+    if (old.startIso) {
+      const t = new Date(old.startIso).getTime();
+      if (!isNaN(t)) startMs = t;
+    }
+    if (startMs === null && old.examDate && old.examStartTime) {
+      const t = new Date(examStartIso(old.examDate, old.examStartTime)).getTime();
+      if (!isNaN(t)) startMs = t;
+    }
+
+    if (session.role !== 'admin') {
+      if (String(old.senderId) !== String(session.userId)) {
+        return { success: false, error: 'শুধু নিজের নোটিফিকেশন এডিট করতে পারবেন', code: 403 };
+      }
+      if (startMs !== null && nowMs >= startMs) {
+        return { success: false, error: 'পরীক্ষা শুরু হয়ে গেছে — আর বদলানো যাবে না', code: 403 };
+      }
+    }
+
+    const batchRow = S.findRowById('batches', old.batchId);
+    if (!batchRow) return { success: false, error: 'Batch পাওয়া যায়নি' };
+    const batch = batchRow.obj;
+    const slot = resolveBatchSlot(batch);
+
+    const examDate = String(req.examDate || old.examDate || '').trim();
+    if (!isIsoDate(examDate)) return { success: false, error: 'তারিখ ঠিক নয় (DD/MM/YYYY)' };
+    if (examDate < istDateStr(nowMs)) return { success: false, error: 'অতীতের তারিখে exam দেওয়া যাবে না' };
+
+    let examStartTime = String(req.examStartTime || old.examStartTime || '').trim();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(examStartTime)) {
+      examStartTime = slot.examStartTime;
+    }
+    if (!examStartTime) return { success: false, error: 'এই batch-এর exam সময় সেট করা নেই বা দেওয়া হয়নি' };
+
+    if (session.role !== 'admin') {
+      if (new Date(examStartIso(examDate, examStartTime)).getTime() <= Date.now()) {
+        return { success: false, error: 'এই সময় পেরিয়ে গেছে — ভবিষ্যতের সময় দিন' };
+      }
+    }
+
+    const picked = Array.from(new Set(parseIdList(req.examIds).map(s => s.trim()).filter(Boolean)));
+    const libList = readSheet('library');
+    const lib = {}; for (const it of libList) lib[String(it.id)] = it;
+
+    const series = seriesNext(batch, libList).map(x => x.id);
+    const seriesSet = new Set(series);
+    const examIds = series.concat(picked.filter(id => !seriesSet.has(id) && !seriesOf((lib[id] || {}).title)));
+
+    if (!examIds.length) return { success: false, error: 'অন্তত একটি exam বেছে নিন' };
+    if (examIds.length > 25) return { success: false, error: 'একবারে সর্বোচ্চ 25টি exam' };
+
+    for (const id of examIds) {
+      if (!lib[id] || (!lib[id].quizData && String(lib[id].type) !== 'exam')) return { success: false, error: 'Exam পাওয়া যায়নি বা বৈধ নয়: ' + id };
+      const act = lib[id].isActive;
+      if (act === false || act === 'false') return { success: false, error: 'Examটি সক্রিয় নয়: ' + (lib[id].title || id) };
+    }
+    if (session.role !== 'admin') {
+      const allEx = getAllExamsList(libList).map(x => x.id);
+      const cand = examCandidates(batch, Date.now(), libList, null, { allowScheduled: true }).map(x => x.id);
+      const allowed = new Set(cand.concat(series, allEx));
+      const bad = examIds.filter(id => !allowed.has(id));
+      if (bad.length) return { success: false, error: 'এই exam বেছে নেওয়া যাবে না: ' + bad.map(id => (lib[id] ? lib[id].title : id)).join(', ') };
+    }
+
+    // 1. Undo old schedule
+    undoExamRequest(old, nowMs);
+
+    // 2. Prepare new fields
+    const [y, m, d] = examDate.split('-');
+    const titles = examIds.map(id => lib[id].title || id);
+    const outM = { missing: [] };
+    examCandidates(batch, Date.now(), libList, outM);
+    const missingTitles = outM.missing.map(m => m.title);
+
+    const msg = (batch.name || '') + ' — ' + d + '/' + m + '/' + y + ' ' + examStartTime + '\n' + titles.map((t, i) => (i + 1) + '. ' + t).join('\n')
+      + (missingTitles.length ? '\n\n⚠️ Exam এখনো তৈরি হয়নি (Admin দেখবেন):\n' + missingTitles.map(t => '• ' + t).join('\n') : '');
+
+    const upd = {
+      examDate,
+      examStartTime,
+      examIds: JSON.stringify(examIds),
+      examTitles: JSON.stringify(titles),
+      missingExams: JSON.stringify(missingTitles),
+      message: msg,
+      status: 'pending',
+      title: 'Exam: ' + d + '/' + m + '/' + y,
+      updatedAt: S.nowIso(),
+    };
+    updateRow('notifications', notifId, upd);
+
+    // 3. Re-run scheduler
+    const sched = runExamScheduler(nowMs);
+    const after = S.findRowById('notifications', notifId);
+    return { success: true, data: after ? after.obj : upd, scheduled: sched };
   } catch (err) { return { success: false, error: String(err) }; }
 }
 
@@ -1958,42 +2126,90 @@ function apiAuditUpcomingExams(session) {
   }
 }
 
-// Auto-cleanup: Deletes student exam notifications whose scheduled start time has passed by 10 minutes or more.
+// Auto-cleanup: 60 minutes after a batch's tuition start time on its class day,
+// deletes all notifications of that batch (exam requests, admin-to-batch notifications,
+// and students' plain messages via ownerBatchId).
+// For exam requests with startIso, deletes at startIso + 60 min.
+// Never deletes notifications with batchId 'all' or of type 'admin_alert'.
+// Preserves exam access in assignedItemsMap/scheduledStartTimeMap and preserves examResults.
 // Archives deleted rows to /data/archive/notifications-YYYY-MM-DD.jsonl before deletion.
-function cleanupExpiredExamNotifications(nowMs) {
+function cleanupBatchNotifications(nowMs) {
   nowMs = nowMs || Date.now();
-  const TEN_MINUTES_MS = 10 * 60 * 1000;
+  const SIXTY_MINUTES_MS = 60 * 60 * 1000;
   const notifs = readSheet('notifications');
+  const batches = readSheet('batches');
+  const batchesById = {};
+  for (const b of batches) batchesById[String(b.id)] = b;
+
+  const istDate = new Date(nowMs + IST_OFFSET_MS);
+  const todayDow = String(istDate.getUTCDay());
+  const todayDateStr = istDate.toISOString().slice(0, 10);
+
+  // Identify batches whose regular class start time + 60 min has passed today
+  const batchExpiredToday = new Set();
+  for (const b of batches) {
+    if (!b || !b.id) continue;
+    const slot = resolveBatchSlot(b);
+    if (slot && String(slot.classDay) === todayDow && slot.examStartTime) {
+      try {
+        const startIso = examStartIso(todayDateStr, slot.examStartTime);
+        const startMs = new Date(startIso).getTime();
+        if (!isNaN(startMs) && nowMs >= startMs + SIXTY_MINUTES_MS) {
+          batchExpiredToday.add(String(b.id));
+        }
+      } catch (e) {}
+    }
+  }
+
   const expired = [];
 
   for (const n of notifs) {
     if (!n || !n.id) continue;
+    const batchId = String(n.batchId || '').trim();
     const type = String(n.type || '').trim().toLowerCase();
-    // Only student exam notifications (type 'exam_request' or 'exam')
-    if (type !== 'exam_request' && type !== 'exam') continue;
 
-    let startMs = null;
-    if (n.startIso) {
-      const t = new Date(n.startIso).getTime();
-      if (!isNaN(t)) startMs = t;
+    // Never delete notifications with batchId 'all' or of type admin_alert
+    if (batchId.toLowerCase() === 'all' || type === 'admin_alert') {
+      continue;
     }
-    if (startMs === null && n.examDate) {
-      let time = String(n.examStartTime || '').trim();
-      if (!time) {
-        const b = S.findRowById('batches', n.batchId);
-        if (b) {
-          const slot = resolveBatchSlot(b.obj);
-          time = slot.examStartTime;
-        }
-      }
-      if (time) {
-        const t = new Date(examStartIso(n.examDate, time)).getTime();
+
+    const isExam = isExamReq(n) || type === 'exam_request' || type === 'exam';
+
+    if (isExam) {
+      let startMs = null;
+      if (n.startIso) {
+        const t = new Date(n.startIso).getTime();
         if (!isNaN(t)) startMs = t;
       }
-    }
+      if (startMs === null && n.examDate) {
+        let time = String(n.examStartTime || '').trim();
+        if (!time && n.batchId && batchesById[String(n.batchId)]) {
+          const slot = resolveBatchSlot(batchesById[String(n.batchId)]);
+          time = slot.examStartTime;
+        }
+        if (time) {
+          try {
+            const t = new Date(examStartIso(n.examDate, time)).getTime();
+            if (!isNaN(t)) startMs = t;
+          } catch (e) {}
+        }
+      }
 
-    if (startMs !== null && nowMs >= startMs + TEN_MINUTES_MS) {
-      expired.push(n);
+      if (startMs !== null) {
+        if (nowMs >= startMs + SIXTY_MINUTES_MS) {
+          expired.push(n);
+        }
+      } else {
+        if (batchId && batchExpiredToday.has(batchId)) {
+          expired.push(n);
+        }
+      }
+    } else {
+      // Non-exam notifications (admin-to-batch, student plain message with ownerBatchId)
+      const targetBatchId = (batchId && batchId !== 'admin') ? batchId : String(n.ownerBatchId || '').trim();
+      if (targetBatchId && batchExpiredToday.has(targetBatchId)) {
+        expired.push(n);
+      }
     }
   }
 
@@ -2018,6 +2234,8 @@ function cleanupExpiredExamNotifications(nowMs) {
 
   return { deleted, archived: expired.length };
 }
+
+const cleanupExpiredExamNotifications = cleanupBatchNotifications;
 
 // Weekly reset: Wipes all examResults and finished/old examSessions.
 // Preserves users, batches, library/exams, notifications, attendance, payments, scheduledStartTimeMap.
@@ -2152,7 +2370,7 @@ function startExamScheduler(intervalMs) {
 
       let cleanupRes = { deleted: 0 };
       try {
-        cleanupRes = S.tx(() => cleanupExpiredExamNotifications(nowMs));
+        cleanupRes = S.tx(() => cleanupBatchNotifications(nowMs));
       } catch (e) {
         console.error('[exam-scheduler-cleanup]', e);
       }
@@ -2224,6 +2442,8 @@ function apiCreateNotification(notifData, session) {
       notifData.batchId = 'admin'; // a student's message goes to the admin only, never to the whole batch
       notifData.senderId = session.userId;
       notifData.type = 'student_to_admin';
+      const bIds = userBatchIds(session);
+      notifData.ownerBatchId = notifData.ownerBatchId || bIds[0] || '';
     }
     return { success: true, data: saveRow("notifications", notifData) };
   } catch (err) { return { success: false, error: String(err) }; }
@@ -2233,13 +2453,10 @@ function apiDeleteNotification(notifId, session) {
   try {
     if (!session || !session.userId) return { success: false, error: "Unauthorized access: Valid session required", code: 401 };
     if (session.role !== 'admin') {
-      const f = S.findRowById("notifications", notifId);
-      if (!f || String(f.obj.senderId) !== String(session.userId)) return { success: false, error: "Forbidden: you can delete only your own notification", code: 403 };
-      if (isExamReq(f.obj)) return { success: false, error: "Exam notification শুধু Admin মুছতে পারেন", code: 403 };
-    } else {
-      const f = S.findRowById("notifications", notifId);
-      if (f) undoExamRequest(f.obj, Date.now());
+      return { success: false, error: "শুধু Admin notification মুছতে পারেন", code: 403 };
     }
+    const f = S.findRowById("notifications", notifId);
+    if (f) undoExamRequest(f.obj, Date.now());
     return { success: deleteRow("notifications", notifId) };
   } catch (err) { return { success: false, error: String(err) }; }
 }
@@ -2440,8 +2657,8 @@ function apiFixStudentId(oldId, newId) {
 // =========================================================================
 const PUBLIC_ACTIONS = ["apiGetPublicBatches", "apiLoginUser", "apiRegisterUser", "apiCheckApplicationStatus", "apiSendOTP", "apiVerifyOTPAndReset"];
 const ADMIN_ACTIONS = ["apiGetUsers", "apiDeleteUser", "apiUpdateUserStatus", "apiAdminResetPasscode", "apiUpdateUserPasscode", "apiSaveBatch", "apiDeleteBatch", "apiSaveLibraryItem", "apiDeleteLibraryItem", "apiDeleteMultipleLibraryItems", "apiShareLibraryItem", "apiUpdateLibrarySequences", "apiUploadFileToDrive", "apiUpdatePaymentStatus", "apiDeleteExamResult", "apiDeleteMultipleExamResults", "apiSaveAnnouncement", "apiSaveSettings", "apiCreateExamSession", "apiEndExamSession", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiGetMissingExams", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams", "apiResetAllExamResults"];
-const USER_ACTIONS = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetLibrary", "apiGetBatches", "apiGetExamSessions", "apiGetAnnouncement", "apiGetExamRequestOptions", "apiCreateExamNotification"];
-const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams", "apiResetAllExamResults"];
+const USER_ACTIONS = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetLibrary", "apiGetBatches", "apiGetExamSessions", "apiGetAnnouncement", "apiGetExamRequestOptions", "apiCreateExamNotification", "apiUpdateExamNotification"];
+const ACTIONS_NEEDING_SESSION = ["apiGetSettings", "apiGetPayments", "apiGetPaymentProof", "apiGetAttendance", "apiGetExamResults", "apiGetLibraryItemDetails", "apiChangePasscode", "apiLogoutUser", "apiSaveUser", "apiJoinExamSession", "apiSubmitExamResult", "apiSubmitPaymentRequest", "apiGetStudentDashboardData", "apiUpdatePaymentStatus", "apiBulkUpdatePaymentStatus", "apiSetStudentExcusedMonths", "apiDeletePayment", "apiHasSubmitted", "apiCreateNotification", "apiDeleteNotification", "apiGetNotifications", "apiGetMyProfile", "apiGetExamRequestOptions", "apiCreateExamNotification", "apiUpdateExamNotification", "apiCheckAdminAlerts", "apiSetNoteExamLink", "apiAuditUpcomingExams", "apiResetAllExamResults"];
 const READ_ONLY = new Set(["apiGetUsers", "apiGetBatches", "apiGetLibrary", "apiGetLibraryItemDetails", "apiGetPayments", "apiGetPaymentProof", "apiGetNotifications", "apiGetMyProfile", "apiGetExamSessions", "apiGetStudentDashboardData", "apiGetExamResults", "apiHasSubmitted", "apiGetAttendance", "apiGetAnnouncement", "apiGetSettings", "apiCheckApplicationStatus", "apiGetExamRequestOptions", "apiGetPublicBatches", "apiGetMissingExams", "apiAuditUpcomingExams"]);
 
 const FUNCS = {
@@ -2455,7 +2672,7 @@ const FUNCS = {
   apiChangePasscode, apiLogoutUser, apiSaveUser, apiJoinExamSession, apiSubmitExamResult, apiSubmitPaymentRequest,
   apiGetStudentDashboardData, apiHasSubmitted, apiCreateNotification, apiDeleteNotification, apiGetNotifications,
   apiGetMyProfile, apiGetLibrary, apiGetBatches, apiGetExamSessions, apiGetAnnouncement,
-  apiGetExamRequestOptions, apiCreateExamNotification, apiGetPublicBatches, apiGetMissingExams, apiCheckAdminAlerts,
+  apiGetExamRequestOptions, apiCreateExamNotification, apiUpdateExamNotification, apiGetPublicBatches, apiGetMissingExams, apiCheckAdminAlerts,
   apiSetNoteExamLink, apiAuditUpcomingExams, apiResetAllExamResults,
   // not allow-listed (same as GAS) but kept for parity
   apiHealStudentIds, apiFixStudentId, apiVerifyGatewayPayment,
@@ -2515,10 +2732,11 @@ function invalidateAllCaches() {
 
 module.exports = {
   handleRpc, purgeExpiredSessions, startExamScheduler, invalidateAllCaches, FUNCS, validateSessionToken,
+  apiUpdateExamNotification,
   _internal: {
     hashPasscode, cleanPhone, createSession, resolveBatchSlot, nextClassDate, runExamScheduler, examStartIso,
     checkAndCreateAdminAlerts, examCandidates, auditUpcomingExams: auditUpcomingExamsInternal, seriesNext, seriesOf,
-    cleanupExpiredExamNotifications, runWeeklyReset, checkAndRunWeeklyReset,
-    invalidateLibraryCache, contentVer
+    cleanupExpiredExamNotifications, cleanupBatchNotifications, runWeeklyReset, checkAndRunWeeklyReset,
+    invalidateLibraryCache, contentVer, apiUpdateExamNotification, getAllExamsList
   }
 };

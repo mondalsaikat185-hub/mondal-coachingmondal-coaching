@@ -51,7 +51,8 @@ const PUB = 'MondalCoachingSecureToken2026!';
   r = await call('apiCreateNotification', [{ title: 'from stu', message: 'x', batchId: 'admin' }], stuTok); const nid = r.data.data.id;
   r = await call('apiGetNotifications', [], adminTok); assert.equal(r.data.data.length, 2);
   r = await call('apiDeleteNotification', ['n1'], stuTok); assert.equal(r.code, 403);
-  r = await call('apiDeleteNotification', [nid], stuTok); assert.equal(r.success, true);
+  r = await call('apiDeleteNotification', [nid], stuTok); assert.equal(r.code, 403); assert.equal(r.error, 'শুধু Admin notification মুছতে পারেন');
+  r = await call('apiDeleteNotification', [nid], adminTok); assert.equal(r.success, true);
 
   // exams
   r = await call('apiSubmitExamResult', [{ id: 'res1', examId: 'lib1', score: 5, studentId: 'hacker' }], stuTok); assert.equal(r.data.data.studentId, 'stu1');
@@ -565,19 +566,19 @@ const PUB = 'MondalCoachingSecureToken2026!';
       message: 'Some alert'
     });
 
-    // Test at 9:14:59 IST (9 mins 59s after start -> < 10 mins)
-    const time914Ms = new Date(dateStr + 'T09:14:59+05:30').getTime();
-    const clean914 = _internal.cleanupExpiredExamNotifications(time914Ms);
-    assert.equal(clean914.deleted, 0, 'No notification should be deleted at 9:14');
-    assert.ok(S.findRowById('notifications', 'notif_morn'), '(a) 9:05 notification must still exist at 9:14');
+    // Test at start + 59 min: 10:04:00 IST (< 60 mins)
+    const time1004Ms = new Date(dateStr + 'T10:04:00+05:30').getTime();
+    const clean1004 = _internal.cleanupExpiredExamNotifications(time1004Ms);
+    assert.equal(clean1004.deleted, 0, 'No notification should be deleted at start + 59 min');
+    assert.ok(S.findRowById('notifications', 'notif_morn'), '(a) 9:05 notification must still exist at 10:04');
     assert.ok(S.findRowById('notifications', 'notif_aft'), '(b) Afternoon notification must still exist');
     assert.ok(S.findRowById('notifications', 'notif_admin_alert'), '(c) admin_alert must not be deleted');
 
-    // Test at 9:15:00 IST (exactly 10 mins after start)
-    const time915Ms = new Date(dateStr + 'T09:15:00+05:30').getTime();
-    const clean915 = _internal.cleanupExpiredExamNotifications(time915Ms);
-    assert.equal(clean915.deleted, 1, 'Exactly 1 notification should be deleted at 9:15');
-    assert.equal(S.findRowById('notifications', 'notif_morn'), null, '(a) 9:05 notification must be deleted at 9:15');
+    // Test at start + 61 min: 10:06:00 IST (> 60 mins)
+    const time1006Ms = new Date(dateStr + 'T10:06:00+05:30').getTime();
+    const clean1006 = _internal.cleanupExpiredExamNotifications(time1006Ms);
+    assert.equal(clean1006.deleted, 1, 'Exactly 1 notification should be deleted at 10:06');
+    assert.equal(S.findRowById('notifications', 'notif_morn'), null, '(a) 9:05 notification must be deleted at 10:06');
     assert.ok(S.findRowById('notifications', 'notif_aft'), '(b) Other batch notification must NOT be deleted');
     assert.ok(S.findRowById('notifications', 'notif_admin_alert'), '(c) admin_alert must NOT be deleted');
 
@@ -707,6 +708,230 @@ const PUB = 'MondalCoachingSecureToken2026!';
     S.deleteRow('library', 'r55_test_exam');
     _internal.invalidateLibraryCache();
     console.log('R55 tests (contentVer hash in summary, details match, save strips pipe) OK');
+  }
+
+  // =========================================================================
+  // R71 tests: allExams, picking, edit, sender restriction, admin delete, batch auto-cleanup
+  // =========================================================================
+  {
+    const { DatabaseSync } = require('node:sqlite');
+
+    // 1. allExams has >600 entries on a copy of _dbcopy/r70u_live.db, includes Math, English, GK, Reasoning, no bank/slst
+    const liveDbPath = path.resolve(__dirname, '../../_dbcopy/r70u_live.db');
+    if (fs.existsSync(liveDbPath)) {
+      const liveDb = new DatabaseSync(liveDbPath, { readOnly: true });
+      const libRows = liveDb.prepare("SELECT data FROM rows WHERE sheet = 'library'").all().map(r => JSON.parse(r.data));
+      liveDb.close();
+
+      const allEx = _internal.getAllExamsList(libRows);
+      assert.ok(allEx.length > 600, 'allExams must have > 600 entries on live copy (found ' + allEx.length + ')');
+      const subs = new Set(allEx.map(x => x.subject));
+      assert.ok(subs.has('Math'), 'allExams includes Math');
+      assert.ok(subs.has('English'), 'allExams includes English');
+      assert.ok(subs.has('GK'), 'allExams includes GK');
+      assert.ok(subs.has('Reasoning'), 'allExams includes Reasoning');
+
+      const bankRegex = /bank|banking|ibps|sbi|rbi|slst/i;
+      for (const x of allEx) {
+        assert.ok(!bankRegex.test(x.title), 'no bank title: ' + x.title);
+        assert.ok(!bankRegex.test(x.folderPath), 'no bank path: ' + x.folderPath);
+      }
+    }
+
+    // Set up test batch, student and exams for tests 2-6
+    S.saveRow('batches', { id: 'bR71', name: 'Sunday Morning', classDay: '0', examStartTime: '08:05', assignedItemsMap: {}, scheduledStartTimeMap: {} });
+    S.saveRow('users', { id: 'stuR71', phone: '9999999971', role: 'student', status: 'active', batchId: 'bR71', passcode: _internal.hashPasscode('pass71', 'salt71'), salt: 'salt71', tokenVersion: 1 });
+    r = await call('apiLoginUser', ['9999999971', 'pass71']);
+    const stu71Tok = r.data.data.sessionToken;
+
+    // Library items
+    S.saveRow('library', { id: 'fR71Root', title: "STUDENT'S EXAM", type: 'folder', isFolder: 'true', isActive: 'true' });
+    S.saveRow('library', { id: 'fR71Math', title: 'Math', type: 'folder', parentId: 'fR71Root', isFolder: 'true', isActive: 'true' });
+    S.saveRow('library', { id: 'fR71Note', title: 'Chapter R71', type: 'folder', isFolder: 'true', isActive: 'true' });
+    S.saveRow('library', { id: 'noteR71', title: 'Note R71', type: 'note', parentId: 'fR71Note', isActive: 'true', linkedExamIds: JSON.stringify(['exR71Hw']) });
+    S.saveRow('library', { id: 'exR71Hw', title: 'Exam R71 HW', type: 'exam', parentId: 'fR71Note', isActive: 'true', quizData: '[{"q":1}]' });
+    S.saveRow('library', { id: 'exR71NonHw', title: 'Exam R71 NonHW', type: 'exam', parentId: 'fR71Math', isActive: 'true', quizData: '[{"q":1}]' });
+    S.saveRow('library', { id: 'exR71New', title: 'Exam R71 New', type: 'exam', parentId: 'fR71Math', isActive: 'true', quizData: '[{"q":1}]' });
+
+    const nowIso71 = new Date().toISOString();
+    S.updateRow('batches', 'bR71', { assignedItemsMap: { noteR71: nowIso71 } });
+    _internal.invalidateLibraryCache();
+
+    // 2. Student creates request with 1 hw exam and 1 non-hw exam -> both scheduled
+    const sunDate71 = '2026-11-15';
+    r = await call('apiCreateExamNotification', [{
+      batchId: 'bR71',
+      examDate: sunDate71,
+      examStartTime: '08:05',
+      examIds: ['exR71Hw', 'exR71NonHw']
+    }], stu71Tok);
+    assert.equal(r.success, true, r.error);
+    const req71Id = r.data.data.id;
+    assert.equal(r.data.data.status, 'scheduled');
+
+    r = await call('apiGetBatches', [], adminTok);
+    let bRow = r.data.data.find(b => b.id === 'bR71');
+    const expStart71 = _internal.examStartIso(sunDate71, '08:05');
+    assert.ok(bRow.assignedItemsMap.exR71Hw, 'hw exam assigned');
+    assert.ok(bRow.assignedItemsMap.exR71NonHw, 'non-hw exam assigned');
+    assert.equal(bRow.scheduledStartTimeMap.exR71Hw, expStart71, 'hw exam scheduled');
+    assert.equal(bRow.scheduledStartTimeMap.exR71NonHw, expStart71, 'non-hw exam scheduled');
+
+    // 3. Student edits before start: removed exam's access removed; new exam scheduled
+    r = await call('apiUpdateExamNotification', [{
+      id: req71Id,
+      examDate: sunDate71,
+      examStartTime: '08:05',
+      examIds: ['exR71Hw', 'exR71New']
+    }], stu71Tok);
+    assert.equal(r.success, true, r.error);
+
+    r = await call('apiGetBatches', [], adminTok);
+    bRow = r.data.data.find(b => b.id === 'bR71');
+    assert.equal(bRow.assignedItemsMap.exR71NonHw, undefined, 'removed exam access gone');
+    assert.equal(bRow.scheduledStartTimeMap.exR71NonHw, undefined, 'removed exam schedule gone');
+    assert.ok(bRow.assignedItemsMap.exR71New, 'new exam assigned');
+    assert.equal(bRow.scheduledStartTimeMap.exR71New, expStart71, 'new exam scheduled');
+    assert.ok(bRow.assignedItemsMap.exR71Hw, 'hw exam still assigned');
+
+    // 4. Student edits after start: 403
+    S.updateRow('notifications', req71Id, { startIso: '2026-01-01T02:35:00.000Z' });
+    r = await call('apiUpdateExamNotification', [{
+      id: req71Id,
+      examDate: sunDate71,
+      examStartTime: '08:05',
+      examIds: ['exR71Hw']
+    }], stu71Tok);
+    assert.equal(r.success, false);
+    assert.equal(r.code, 403);
+    assert.equal(r.error, 'পরীক্ষা শুরু হয়ে গেছে — আর বদলানো যাবে না');
+
+    // 4b. Student edits setting a past time -> "এই সময় পেরিয়ে গেছে — ভবিষ্যতের সময় দিন", Admin not limited
+    S.updateRow('notifications', req71Id, { startIso: '2099-01-01T02:35:00.000Z', examDate: '2099-01-01', examStartTime: '08:05' });
+    const todayDateOnly = new Date().toISOString().slice(0, 10);
+    r = await call('apiUpdateExamNotification', [{
+      id: req71Id,
+      examDate: todayDateOnly,
+      examStartTime: '00:01',
+      examIds: ['exR71Hw']
+    }], stu71Tok);
+    assert.equal(r.success, false);
+    assert.equal(r.error, 'এই সময় পেরিয়ে গেছে — ভবিষ্যতের সময় দিন');
+
+    r = await call('apiUpdateExamNotification', [{
+      id: req71Id,
+      examDate: todayDateOnly,
+      examStartTime: '00:01',
+      examIds: ['exR71Hw']
+    }], adminTok);
+    assert.equal(r.success, true);
+
+    // 5. Student deletes plain message -> 403. Admin deletes -> OK
+    r = await call('apiCreateNotification', [{ title: 'Student Doubt', message: 'Question about syllabus' }], stu71Tok);
+    assert.equal(r.success, true);
+    const plainId = r.data.data.id;
+    assert.equal(r.data.data.ownerBatchId, 'bR71', 'ownerBatchId stored on student message');
+
+    r = await call('apiDeleteNotification', [plainId], stu71Tok);
+    assert.equal(r.success, false);
+    assert.equal(r.code, 403);
+    assert.equal(r.error, 'শুধু Admin notification মুছতে পারেন');
+
+    r = await call('apiDeleteNotification', [plainId], adminTok);
+    assert.equal(r.success, true);
+
+    // 6. cleanupBatchNotifications
+    S.deleteRow('notifications', req71Id);
+    S.saveRow('batches', { id: 'bR71Other', name: 'Shonibar Sakal', classDay: '6', examStartTime: '09:05', assignedItemsMap: {}, scheduledStartTimeMap: {} });
+
+    const startIsoBatch = _internal.examStartIso(sunDate71, '08:05');
+    S.saveRow('notifications', {
+      id: 'nR71Exam',
+      type: 'exam_request',
+      batchId: 'bR71',
+      examDate: sunDate71,
+      examStartTime: '08:05',
+      startIso: startIsoBatch,
+      status: 'scheduled'
+    });
+    S.saveRow('notifications', {
+      id: 'nR71Plain',
+      type: 'student_to_admin',
+      batchId: 'admin',
+      ownerBatchId: 'bR71',
+      message: 'student plain msg'
+    });
+    S.saveRow('notifications', {
+      id: 'nR71AdminToBatch',
+      type: 'admin_to_batch',
+      batchId: 'bR71',
+      message: 'batch notice'
+    });
+    S.saveRow('notifications', {
+      id: 'nR71OtherBatch',
+      type: 'admin_to_batch',
+      batchId: 'bR71Other',
+      message: 'other batch notice'
+    });
+    S.saveRow('notifications', {
+      id: 'nR71All',
+      type: 'broadcast',
+      batchId: 'all',
+      message: 'broadcast to all'
+    });
+
+    S.updateRow('batches', 'bR71', {
+      assignedItemsMap: { exKeepR71: nowIso71 },
+      scheduledStartTimeMap: { exKeepR71: startIsoBatch }
+    });
+    S.saveRow('examResults', { id: 'resR71', examId: 'exKeepR71', studentId: 'stuR71', score: 95 });
+    const resultsCountBefore = S.readSheet('examResults').length;
+
+    // 6a: start + 59 min (09:04 IST): nothing deleted
+    const t59 = new Date(sunDate71 + 'T09:04:00+05:30').getTime();
+    const c59 = _internal.cleanupBatchNotifications(t59);
+    assert.equal(c59.deleted, 0, 'at start + 59 min: 0 deleted');
+    assert.ok(S.findRowById('notifications', 'nR71Exam'), 'exam request exists at +59m');
+    assert.ok(S.findRowById('notifications', 'nR71Plain'), 'plain msg exists at +59m');
+
+    // 6b: start + 61 min (09:06 IST): all of that batch deleted
+    const t61 = new Date(sunDate71 + 'T09:06:00+05:30').getTime();
+    const c61 = _internal.cleanupBatchNotifications(t61);
+    assert.equal(c61.deleted, 3, 'at start + 61 min: 3 deleted');
+    assert.equal(S.findRowById('notifications', 'nR71Exam'), null, 'exam request deleted');
+    assert.equal(S.findRowById('notifications', 'nR71Plain'), null, 'plain msg deleted');
+    assert.equal(S.findRowById('notifications', 'nR71AdminToBatch'), null, 'admin to batch deleted');
+
+    // 6c: another batch's and batchId 'all' stay
+    assert.ok(S.findRowById('notifications', 'nR71OtherBatch'), 'other batch notification stays');
+    assert.ok(S.findRowById('notifications', 'nR71All'), 'batchId all stays');
+
+    // 6d: exam stays in assignedItemsMap and scheduledStartTimeMap
+    const bFinal = S.findRowById('batches', 'bR71').obj;
+    const finalAssigned = typeof bFinal.assignedItemsMap === 'string' ? JSON.parse(bFinal.assignedItemsMap || '{}') : (bFinal.assignedItemsMap || {});
+    const finalSched = typeof bFinal.scheduledStartTimeMap === 'string' ? JSON.parse(bFinal.scheduledStartTimeMap || '{}') : (bFinal.scheduledStartTimeMap || {});
+    assert.ok(finalAssigned.exKeepR71, 'exam stays in assignedItemsMap');
+    assert.equal(finalSched.exKeepR71, startIsoBatch, 'exam stays in scheduledStartTimeMap');
+
+    // 6e: examResults row count unchanged
+    assert.equal(S.readSheet('examResults').length, resultsCountBefore, 'examResults count unchanged');
+
+    // Cleanup R71 test rows
+    S.deleteRow('batches', 'bR71');
+    S.deleteRow('batches', 'bR71Other');
+    S.deleteRow('users', 'stuR71');
+    S.deleteRow('notifications', 'nR71OtherBatch');
+    S.deleteRow('notifications', 'nR71All');
+    S.deleteRow('examResults', 'resR71');
+    S.deleteRow('library', 'fR71Root');
+    S.deleteRow('library', 'fR71Math');
+    S.deleteRow('library', 'fR71Note');
+    S.deleteRow('library', 'noteR71');
+    S.deleteRow('library', 'exR71Hw');
+    S.deleteRow('library', 'exR71NonHw');
+    S.deleteRow('library', 'exR71New');
+    _internal.invalidateLibraryCache();
+    console.log('R71 tests (allExams, picking, edit, sender restriction, admin delete, batch auto-cleanup) OK');
   }
 
   // transaction rollback: failing write leaves no partial data

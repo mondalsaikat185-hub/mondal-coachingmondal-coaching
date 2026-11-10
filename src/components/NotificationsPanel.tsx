@@ -32,6 +32,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   
   const [showCreate, setShowCreate] = useState(false);
   const [showExamForm, setShowExamForm] = useState(false);
+  const [editExamNotif, setEditExamNotif] = useState<any | null>(null);
   const [editItem, setEditItem] = useState<any | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
@@ -232,7 +233,7 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
 
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
              {!showCreate && !showExamForm && (
-                <button onClick={() => setShowExamForm(true)} className="w-full bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 px-3 py-2 text-xs font-black uppercase border-2 border-amber-900 flex items-center justify-center gap-1 shadow-[2px_2px_0px_0px_rgba(120,53,15,1)] hover:-translate-y-0.5 transition-transform">
+                <button onClick={() => { setEditExamNotif(null); setShowExamForm(true); }} className="w-full bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200 px-3 py-2 text-xs font-black uppercase border-2 border-amber-900 flex items-center justify-center gap-1 shadow-[2px_2px_0px_0px_rgba(120,53,15,1)] hover:-translate-y-0.5 transition-transform">
                    <Plus className="w-3 h-3" /> Add Notification for Exam
                 </button>
              )}
@@ -256,9 +257,11 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                 <ExamNotificationForm
                    user={user}
                    batches={batches}
-                   onClose={() => setShowExamForm(false)}
+                   editNotification={editExamNotif}
+                   onClose={() => { setShowExamForm(false); setEditExamNotif(null); }}
                    onPosted={() => {
                       setShowExamForm(false);
+                      setEditExamNotif(null);
                       clearCache(`notifications_${user.uid}`);
                       clearCache(`notif_count_${user.uid}`);
                       (api as any).clearNotificationsCache?.();
@@ -345,14 +348,68 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
                                    </div>
                                 </div>
                                 </div>
-                                {user.role === 'admin' && (
-                                   <div className="flex items-center gap-1">
-                                      <button onClick={(e) => { e.stopPropagation(); handleEdit(notif); }} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 transition-colors"><Edit className="w-3.5 h-3.5" /></button>
-                                      <button disabled={deletingIds.size > 0} onClick={(e) => handleDelete(notif.id, e)} className={`p-1 transition-colors disabled:opacity-40 ${confirmDeleteId === notif.id ? 'bg-red-600 text-white' : 'hover:bg-red-100 hover:text-red-600'}`}>
-                                         {deletingIds.has(notif.id) ? <span className="text-[10px] font-black px-1 text-red-600">মুছছে…</span> : confirmDeleteId === notif.id ? <span className="text-[10px] uppercase font-black px-1">নিশ্চিত? আবার চাপুন</span> : <Trash2 className="w-3.5 h-3.5" />}
-                                      </button>
-                                   </div>
-                                )}
+                                {(() => {
+                                   const isExam = notif.type === 'exam_request';
+                                   let notifStartMs: number | null = null;
+                                   if (notif.startIso) {
+                                      const t = new Date(notif.startIso).getTime();
+                                      if (!isNaN(t)) notifStartMs = t;
+                                   } else if (notif.examDate && notif.examStartTime) {
+                                      const t = new Date(`${notif.examDate}T${notif.examStartTime}:00+05:30`).getTime();
+                                      if (!isNaN(t)) notifStartMs = t;
+                                   }
+                                   const canEditExam = isExam && (
+                                      user.role === 'admin' ||
+                                      (String(notif.senderId) === String(user.uid) && (notifStartMs === null || Date.now() < notifStartMs))
+                                   );
+                                   const canEditPlain = !isExam && user.role === 'admin';
+                                   const canDelete = user.role === 'admin';
+
+                                   if (!canEditExam && !canEditPlain && !canDelete) return null;
+
+                                   return (
+                                      <div className="flex items-center gap-1">
+                                         {canEditExam && (
+                                            <button
+                                               type="button"
+                                               onClick={(e) => { e.stopPropagation(); setEditExamNotif(notif); setShowExamForm(true); }}
+                                               className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 transition-colors flex items-center gap-0.5"
+                                               title="Edit Exam"
+                                            >
+                                               <Edit className="w-3.5 h-3.5" />
+                                               <span className="text-[10px] font-bold">Edit</span>
+                                            </button>
+                                         )}
+                                         {canEditPlain && (
+                                            <button
+                                               type="button"
+                                               onClick={(e) => { e.stopPropagation(); handleEdit(notif); }}
+                                               className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-500 transition-colors"
+                                               title="Edit"
+                                            >
+                                               <Edit className="w-3.5 h-3.5" />
+                                            </button>
+                                         )}
+                                         {canDelete && (
+                                            <button
+                                               type="button"
+                                               disabled={deletingIds.size > 0}
+                                               onClick={(e) => handleDelete(notif.id, e)}
+                                               className={`p-1 transition-colors disabled:opacity-40 ${confirmDeleteId === notif.id ? 'bg-red-600 text-white' : 'hover:bg-red-100 hover:text-red-600'}`}
+                                               title="Delete"
+                                            >
+                                               {deletingIds.has(notif.id) ? (
+                                                  <span className="text-[10px] font-black px-1 text-red-600">মুছছে…</span>
+                                               ) : confirmDeleteId === notif.id ? (
+                                                  <span className="text-[10px] uppercase font-black px-1">নিশ্চিত? আবার চাপুন</span>
+                                               ) : (
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                               )}
+                                            </button>
+                                         )}
+                                      </div>
+                                   );
+                                })()}
                              </div>
                              
                              <p className="text-sm font-medium whitespace-pre-wrap mt-1 opacity-90">{notif.message}</p>
