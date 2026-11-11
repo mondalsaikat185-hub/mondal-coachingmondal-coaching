@@ -89,8 +89,8 @@ export function ExamNotificationForm({ user, batches, editNotification, onClose,
         if (!dateValid && o.defaultDate && !isEdit) {
           setYyyy(o.defaultDate.slice(0, 4)); setMm(o.defaultDate.slice(5, 7)); setDd(o.defaultDate.slice(8, 10));
         }
-        if (o.examStartTime && !examTime && !isEdit) {
-          setExamTime(o.examStartTime);
+        if (o.examStartTime && !isEdit) {
+          setExamTime(prev => (prev ? prev : o.examStartTime));
         }
         // Retain selected items (including ones from allExams or editNotification)
         setSelected(prev => {
@@ -103,6 +103,13 @@ export function ExamNotificationForm({ user, batches, editNotification, onClose,
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId, dateValid ? dateIso : '']);
+
+  // Pre-fill examTime from opts.examStartTime whenever the form opens for a new request and time is still empty
+  useEffect(() => {
+    if (!isEdit && opts?.examStartTime && !examTime) {
+      setExamTime(opts.examStartTime);
+    }
+  }, [opts?.examStartTime, isEdit, examTime]);
 
   const nowYear = new Date().getFullYear();
   const years = [nowYear, nowYear + 1];
@@ -218,7 +225,14 @@ export function ExamNotificationForm({ user, batches, editNotification, onClose,
             <select
               value={batchId}
               disabled={isEdit}
-              onChange={e => { setBatchId(e.target.value); setDd(''); setMm(''); setYyyy(''); setSelected([]); }}
+              onChange={e => {
+                setBatchId(e.target.value);
+                setDd('');
+                setMm('');
+                setYyyy('');
+                setSelected([]);
+                if (!isEdit) setExamTime('');
+              }}
               className={sel}
             >
               <option value="">— batch বেছে নিন —</option>

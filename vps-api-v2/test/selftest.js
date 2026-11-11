@@ -736,6 +736,32 @@ const PUB = 'MondalCoachingSecureToken2026!';
         assert.ok(!bankRegex.test(x.title), 'no bank title: ' + x.title);
         assert.ok(!bankRegex.test(x.folderPath), 'no bank path: ' + x.folderPath);
       }
+
+      // R72 check on live copy: Cloze Test 2 before Cloze Test 10
+      const liveIdx2 = allEx.findIndex(x => x.title === 'Cloze Test 2');
+      const liveIdx10 = allEx.findIndex(x => x.title === 'Cloze Test 10');
+      if (liveIdx2 !== -1 && liveIdx10 !== -1) {
+        assert.ok(liveIdx2 < liveIdx10, 'allExams has "Cloze Test 2" before "Cloze Test 10" on live copy');
+      }
+    }
+
+    // R72 test: allExams natural sort has "Cloze Test 2" before "Cloze Test 10"
+    {
+      const dummyLibR72 = [
+        { id: 'fRootR72', title: "STUDENT'S EXAM", isFolder: true, isActive: true },
+        { id: 'fEnR72', title: 'English', parentId: 'fRootR72', isFolder: true, isActive: true },
+        { id: 'fCtR72', title: 'Cloze Test', parentId: 'fEnR72', isFolder: true, isActive: true },
+        { id: 'exCt10', title: 'Cloze Test 10', parentId: 'fCtR72', quizData: '[]', isActive: true },
+        { id: 'exCt2', title: 'Cloze Test 2', parentId: 'fCtR72', quizData: '[]', isActive: true },
+        { id: 'exCt1', title: 'Cloze Test 1', parentId: 'fCtR72', quizData: '[]', isActive: true },
+        { id: 'exCt100', title: 'Cloze Test 100', parentId: 'fCtR72', quizData: '[]', isActive: true },
+      ];
+      _internal.invalidateLibraryCache();
+      const sortedDummy = _internal.getAllExamsList(dummyLibR72);
+      const pos2 = sortedDummy.findIndex(x => x.title === 'Cloze Test 2');
+      const pos10 = sortedDummy.findIndex(x => x.title === 'Cloze Test 10');
+      assert.ok(pos2 !== -1 && pos10 !== -1 && pos2 < pos10, 'allExams has "Cloze Test 2" before "Cloze Test 10"');
+      _internal.invalidateLibraryCache();
     }
 
     // Set up test batch, student and exams for tests 2-6

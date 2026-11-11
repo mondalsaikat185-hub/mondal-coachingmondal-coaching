@@ -1460,7 +1460,11 @@ function getAllExamsList(libList) {
     });
   }
 
-  list.sort((a, b) => a.subject.localeCompare(b.subject) || a.folderPath.localeCompare(b.folderPath) || a.title.localeCompare(b.title));
+  list.sort((a, b) => (
+    a.subject.localeCompare(b.subject) ||
+    a.folderPath.localeCompare(b.folderPath, undefined, { numeric: true }) ||
+    a.title.localeCompare(b.title, undefined, { numeric: true })
+  ));
   cache.put("all_exams_v2", JSON.stringify(list), 300); // 5 minutes
   return list;
 }
